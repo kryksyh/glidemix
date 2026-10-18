@@ -120,7 +120,7 @@ void PlaybackConfiguration::init()
     });
 
     muse::settings()->setDefaultValue(PLAYBACK_METER_STYLE,
-                                      muse::Val(static_cast<int>(PlaybackMeterStyle::MeterStyle::Default)));
+                                      muse::Val(static_cast<int>(PlaybackMeterStyle::MeterStyle::Gradient)));   // GlideMix: green-yellow-red, as on a DJ mixer
     muse::settings()->valueChanged(PLAYBACK_METER_STYLE).onReceive(nullptr, [this](const muse::Val&) {
         m_playbackMeterStyleChanged.notify();
     });

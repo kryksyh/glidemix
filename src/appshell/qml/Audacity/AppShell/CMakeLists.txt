@@ -21,6 +21,8 @@ qt_add_qml_module(appshell_qml
         FirstLaunchSetup/workspacelayoutpagemodel.cpp
         FirstLaunchSetup/workspacelayoutpagemodel.h
         framelesswindowmodel.cpp
+        HomePage/homelearnmodel.cpp
+        HomePage/homelearnmodel.h
         framelesswindowmodel.h
         maintoolbarmodel.cpp
         maintoolbarmodel.h
@@ -57,6 +59,7 @@ qt_add_qml_module(appshell_qml
         FirstLaunchSetup/UnderConstructionPage.qml
         FirstLaunchSetup/WorkspaceLayoutPage.qml
         HomePage/CloudItem.qml
+        HomePage/GlideMixLearnPage.qml
         HomePage/HomeMenu.qml
         HomePage/HomePage.qml
         HomePage/PluginsPage.qml
@@ -141,6 +144,7 @@ target_include_directories(appshell_qml PRIVATE
     DevTools/Settings
     DevTools/Table
     FirstLaunchSetup
+    HomePage
     PublishPage
 )
 

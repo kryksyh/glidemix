@@ -176,17 +176,6 @@ const UiActionList MixHouseUiActions::m_actions = {
                                 "Automation Arm: while playing, moving a control in a plugin writes it into its line"),
              Checkable::Yes
              ),
-    UiAction("mixhouse-automation-latch",
-             au::context::UiCtxProjectOpened,
-             au::context::CTX_ANY,
-             //: Action title: shown as a menu item or a button label; keep it short
-             TranslatableString("action", "Latch"),
-             //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description",
-                                "Latch: after you let go of a control, Arm keeps writing its last value until playback stops. "
-                                "Off (Touch): the line goes back to what it was"),
-             Checkable::Yes
-             ),
     UiAction("mixhouse-reenable-automation",
              au::context::UiCtxProjectOpened,
              au::context::CTX_ANY,
@@ -230,8 +219,7 @@ void MixHouseUiActions::init()
 {
     if (libraryConfiguration()) {
         libraryConfiguration()->settingsChanged().onNotify(this, [this]() {
-            m_actionCheckedChanged.send({ SYNC_ACTION_CODE, TEMPO_LANE_ACTION_CODE, "mixhouse-keylock",
-                                          "mixhouse-automation-latch" });
+            m_actionCheckedChanged.send({ SYNC_ACTION_CODE, TEMPO_LANE_ACTION_CODE, "mixhouse-keylock" });
         });
     }
 }
@@ -305,9 +293,6 @@ bool MixHouseUiActions::actionChecked(const UiAction& act) const
     }
     if (act.code == "mixhouse-automation-arm") {
         return m_automationArmed;
-    }
-    if (act.code == "mixhouse-automation-latch") {
-        return libraryConfiguration() && libraryConfiguration()->automationLatch();
     }
     if (act.code == TEMPO_LANE_ACTION_CODE) {
         return libraryConfiguration() && libraryConfiguration()->tempoLaneVisible();

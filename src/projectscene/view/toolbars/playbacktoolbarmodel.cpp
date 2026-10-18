@@ -83,7 +83,6 @@ static PlaybackToolBarModel::ItemType itemType(const ActionCode& actionCode)
         { "mixhouse-keylock", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-mix-now", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-automation-arm", PlaybackToolBarModel::TEXT_TOGGLE },
-        { "mixhouse-automation-latch", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-reenable-automation", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-perform", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-broadcast", PlaybackToolBarModel::BROADCAST },

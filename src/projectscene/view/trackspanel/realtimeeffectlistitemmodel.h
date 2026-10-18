@@ -3,7 +3,6 @@
  */
 #pragma once
 
-#include "mixhouse/imixhouselibraryconfiguration.h"
 #include "modularity/ioc.h"
 #include "async/asyncable.h"
 #include "effects/effects_base/ieffectsprovider.h"
@@ -44,7 +43,6 @@ class RealtimeEffectListItemModel : public QObject, public muse::Contextable, pu
     muse::GlobalInject<effects::IParameterExtractorRegistry> parameterExtractors;
     muse::ContextInject<automation::IClipGainInteraction> clipGain{ this };
     muse::ContextInject<trackedit::IProjectHistory> projectHistory{ this };
-    muse::GlobalInject<mixhouse::IMixHouseLibraryConfiguration> libraryConfiguration;
 
 public:
     RealtimeEffectListItemModel(QObject* parent, effects::RealtimeEffectStatePtr effectState);

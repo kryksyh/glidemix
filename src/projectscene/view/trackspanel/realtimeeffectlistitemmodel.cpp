@@ -217,12 +217,8 @@ void RealtimeEffectListItemModel::continueRecording()
     const auto state = m_effectState.lock();
     const auto track = state ? realtimeEffectService()->trackId(state) : std::nullopt;
     const bool playing = globalContext()->playbackState()->isPlaying();
-    // Touch: the pass ends shortly after the last move, and the line plays
-    // again from there. Latch (Pro Tools): the last value goes on being
-    // written until playback stops or Arm is turned off.
-    const bool latch = libraryConfiguration() && libraryConfiguration()->automationLatch();
     if (!project || !track || !playing || !project->viewState()->automationArmed()
-        || (!latch && std::chrono::steady_clock::now() - m_recordLastTouch > std::chrono::milliseconds(400))) {
+        || std::chrono::steady_clock::now() - m_recordLastTouch > std::chrono::milliseconds(400)) {
         finishRecording();
         return;
     }

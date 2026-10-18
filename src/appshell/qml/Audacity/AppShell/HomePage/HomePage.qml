@@ -127,8 +127,7 @@ DockPage {
     Component {
         id: learnComp
 
-        LearnPage {
-            section: root.subSection
-        }
+        // GlideMix: our own Learn page (MuseScore's needs its online playlists).
+        GlideMixLearnPage {}
     }
 }
