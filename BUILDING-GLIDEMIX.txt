@@ -1,0 +1,12 @@
+GlideMix 1.1.0 - source code
+
+This is the complete source code of GlideMix 1.1.0, under the GNU GPL
+(see LICENSE.txt). You may build, change and share it under that licence.
+
+Building it yourself can be a challenging and complex process, especially
+on macOS and Windows. We don't provide help for this process and can't
+support the end result. If you just want to use GlideMix, the ready-to-run
+version is at https://github.com/cristitm76/glidemix-releases
+
+"GlideMix" and the GlideMix logo are not covered by the GPL: a build you
+share must use another name and icon.

@@ -1,0 +1,62 @@
+/*
+* Audacity: A Digital Audio Editor
+*/
+#pragma once
+
+#include "../iplaybackconfiguration.h"
+
+namespace au::playback {
+class PlaybackConfiguration : public IPlaybackConfiguration
+{
+public:
+    void init();
+
+    au::uicomponents::TimecodeFormatType playbackTimeItemFormat() const override;
+    void setPlaybackTimeItemFormat(au::uicomponents::TimecodeFormatType format) override;
+    muse::async::Notification playbackTimeItemFormatChanged() const override;
+
+    PlaybackMeterStyle::MeterStyle playbackMeterStyle() const override;
+    void setPlaybackMeterStyle(PlaybackMeterStyle::MeterStyle style) override;
+    muse::async::Notification playbackMeterStyleChanged() const override;
+
+    PlaybackMeterType::MeterType playbackMeterType() const override;
+    void setPlaybackMeterType(PlaybackMeterType::MeterType type) override;
+    muse::async::Notification playbackMeterTypeChanged() const override;
+
+    PlaybackMeterDbRange::DbRange playbackMeterDbRange() const override;
+    void setPlaybackMeterDbRange(PlaybackMeterDbRange::DbRange range) override;
+    muse::async::Notification playbackMeterDbRangeChanged() const override;
+
+    int playbackHorizontalMeterSize() const override;
+    void setPlaybackHorizontalMeterSize(int size) override;
+    muse::async::Notification playbackHorizontalMeterSizeChanged() const override;
+
+    std::vector<PlaybackQualityPrefs::PlaybackQuality> playbackQualityList() const override;
+    PlaybackQualityPrefs::PlaybackQuality currentPlaybackQuality() const override;
+    void setPlaybackQuality(PlaybackQualityPrefs::PlaybackQuality quality) override;
+    muse::async::Notification playbackQualityChanged() const override;
+
+    std::vector<DitherTypePrefs::DitherType> ditheringList() const override;
+    DitherTypePrefs::DitherType currentDithering() const override;
+    void setDithering(DitherTypePrefs::DitherType dithering) override;
+    muse::async::Notification ditheringChanged() const override;
+
+    void setShortSkip(trackedit::secs_t seconds) override;
+
+    void setLongSkip(trackedit::secs_t seconds) override;
+
+    bool selectionFollowsLoopRegion() const override;
+    void setSelectionFollowsLoopRegion(bool follows) override;
+    muse::async::Notification selectionFollowsLoopRegionChanged() const override;
+
+private:
+    muse::async::Notification m_playbackTimeItemFormatChanged;
+    muse::async::Notification m_playbackMeterStyleChanged;
+    muse::async::Notification m_playbackMeterTypeChanged;
+    muse::async::Notification m_playbackMeterDbRangeChanged;
+    muse::async::Notification m_playbackHorizontalMeterSizeChanged;
+    muse::async::Notification m_playbackQualityChanged;
+    muse::async::Notification m_ditheringChanged;
+    muse::async::Notification m_selectionFollowsLoopRegionChanged;
+};
+}

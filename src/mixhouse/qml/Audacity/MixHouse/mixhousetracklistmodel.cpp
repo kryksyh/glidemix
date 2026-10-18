@@ -1,0 +1,3169 @@
+/*
+ * MixHouse DJ 2
+ *
+ * QML-facing list of the tracks in Mixxx's library. Mostly presentation, but
+ * loadTrackToProject() is real: it hands the track's actual file to Audacity's
+ * own import pipeline (project/iaudacityproject.h), the same one File > Import
+ * Audio uses. Live DJ-style preview/cueing still needs the engine bridge --
+ * this is "add it to the project as a real track", not playback.
+ */
+#include "mixhousetracklistmodel.h"
+#include "mixhouse/internal/mixhousepreviewplayer.h"
+#include "mixhouse/internal/mixhouseprojectaligner.h"
+#include "mixhouse/imixhousekeymatch.h"
+#include "mixhouse/mixhousesearchquery.h"
+#include "global/settings.h"
+
+#include <QObject>
+#include <QProcess>
+#include <QFile>
+#include <QDateTime>
+#include <QtGlobal>
+#if defined(Q_OS_MACOS)
+#include <ApplicationServices/ApplicationServices.h>
+#elif defined(Q_OS_WIN)
+#include <windows.h>
+#endif
+#include <QDrag>
+#include <QWindow>
+#include <QMouseEvent>
+#include <QCursor>
+#include <QMimeData>
+#include <QUrl>
+#include <QDir>
+#include <QStandardPaths>
+#include "mixhouse/mixhousefiletags.h"
+#include <QStorageInfo>
+#include <QSettings>
+#include <QTimer>
+#include <functional>
+#include <QDirIterator>
+#include <QFileInfo>
+#include <QPainter>
+#include <QFontMetrics>
+#include <QGuiApplication>
+
+#include <algorithm>
+
+#include "project/iaudacityproject.h"
+#include "translation.h"
+#include "log.h"
+
+using namespace au::mixhouse;
+
+MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
+    : QAbstractListModel(parent), muse::Injectable(muse::iocCtxForQmlObject(this))
+{
+    // No IoC resolution here -- see load()'s own comment on why that
+    // crashed this app on every startup. Batch analysis used to need its
+    // own QTimer wired up here (a real per-tick queue this model owned
+    // directly); it now just delegates to MixHouseLibrary's own real
+    // background worker pool (startBackgroundAnalysis), which owns its own
+    // threads -- nothing left for this constructor to wire.
+}
+
+MixHouseTrackListModel::~MixHouseTrackListModel()
+{
+    if (m_previewPlayer) {
+        m_previewPlayer->stop();
+    }
+}
+
+void MixHouseTrackListModel::ensurePreviewPlayer()
+{
+    if (m_previewPlayer) {
+        return;
+    }
+    m_previewPlayer = std::make_unique<MixHousePreviewPlayer>();
+
+    // MixHouse DJ's OverviewDelegate: "Seeks are coalesced rather than issued
+    // per click" -- restarted on each request, so a burst of clicks costs
+    // one seek. Same 90ms.
+    m_previewSeekTimer = new QTimer(this);
+    m_previewSeekTimer->setSingleShot(true);
+    m_previewSeekTimer->setInterval(90);
+    connect(m_previewSeekTimer, &QTimer::timeout, this, [this]() {
+        if (m_pendingPreviewSeek >= 0.0) {
+            m_previewPlayer->playFrom(m_pendingPreviewSeek);
+            m_pendingPreviewSeek = -1.0;
+            updatePreviewPosition();
+        }
+    });
+
+    // Same delegate: the playhead refreshes at 10Hz ("plenty for a playhead
+    // in a table cell"), and only while previewing.
+    m_previewPollTimer = new QTimer(this);
+    m_previewPollTimer->setInterval(100);
+    connect(m_previewPollTimer, &QTimer::timeout, this, [this]() { updatePreviewPosition(); });
+}
+
+void MixHouseTrackListModel::updatePreviewPosition()
+{
+    if (!m_previewPlayer) {
+        return;
+    }
+    const bool playing = m_previewPlayer->isPlaying();
+    const double position = m_previewPlayer->position();
+    if (position != m_previewPosition) {
+        m_previewPosition = position;
+        emit previewPositionChanged();
+    }
+    if (playing != m_previewPlaying) {
+        m_previewPlaying = playing;   // false here = reached the end of the track
+        emit previewStateChanged();
+    }
+    if (!playing) {
+        m_previewPollTimer->stop();
+    }
+}
+
+void MixHouseTrackListModel::previewTrackAt(int row, double fraction)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return;
+    }
+    const MixHouseTrack& track = m_tracks[static_cast<size_t>(row)];
+    ensurePreviewPlayer();
+    fraction = std::clamp(fraction, 0.0, 1.0);
+
+    if (track.id == m_previewTrackId && m_previewPlaying) {
+        // Already playing this track: jump to the clicked spot, debounced.
+        m_pendingPreviewSeek = fraction;
+        m_previewSeekTimer->start();
+        return;
+    }
+
+    // A different track, or this one while stopped. The fork loaded into
+    // mixxx's preview deck and then waited 140ms for the load to reset the
+    // position before seeking; AVAudioFile opens synchronously, so playback
+    // starts at the clicked spot straight away instead.
+    if (track.id != m_previewTrackId) {
+        const std::string device = muse::settings()->value(
+            muse::Settings::Key("au3audio", "AudioIO/PlaybackDevice")).toString();
+        if (!m_previewPlayer->load(track.filePath.toStdString(), device)) {
+            LOGW() << "GlideMix preview: cannot load " << track.filePath;
+            stopPreview();
+            return;
+        }
+        m_previewTrackId = track.id;
+    }
+    m_pendingPreviewSeek = -1.0;
+    m_previewSeekTimer->stop();
+    m_previewPlayer->playFrom(fraction);
+    m_previewPlaying = m_previewPlayer->isPlaying();
+    m_previewPosition = m_previewPlayer->position();
+    emit previewStateChanged();
+    emit previewPositionChanged();
+    if (m_previewPlaying) {
+        m_previewPollTimer->start();
+    }
+}
+
+void MixHouseTrackListModel::previewNextPhrase(int row)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return;
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    if (t.durationSec <= 0.0) {
+        return;
+    }
+    // The phrases the Beatgrid editor shows: edited ones, else rekordbox's,
+    // else the GlideMix Phrase Detector's.
+    std::vector<MixHousePhrase> phrases;
+    if (t.id >= 0) {
+        if (const auto edited = library()->trackPhraseEdits(t.id)) {
+            phrases = *edited;
+        }
+    }
+    if (phrases.empty() && rekordboxAnalysis()) {
+        phrases = rekordboxAnalysis()->phrases(t.filePath, t.bpm);
+    }
+    if (phrases.empty() && t.id >= 0) {
+        phrases = library()->detectedPhrases(t.id);
+    }
+    const bool playingThis = t.id == m_previewTrackId && m_previewPlaying;
+    if (!playingThis) {
+        previewTrackAt(row, 0.0);   // not playing yet: from the start
+        return;
+    }
+    // Skip ahead as rekordbox does (it jumps 30 s): to the next phrase when
+    // it starts within 16 bars, else 16 bars on (30 s without a tempo).
+    const double now = m_previewPosition * t.durationSec;
+    const double step = t.bpm > 0.0 ? 16.0 * 4.0 * 60.0 / t.bpm : 30.0;
+    double target = now + step;
+    for (const MixHousePhrase& p : phrases) {
+        if (p.startSec > now + 0.5) {
+            target = std::min(target, p.startSec);
+            break;
+        }
+    }
+    if (target < t.durationSec - 1.0) {
+        previewTrackAt(row, target / t.durationSec);
+    }
+}
+
+void MixHouseTrackListModel::stopPreview()
+{
+    if (!m_previewPlayer) {
+        return;
+    }
+    m_pendingPreviewSeek = -1.0;
+    m_previewSeekTimer->stop();
+    m_previewPollTimer->stop();
+    m_previewPlayer->stop();
+    m_previewPosition = m_previewPlayer->position();
+    const bool changed = m_previewPlaying;
+    m_previewPlaying = false;
+    emit previewPositionChanged();
+    if (changed) {
+        emit previewStateChanged();
+    }
+}
+
+void MixHouseTrackListModel::load()
+{
+    // Subscribed here, NOT in the constructor: resolving an injected
+    // dependency (library()) that early crashed this app on every single
+    // startup -- confirmed directly from real .ips crash reports, all three
+    // pointing at this exact constructor calling into IoC resolution before
+    // this object's muse::Injectable context was actually ready for it. By
+    // the time QML calls load() (Component.onCompleted, after this object is
+    // fully constructed and parented), resolving library() is the same safe
+    // operation every other method here already does. Guarded to subscribe
+    // only once no matter how many times load() itself gets called.
+    if (!m_subscribedToExternal && rekordboxXml()) {
+        m_subscribedToExternal = true;
+        // A rekordbox XML read finishes in the background: refresh the
+        // sidebar (and the table, when it shows that XML).
+        rekordboxXml()->changed().onNotify(this, [this]() { load(); });
+    }
+    if (!m_subscribedToLibraryChanged) {
+        m_subscribedToLibraryChanged = true;
+        library()->libraryChanged().onNotify(this, [this]() {
+            load();
+        });
+    }
+    // Same reasoning, same guard pattern -- see this model's own
+    // libraryRowHeight/greyOutPlayedTracks/searchDebounceMs Q_PROPERTY
+    // comments for why this exists at all (a real bug testing caught: these
+    // used to be CONSTANT, so a Preferences change never reached an
+    // already-open panel).
+    if (!m_subscribedToSettingsChanged) {
+        m_subscribedToSettingsChanged = true;
+        m_keyNotation = static_cast<int>(libraryConfiguration()->keyNotation());
+        libraryConfiguration()->settingsChanged().onNotify(this, [this]() {
+            // The Key column's text is written when the tracks are read, so a
+            // new notation needs them read again.
+            const int notation = static_cast<int>(libraryConfiguration()->keyNotation());
+            if (notation != m_keyNotation) {
+                m_keyNotation = notation;
+                emit keyNotationChanged();
+                load();
+            }
+            emit libraryRowHeightChanged();
+            emit greyOutPlayedTracksChanged();
+            emit searchDebounceMsChanged();
+            emit libraryFontChanged();
+            emit bpmPrecisionChanged();
+            emit waveformOverviewTypeChanged();
+            emit showWaveformMinuteMarkersChanged();
+        });
+    }
+    // Same reasoning, same guard pattern. Both channels are re-published by
+    // MixHouseLibrary from its own real Qt signal/slot handlers -- already
+    // back on the main thread by the time they reach here (see
+    // MixHouseLibraryScanner's own header comment for why that hop uses
+    // plain Qt signals rather than muse::async::Channel directly), so
+    // ordinary same-thread onReceive() usage here is exactly as safe as
+    // every other muse::async subscription in this file.
+    if (!m_subscribedToScan) {
+        m_subscribedToScan = true;
+        library()->scanProgress().onReceive(this, [this](int scanned, int added) {
+            m_scanScanned = scanned;
+            m_scanAdded = added;
+            emit scanProgressChanged();
+        });
+        library()->scanFinished().onReceive(this, [this](const IMixHouseLibrary::ScanResult& result) {
+            emit scanningChanged();
+            if (!result.error.isEmpty()) {
+                interactive()->error(muse::trc("mixhouse", "Couldn't scan music directories"),
+                                      result.error.toStdString());
+                return;
+            }
+            if (libraryConfiguration()->showScanSummaryDialog() && result.scanned > 0) {
+                const std::string title = muse::trc("mixhouse", "Library scan finished");
+                std::string text = muse::qtrc("mixhouse",
+                    "Scanned %1 file(s): %2 added to the library, %3 already known.")
+                    .arg(result.scanned).arg(result.added).arg(result.skipped).toStdString();
+        if (result.unreadable > 0) {
+            text += "\n" + muse::qtrc("mixhouse", "%n file(s) could not be read as audio (damaged or not audio) and were not added.",
+                                        nullptr, result.unreadable).toStdString();
+        }
+                interactive()->info(title, text);
+            }
+        });
+    }
+    // Same reasoning, same guard pattern -- see IMixHouseLibrary::
+    // startBackgroundAnalysis's own comment. analysisFinished's own summary
+    // text is exactly what analyzeTracksWithConfirm's old blocking for-loop
+    // used to show synchronously right after finishing; now shown here
+    // instead since the actual work is async, and shared by BOTH the
+    // toolbar's plain Analyze button (previously silent on completion) and
+    // the right-click confirm-dialog path -- one real completion notice
+    // for any batch, same as scanFinished's own dialog above.
+    // The rekordbox index is built on a background thread. Rows painted before
+    // it finishes cached our own fallback overview, so drop the cache and tell
+    // the overview column to fetch again.
+    // GlideMix: songs' HD waveforms finishing in the background.
+    if (!m_subscribedToHdWaves && hdWaveforms()) {
+        m_subscribedToHdWaves = true;
+        hdWaveforms()->ready().onNotify(this, [this]() {
+            ++m_hdWaveRevision;
+            emit hdWaveRevisionChanged();
+        });
+    }
+    if (!m_subscribedToRekordbox && rekordboxAnalysis()) {
+        m_subscribedToRekordbox = true;
+        rekordboxAnalysis()->ready().onNotify(this, [this]() {
+            m_overviewCache.clear();
+            emit overviewDataChanged();
+        });
+    }
+    if (!m_subscribedToAnalysis) {
+        m_subscribedToAnalysis = true;
+        library()->analysisProgress().onReceive(this, [this](int processed, int total) {
+            m_analyzeProcessed = processed;
+            m_analyzeTotal = total;
+            emit analyzeProgressChanged();
+        });
+        library()->trackAnalysisProgress().onReceive(this, [this](int trackId, int percent) {
+            if (percent < 0) {
+                if (!m_analysisProgressByTrack.remove(trackId)) {
+                    return;
+                }
+                m_overviewCache.remove(trackId);   // the fresh waveform was just written
+                if (percent == -1) {
+                    // Succeeded: re-read this one row now (BPM, key, grid,
+                    // downbeat, "Analyzed") instead of leaving "--" until the
+                    // batch-end load() -- we saw BPM "not being written"
+                    // during a long batch, though it already was in the DB.
+                    for (MixHouseTrack& t : m_tracks) {
+                        if (t.id != trackId) {
+                            continue;
+                        }
+                        IMixHouseLibrary::TrackQuery one;
+                        one.trackId = trackId;
+                        one.hiddenOnly = m_query.hiddenOnly;
+                        const MixHouseTrackList fresh = library()->tracks(one);
+                        if (!fresh.empty()) {
+                            const int playlistPosition = t.playlistPosition;
+                            t = fresh.front();
+                            t.playlistPosition = playlistPosition;
+                        } else {
+                            t.analyzed = true;
+                        }
+                        break;
+                    }
+                }
+            } else {
+                m_analysisProgressByTrack.insert(trackId, percent);
+            }
+            emitAnalysisProgressChanged(trackId, percent < 0);
+        });
+        library()->analysisFinished().onReceive(this, [this](const IMixHouseLibrary::AnalysisSummary& summary) {
+            // Stopped batches leave never-started tracks behind at 0% --
+            // clear them before load()'s reset so nothing reads stale.
+            m_analysisProgressByTrack.clear();
+            // External rows show the analysis of their library copy.
+            for (auto it = m_overviewCache.begin(); it != m_overviewCache.end();) {
+                it = isExternalLibraryTrack(it.key()) ? m_overviewCache.erase(it) : std::next(it);
+            }
+            emit analyzingChanged();
+            load();
+            if (summary.total <= 0) {
+                return;
+            }
+            // GlideMix: a few seconds of status text beside the Analyze button,
+            // not a dialog -- the modal box opened while the list reloaded
+            // and showed up as an empty window (and interrupted the work).
+            QString text = summary.stopped
+                ? muse::qtrc("mixhouse", "Analysis stopped: %n track(s) analyzed.", nullptr, summary.succeeded)
+                : muse::qtrc("mixhouse", "Analysis finished: %n track(s) analyzed.", nullptr, summary.succeeded);
+            if (summary.failed > 0) {
+                text += QStringLiteral(" ") + muse::qtrc("mixhouse", "%n could not be read.", nullptr, summary.failed);
+            }
+            setAnalysisMessage(text);
+            QTimer::singleShot(8000, this, [this, text]() {
+                if (m_analysisMessage == text) {
+                    setAnalysisMessage(QString());
+                }
+            });
+        });
+    }
+
+    MixHouseTrackList fresh;
+    if (!m_emptyPlaceholder) {
+        // Capped: the panel shows a page of this, and an unbounded query on a large
+        // collection would stall the UI thread. Sorting happens in SQL so the cap
+        // takes the right rows, not an arbitrary slice.
+        m_query.limit = 2000;
+        if (m_externalSource == u"folder") {
+            fresh = browseFolderTracks();
+        } else if (!m_externalSource.isEmpty()) {
+            const IMixHouseExternalLibrary* external = externalLibrary(m_externalSource);
+            fresh = external ? external->tracks(m_externalPlaylist, m_query) : MixHouseTrackList();
+            // Ratings and colors given in GlideMix to these songs live in its own
+            // library (Lexicon's and rekordbox's databases are read-only here).
+            const auto own = library()->ratingsAndColorsByLocation();
+            const auto edits = library()->tagEditsByLocation();
+            for (MixHouseTrack& t : fresh) {
+                const auto e = edits.constFind(t.filePath);
+                if (e != edits.constEnd()) {
+                    applyTagFields(t, *e);
+                }
+                const auto it = own.constFind(t.filePath);
+                if (it != own.constEnd()) {
+                    if (it->first > 0) {
+                        t.rating = it->first;
+                    }
+                    if (it->second >= 0) {
+                        t.color = it->second;
+                    }
+                }
+            }
+        } else {
+            fresh = library()->tracks(m_query);
+        }
+    }
+    // GlideMix: the same tracks in the same order (a song loaded and marked
+    // played, an analysis finishing): update the rows in place. A reset
+    // destroyed every row, and a double-click that landed then was lost --
+    // "track 6 is not created" (Chris, Mac).
+    const bool sameRows = !m_tracks.empty() && fresh.size() == m_tracks.size()
+                          && std::equal(fresh.begin(), fresh.end(), m_tracks.begin(),
+                                        [](const MixHouseTrack& a, const MixHouseTrack& b) { return a.id == b.id; });
+    if (sameRows) {
+        m_tracks = std::move(fresh);
+        // Every column: index(row) alone is column 0, and the table's other
+        // columns (Rating, Color...) kept their old value until a view change.
+        emit dataChanged(index(0, 0), index(static_cast<int>(m_tracks.size()) - 1, std::max(0, m_uiColumnCount - 1)));
+        return;
+    }
+    beginResetModel();
+    m_tracks = std::move(fresh);
+    endResetModel();
+    emit loaded();
+}
+
+void MixHouseTrackListModel::sortBy(int sortKey)
+{
+    const auto key = static_cast<IMixHouseLibrary::SortKey>(sortKey);
+    if (m_query.sort == key) {
+        m_query.ascending = !m_query.ascending;   // same column: flip
+    } else {
+        m_query.sort = key;
+        m_query.ascending = true;                 // new column: start ascending
+    }
+    load();
+}
+
+void MixHouseTrackListModel::setSearch(const QString& text)
+{
+    if (m_query.filter == text) {
+        return;
+    }
+    m_query.filter = text;
+    load();
+}
+
+void MixHouseTrackListModel::setPlaylist(int playlistId)
+{
+    // Guard on the WHOLE view identity, not just playlistId: a crate,
+    // Missing, or placeholder view also has playlistId == -1, so clicking
+    // "All Tracks" (setPlaylist(-1)) while viewing any of those must still
+    // go through and clear them, not early-return as a no-op.
+    if (m_query.playlistId == playlistId && m_query.crateId < 0 && !m_query.missingOnly
+        && !m_query.hiddenOnly && !m_query.unanalyzedOnly && !m_query.playedOnly
+        && !m_emptyPlaceholder && m_externalSource.isEmpty()) {
+        return;
+    }
+    const bool wasPlaylist = m_query.playlistId >= 0;
+    const bool isPlaylist = playlistId >= 0;
+    m_query.playlistId = playlistId;
+    // A view is either the flat library, one playlist, one crate, Missing,
+    // or a placeholder -- entering a playlist (or returning to the flat
+    // "All Tracks" view) always leaves whichever of the others was active.
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    leaveExternal();
+    // Real mixxx: each feature restores/clears its OWN remembered search on
+    // activation (library.cpp:318-330) -- this port keeps one shared filter
+    // string instead of one per feature, so the simplest way to stop a
+    // search typed in one view from silently keeping to filter whatever's
+    // clicked into next (with the search box text no longer matching what's
+    // actually active) is to just clear it on every view switch.
+    m_query.filter.clear();
+    // Real mixxx: a playlist is an ORDERED list and shows in that order by
+    // default; the flat Tracks view has no such ordering and defaults to
+    // Date Added. Only flip the sort automatically on the transition INTO
+    // or OUT OF a playlist view -- if the user already picked a different
+    // sort while inside one, clicking a different playlist shouldn't reset
+    // that choice.
+    if (isPlaylist && !wasPlaylist) {
+        m_query.sort = IMixHouseLibrary::SortKey::Position;
+        m_query.ascending = true;
+    } else if (wasPlaylist && !isPlaylist) {
+        m_query.sort = IMixHouseLibrary::SortKey::DateAdded;
+        m_query.ascending = false;
+    }
+    load();
+}
+
+void MixHouseTrackListModel::setCrate(int crateId)
+{
+    // Same reasoning as setPlaylist()'s guard: a playlist, Missing, or
+    // placeholder view also has crateId == -1, so this must not no-op
+    // while leaving any of those.
+    if (m_query.crateId == crateId && m_query.playlistId < 0 && !m_query.missingOnly
+        && !m_query.hiddenOnly && !m_query.unanalyzedOnly && !m_query.playedOnly
+        && !m_emptyPlaceholder && m_externalSource.isEmpty()) {
+        return;
+    }
+    const bool wasPlaylist = m_query.playlistId >= 0;
+    m_query.crateId = crateId;
+    // A view is either the flat library, one playlist, one crate, Missing,
+    // or a placeholder -- entering a crate (or leaving one) always clears
+    // whichever of the others was active. Unlike setPlaylist(), there's no
+    // Position sort to flip to/from: crate_tracks has no ordering column
+    // (real mixxx crates are unordered sets), so a crate view just keeps
+    // whatever sort was already active. Only undo the playlist's own
+    // Position sort when coming FROM one -- it means nothing outside a
+    // playlist.
+    m_query.playlistId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    leaveExternal();
+    m_query.filter.clear();   // see setPlaylist()'s own comment
+    if (wasPlaylist) {
+        m_query.sort = IMixHouseLibrary::SortKey::DateAdded;
+        m_query.ascending = false;
+    }
+    load();
+}
+
+void MixHouseTrackListModel::setMissing()
+{
+    // The sidebar's "Missing Tracks" is a single fixed node (refId -1, not
+    // one-of-many like a playlist/crate id), so unlike setPlaylist/setCrate
+    // this only ever means "enter it" -- there's no id to compare against.
+    if (m_query.missingOnly && m_query.playlistId < 0 && m_query.crateId < 0
+        && !m_query.hiddenOnly && !m_query.unanalyzedOnly && !m_query.playedOnly
+        && !m_emptyPlaceholder && m_externalSource.isEmpty()) {
+        return;
+    }
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = true;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    leaveExternal();
+    m_query.filter.clear();   // see setPlaylist()'s own comment
+    // Real mixxx's MissingTableModel::setTableModel() default-sorts by
+    // Artist ascending (missingtablemodel.cpp) -- unlike the flat Tracks
+    // view's Date Added default.
+    m_query.sort = IMixHouseLibrary::SortKey::Artist;
+    m_query.ascending = true;
+    load();
+}
+
+void MixHouseTrackListModel::setHidden()
+{
+    if (m_query.hiddenOnly && m_query.playlistId < 0 && m_query.crateId < 0
+        && !m_query.missingOnly && !m_emptyPlaceholder && m_externalSource.isEmpty()) {
+        return;
+    }
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = true;
+    m_emptyPlaceholder = false;
+    leaveExternal();
+    m_query.filter.clear();
+    m_query.sort = IMixHouseLibrary::SortKey::Artist;
+    m_query.ascending = true;
+    load();
+}
+
+int MixHouseTrackListModel::verifyMissingTracks()
+{
+    // Real mixxx's LibraryScanner runs this as a side effect of every scan
+    // (TrackDAO::verifyRemainingTracks); this port has no such background
+    // scanner, so the sidebar's Missing node runs the same disk check
+    // directly, on demand. verifyTrackLocations() itself calls load() (via
+    // libraryChanged) when anything actually changed.
+    return library()->verifyTrackLocations();
+}
+
+void MixHouseTrackListModel::leaveExternal()
+{
+    if (m_externalSource.isEmpty()) {
+        return;
+    }
+    m_externalSource.clear();
+    m_externalPlaylist = -1;
+    // External playlists sort by their own order; the library views don't
+    // know that position.
+    if (m_query.sort == IMixHouseLibrary::SortKey::Position && m_query.playlistId < 0) {
+        m_query.sort = IMixHouseLibrary::SortKey::DateAdded;
+        m_query.ascending = false;
+    }
+}
+
+const IMixHouseExternalLibrary* MixHouseTrackListModel::externalLibrary(const QString& source) const
+{
+    if (source == u"lexicon") {
+        return lexicon().get();
+    }
+    if (source == u"rekordbox") {
+        return rekordboxXml().get();
+    }
+    return nullptr;
+}
+
+void MixHouseTrackListModel::setRekordboxXmlPath(const QString& path)
+{
+    if (rekordboxXml()) {
+        rekordboxXml()->setPath(path);
+    }
+}
+
+void MixHouseTrackListModel::setExternalPlaylist(const QString& source, int playlistId)
+{
+    // GlideMix: another DJ app's tracks (Lexicon DJ's database, a
+    // rekordbox XML export) in the same table, read-only.
+    if (m_externalSource == source && m_externalPlaylist == playlistId) {
+        return;
+    }
+    m_externalSource = source;
+    m_externalPlaylist = playlistId;
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    m_query.filter.clear();
+    if (playlistId >= 0) {
+        m_query.sort = IMixHouseLibrary::SortKey::Position;
+        m_query.ascending = true;
+    } else if (m_query.sort == IMixHouseLibrary::SortKey::Position) {
+        m_query.sort = IMixHouseLibrary::SortKey::DateAdded;
+        m_query.ascending = false;
+    }
+    load();
+}
+
+void MixHouseTrackListModel::setAnalyzeView()
+{
+    setPlaylist(-1);
+    m_query.unanalyzedOnly = true;
+    load();
+}
+
+void MixHouseTrackListModel::setHistoryView()
+{
+    setPlaylist(-1);
+    m_query.playedOnly = true;
+    m_query.sort = IMixHouseLibrary::SortKey::LastPlayedAt;
+    m_query.ascending = false;
+    load();
+}
+
+void MixHouseTrackListModel::setRecordingsView()
+{
+    // The export folder: where finished mixes are saved.
+    const QString folder = exportConfiguration() ? exportConfiguration()->directoryPath().toQString() : QString();
+    setBrowseFolder(folder.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::MusicLocation) : folder);
+}
+
+void MixHouseTrackListModel::setBrowseFolder(const QString& path)
+{
+    if (m_externalSource == u"folder" && m_browseFolder == path) {
+        return;
+    }
+    m_externalSource = QStringLiteral("folder");
+    m_externalPlaylist = -1;
+    m_browseFolder = path;
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    m_query.filter.clear();
+    load();
+}
+
+static bool isDroppedAudio(const QString& path);
+
+MixHouseTrackList MixHouseTrackListModel::browseFolderTracks() const
+{
+    // Ids for files not in the library: below rekordbox XML's range
+    // (-1,000,000,000 - index), so they count as external (read-only).
+    constexpr int kBrowseIdBase = -2000000000;
+    constexpr int kMaxFiles = 2000;
+    MixHouseTrackList out;
+    const QFileInfoList files = QDir(m_browseFolder).entryInfoList(QDir::Files | QDir::Readable,
+                                                                   QDir::Name | QDir::IgnoreCase);
+    const QString filter = m_query.filter.trimmed();
+    for (const QFileInfo& info : files) {
+        if (static_cast<int>(out.size()) >= kMaxFiles) {
+            break;
+        }
+        if (!isDroppedAudio(info.fileName())) {
+            continue;
+        }
+        IMixHouseLibrary::TrackQuery query;
+        query.location = info.absoluteFilePath();
+        query.limit = 1;
+        MixHouseTrackList known = library()->tracks(query);
+        MixHouseTrack t;
+        if (!known.empty()) {
+            t = known.front();
+        } else {
+            const MixHouseFileTags tags = readFileTags(info.absoluteFilePath());
+            t.id = kBrowseIdBase - static_cast<int>(out.size());
+            t.title = tags.title;
+            t.artist = tags.artist;
+            t.album = tags.album;
+            t.genre = tags.genre;
+            t.year = tags.year;
+            t.filePath = info.absoluteFilePath();
+            t.fileType = info.suffix().toLower();
+            t.durationSec = -1.0;   // not known without decoding: shown as a dash
+        }
+        if (!filter.isEmpty() && !t.title.contains(filter, Qt::CaseInsensitive)
+            && !t.artist.contains(filter, Qt::CaseInsensitive) && !t.album.contains(filter, Qt::CaseInsensitive)) {
+            continue;
+        }
+        out.push_back(t);
+    }
+    return out;
+}
+
+static QStringList customQuickLinks()
+{
+    return QSettings().value(QStringLiteral("GlideMix/quickLinks")).toStringList();
+}
+
+void MixHouseTrackListModel::addQuickLink(const QString& path)
+{
+    const QString clean = QDir::cleanPath(path);
+    QStringList links = customQuickLinks();
+    if (clean.isEmpty() || links.contains(clean)) {
+        return;
+    }
+    links << clean;
+    QSettings().setValue(QStringLiteral("GlideMix/quickLinks"), links);
+    emit loaded();   // the sidebar re-reads its nodes
+}
+
+void MixHouseTrackListModel::removeQuickLink(const QString& path)
+{
+    QStringList links = customQuickLinks();
+    if (links.removeAll(QDir::cleanPath(path)) > 0) {
+        QSettings().setValue(QStringLiteral("GlideMix/quickLinks"), links);
+        emit loaded();
+    }
+}
+
+QList<int> MixHouseTrackListModel::resolveOrImportTrackIds(const QVariantList& rows)
+{
+    QList<int> ids;
+    QStringList toImport;
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+            continue;
+        }
+        const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+        if (!isExternalTrack(t)) {
+            ids.append(t.id);
+        } else if (const int known = libraryIdForFile(t.filePath); known >= 0) {
+            ids.append(known);
+        } else if (!t.filePath.isEmpty() && QFileInfo::exists(t.filePath)) {
+            toImport << t.filePath;
+        }
+    }
+    if (!toImport.isEmpty()) {
+        library()->addTracksFromFiles(toImport);
+        for (const QString& path : toImport) {
+            IMixHouseLibrary::TrackQuery query;
+            query.location = path;
+            query.limit = 1;
+            const MixHouseTrackList found = library()->tracks(query);
+            if (!found.empty()) {
+                ids.append(found.front().id);
+            }
+        }
+    }
+    return ids;
+}
+
+bool MixHouseTrackListModel::importRows(const QVariantList& rows)
+{
+    bool any = false;
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size()) && isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+            any = true;
+        }
+    }
+    if (!any) {
+        return false;
+    }
+    resolveOrImportTrackIds(rows);
+    load();
+    return true;
+}
+
+void MixHouseTrackListModel::setEmptyPlaceholder()
+{
+    if (m_emptyPlaceholder) {
+        return;
+    }
+    leaveExternal();
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = true;
+    m_query.filter.clear();   // see setPlaylist()'s own comment
+    load();
+}
+
+void MixHouseTrackListModel::setKeyFilters(const QStringList& requested)
+{
+    // Kept in Lancelot whatever the notation shown: the wheel's selection is
+    // Lancelot, and the external libraries match on it.
+    QStringList keys;
+    for (const QString& key : requested) {
+        const int keyId = keyIdFromText(key);
+        keys << (keyId > 0 ? IMixHouseKeyMatch::camelot(keyId) : key);
+    }
+    if (m_query.keyFilters == keys) {
+        return;
+    }
+    m_query.keyFilters = keys;
+    load();
+}
+
+static QVariantList toVariantList(const MixHouseNamedList& items)
+{
+    QVariantList out;
+    for (const MixHouseNamedItem& it : items) {
+        QVariantMap m;
+        m["id"] = it.id;
+        m["name"] = it.name;
+        m["count"] = it.count;
+        out.append(m);
+    }
+    return out;
+}
+
+namespace {
+QVariantMap node(const QString& id, const QString& name, int level,
+                 const QString& kind, int refId, int count, bool expandable,
+                 bool locked = false)
+{
+    QVariantMap m;
+    m["nodeId"] = id;
+    m["name"] = name;
+    m["level"] = level;
+    m["kind"] = kind;          // what clicking it should show
+    m["refId"] = refId;        // playlist/crate id, or -1
+    m["count"] = count;
+    m["expandable"] = expandable;
+    m["locked"] = locked;      // Playlists.locked / crates.locked -- see MixHouseNamedItem
+    return m;
+}
+
+/// Playlist folders/nesting -- see MixHouseNamedItem::parentId's own comment
+/// for why this is original work (real mixxx has no folder concept for its
+/// own Playlists table at all). Recursively renders `all`'s real parent_id
+/// tree, one level of the real hierarchy at a time -- only ever descending
+/// into a folder that's actually expanded, same lazy-render rule the
+/// Playlists/Crates/History container nodes above already use for their own
+/// (until now always flat) children. A folder's own displayed count is the
+/// number of real children it directly holds (its own PlaylistTracks count
+/// is always 0 -- nothing here ever adds a track straight to a folder row),
+/// which is what real rekordbox itself shows next to a folder too.
+//! A folder in Computer > Quick Links / Devices, and its subfolders when open.
+void appendFolderNode(QVariantList& out, const QString& path, const QString& name, int level, bool removable,
+                      const QStringList& expandedIds)
+{
+    if (path.isEmpty() || !QFileInfo(path).isDir()) {
+        return;
+    }
+    const QString id = QStringLiteral("dir:") + path;
+    const QFileInfoList subfolders = QDir(path).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable,
+                                                              QDir::Name | QDir::IgnoreCase);
+    QVariantMap n = node(id, name.isEmpty() ? path : name, level, QStringLiteral("folder-browse"), -1, 0,
+                         !subfolders.isEmpty());
+    n["path"] = path;
+    n["removable"] = removable;
+    out << n;
+    if (expandedIds.contains(id) && level < 12) {
+        for (const QFileInfo& sub : subfolders) {
+            if (!sub.fileName().startsWith(u'.') && !sub.isBundle()) {
+                appendFolderNode(out, sub.absoluteFilePath(), sub.fileName(), level + 1, false, expandedIds);
+            }
+        }
+    }
+}
+
+void appendPlaylistTree(QVariantList& out, const MixHouseNamedList& all, int parentId, int level,
+                        const QStringList& expandedIds)
+{
+    for (const MixHouseNamedItem& p : all) {
+        if (p.parentId != parentId) {
+            continue;
+        }
+        const QString nodeId = QStringLiteral("pl-") + QString::number(p.id);
+        int displayCount = p.count;
+        if (p.isFolder) {
+            displayCount = 0;
+            for (const MixHouseNamedItem& child : all) {
+                if (child.parentId == p.id) {
+                    ++displayCount;
+                }
+            }
+        }
+        // A folder never itself represents a track view -- "none" is the
+        // same inert kind the Playlists/Crates/History CONTAINER nodes
+        // below already use: expandable, but MixHouseLibraryPanel.qml's own
+        // click dispatch doesn't treat "none" as a real view switch, only
+        // ever as an expand/collapse toggle.
+        QVariantMap n = node(nodeId, p.name, level, p.isFolder ? QStringLiteral("none") : QStringLiteral("playlist"),
+                             p.id, displayCount, p.isFolder, p.locked);
+        n["parentId"] = p.parentId;   // where a drag-and-drop move puts its neighbours
+        out << n;
+        if (p.isFolder && expandedIds.contains(nodeId)) {
+            appendPlaylistTree(out, all, p.id, level + 1, expandedIds);
+        }
+    }
+}
+/// Another DJ app's folder/playlist tree under its sidebar node, the same
+/// lazy one-level-at-a-time rendering as appendPlaylistTree.
+void appendExternalTree(QVariantList& out, const std::vector<IMixHouseExternalLibrary::Node>& all,
+                        const QString& idPrefix, const QString& playlistKind, int parentId, int level,
+                        const QStringList& expandedIds)
+{
+    for (const IMixHouseExternalLibrary::Node& n : all) {
+        if (n.parentId != parentId) {
+            continue;
+        }
+        const QString nodeId = idPrefix + QString::number(n.id);
+        const bool folder = n.type == IMixHouseExternalLibrary::NodeType::Folder;
+        // Smart lists are the other app's own rule queries -- not evaluated here.
+        const QString kind = folder ? QStringLiteral("none")
+                             : n.type == IMixHouseExternalLibrary::NodeType::SmartList ? QStringLiteral("placeholder")
+                             : playlistKind;
+        out << node(nodeId, n.name, level, kind, n.id, n.trackCount, folder, true);
+        if (folder && expandedIds.contains(nodeId)) {
+            appendExternalTree(out, all, idPrefix, playlistKind, n.id, level + 1, expandedIds);
+        }
+    }
+}
+}  // namespace
+
+QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds) const
+{
+    // Mixxx's sidebar is a FIXED hierarchy of features. Listing the Playlists
+    // table directly is what produced 123 date-named rows at the top level --
+    // those are session logs (PLHT_SET_LOG), and they belong under History.
+    QVariantList out;
+    auto isOpen = [&](const QString& id) { return expandedIds.contains(id); };
+
+    // rename to match real rekordbox's own top-level naming
+    // ("Collection" there, with "All"/"All Tracks" as the actual clickable
+    // item under it -- see the real screenshots he sent). nodeId/kind stay
+    // "tracks"/"all" unchanged -- this only touches what's displayed.
+    out << node("tracks", QObject::tr("Music Collection"), 0, "all", -1, library()->trackCount(), true);
+    if (isOpen("tracks")) {
+        out << node("missing", QObject::tr("Missing Tracks"), 1, "missing", -1,
+                    library()->missingTrackCount(), false);
+        // GlideMix: no Hidden Tracks node. Nothing hides a track here
+        // (Remove from Library deletes it), so it was always empty.
+    }
+
+    // Auto DJ exposes its Crates child in the same way as Mixxx's sidebar.
+    // GlideMix: no Auto DJ and no Crates in the sidebar -- as in rekordbox,
+    // playlists and folders organise the collection.
+    const MixHouseNamedList pls = library()->playlists();
+    // Real Playlists count at the root header: top-level items only (real
+    // rekordbox's own Playlists root header counts the same way -- items
+    // nested inside a folder aren't "in" the root, they're in the folder),
+    // not every row in the whole table regardless of nesting depth.
+    int topLevelPlaylistCount = 0;
+    for (const MixHouseNamedItem& p : pls) {
+        if (p.parentId < 0) {
+            ++topLevelPlaylistCount;
+        }
+    }
+    out << node("playlists", QObject::tr("Playlists"), 0, "none", -1, topLevelPlaylistCount, true);
+    if (isOpen("playlists")) {
+        appendPlaylistTree(out, pls, -1, 1, expandedIds);
+    }
+
+    out << node("computer", QObject::tr("Computer"), 0, "placeholder", -1, 0, true);
+    if (isOpen("computer")) {
+        // GlideMix: real folders -- Quick Links (the usual ones plus the
+        // user's own, added with +) and Devices (the mounted drives); a
+        // click lists a folder's music without importing it.
+        out << node("computer-quick-links", QObject::tr("Quick Links"), 1, "none", -1, 0, true);
+        if (isOpen("computer-quick-links")) {
+            const QStringList standard = {
+                QStandardPaths::writableLocation(QStandardPaths::MusicLocation),
+                QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
+                QStandardPaths::writableLocation(QStandardPaths::DesktopLocation),
+                QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+            };
+            for (const QString& path : standard) {
+                appendFolderNode(out, path, QDir(path).dirName(), 2, false, expandedIds);
+            }
+            for (const QString& path : QSettings().value(QStringLiteral("GlideMix/quickLinks")).toStringList()) {
+                if (!standard.contains(path)) {
+                    appendFolderNode(out, path, QDir(path).dirName(), 2, true, expandedIds);
+                }
+            }
+        }
+        out << node("computer-devices", QObject::tr("Devices"), 1, "none", -1, 0, true);
+        if (isOpen("computer-devices")) {
+            for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
+                const QString root = volume.rootPath();
+                if (!volume.isValid() || !volume.isReady() || (root != u"/" && !root.startsWith(u"/Volumes/"))) {
+                    continue;   // system and snapshot mounts
+                }
+                appendFolderNode(out, root, volume.displayName(), 2, false, expandedIds);
+            }
+        }
+    }
+
+    out << node("recordings", QObject::tr("Recordings"), 0, "recordings-view", -1, 0, false);
+
+    const MixHouseNamedList hist = library()->historySessions();
+    out << node("history", QObject::tr("History"), 0, "history-view", -1,
+                static_cast<int>(hist.size()), true);
+    if (isOpen("history")) {
+        for (const MixHouseNamedItem& h : hist) {
+            out << node("h-" + QString::number(h.id), h.name, 1, "playlist", h.id, h.count, false);
+        }
+    }
+
+    out << node("analyze", QObject::tr("Analyze"), 0, "analyze-view", -1, 0, false);
+    // GlideMix: a rekordbox XML export and Lexicon DJ's own library --
+    // each one's tracks under the parent, its folders and playlists as
+    // children (read-only).
+    const bool rekordboxReady = rekordboxXml() && rekordboxXml()->available();
+    out << node("rekordbox", QObject::tr("Rekordbox XML"), 0, rekordboxReady ? "rekordbox-all" : "placeholder", -1,
+                rekordboxReady ? rekordboxXml()->trackCount() : 0, rekordboxReady);
+    if (rekordboxReady && isOpen("rekordbox")) {
+        appendExternalTree(out, rekordboxXml()->nodes(), QStringLiteral("rb-"), QStringLiteral("rekordbox-playlist"), -1, 1,
+                           expandedIds);
+    }
+    if (lexicon() && lexicon()->available()) {
+        out << node("lexicon", QObject::tr("Lexicon DJ"), 0, "lexicon-all", -1, lexicon()->trackCount(), true);
+        if (isOpen("lexicon")) {
+            appendExternalTree(out, lexicon()->nodes(), QStringLiteral("lx-"), QStringLiteral("lexicon-playlist"), -1, 1,
+                               expandedIds);
+        }
+    }
+    return out;
+}
+QStringList MixHouseTrackListModel::availableKeys() const { return library()->keys(); }
+
+bool MixHouseTrackListModel::openInGridEditor(int row) const
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size()) || !gridEditor()) {
+        return false;
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    if (isExternalTrack(t)) {
+        return false;   // Lexicon / rekordbox XML rows: edit their grids in that app
+    }
+    gridEditor()->openTrack(t.id);
+    return true;
+}
+
+bool MixHouseTrackListModel::loadTrackToProject(int row) const
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return false;
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    if (t.filePath.isEmpty()) {
+        LOGW() << "loadTrackToProject: no file path for track " << t.title;
+        return false;
+    }
+
+    const au::project::IAudacityProjectPtr project = globalContext()->currentProject();
+    if (!project) {
+        LOGW() << "loadTrackToProject: no open project to load " << t.title << " into";
+        return false;
+    }
+
+    const auto trackeditProject = project->trackeditProject();
+    const std::vector<trackedit::TrackId> tracksBeforeImport = trackeditProject
+        ? trackeditProject->trackIdList() : std::vector<trackedit::TrackId>();
+    // Same test Audacity's importer uses for "first file into an empty
+    // project" (Au3Importer::isProjectEmpty) -- decides whether this track
+    // sets the project tempo or gets stretched to it.
+    const bool projectWasEmpty = !trackeditProject || !trackeditProject->hasAudioContent().val;
+
+    //! The library knows this track's tempo and the aligner applies it below,
+    //! so the import's own detection -- a guess plus a dialog whose answer
+    //! would be overwritten -- is skipped.
+    const muse::Ret ret = project->import(muse::io::path_t(t.filePath.toStdString()), false, t.bpm <= 0.0);
+    if (!ret) {
+        LOGE() << "loadTrackToProject: import failed for " << t.filePath << ": " << ret.toString();
+        return false;
+    }
+    if (!isExternalTrack(t)) {
+        library()->markTrackPlayed(t.id);   // History
+    }
+
+    // The stock import UI ends with the imported lane selected/focused.  The
+    // MixHouse table calls IAudacityProject::import() directly, so that UI
+    // side effect does not happen and the effects panel can remain focused on
+    // an older lane.  Reproduce the same state transition here so an effect
+    // added immediately after loading is attached to the track the user just
+    // loaded (and remains visible there).
+    if (trackeditProject) {
+        const std::vector<trackedit::TrackId> tracksAfterImport = trackeditProject->trackIdList();
+        trackedit::TrackIdList importedTracks;
+        for (const trackedit::TrackId trackId : tracksAfterImport) {
+            if (std::find(tracksBeforeImport.begin(), tracksBeforeImport.end(), trackId)
+                == tracksBeforeImport.end()) {
+                importedTracks.push_back(trackId);
+            }
+        }
+        if (!importedTracks.empty() && !projectWasEmpty && trackAligner()) {
+            // GlideMix: a double-clicked song joins the end of the mix, its
+            // IN on the last song's OUT, the way a drop there would place it
+            // -- it used to land at 0:00 under everything else.
+            trackedit::ClipKeyList newClips;
+            double mixEnd = 0.0;
+            if (const auto prj = globalContext()->currentTrackeditProject()) {
+                for (const trackedit::TrackId id : tracksAfterImport) {
+                    const bool isNew = std::find(importedTracks.begin(), importedTracks.end(), id) != importedTracks.end();
+                    for (const trackedit::Clip& c : prj->clipList(id)) {
+                        if (isNew) {
+                            newClips.push_back(c.key);
+                        } else {
+                            mixEnd = std::max(mixEnd, c.endTime);
+                        }
+                    }
+                }
+                for (const trackedit::ClipKey& clip : newClips) {
+                    trackeditInteraction()->changeClipStartTime(clip, prj->clip(clip).startTime + mixEnd, true);
+                }
+            }
+            // The widest pull a drop has (64 bars): the new song's intro and
+            // the last song's outro both lie between the two anchors.
+            trackAligner()->alignDroppedFiles({ muse::io::path_t(t.filePath.toStdString()) }, { newClips }, false, 1e-6);
+            // Show it the way a drop does: scrolled to, not zoomed.
+            if (const auto prj = globalContext()->currentTrackeditProject(); prj && !newClips.empty()) {
+                const trackedit::Clip placed = prj->clip(newClips.front());
+                const double focusStart = placed.startTime;
+                trackAligner()->requestViewFocus(focusStart, placed.endTime, importedTracks.front());
+            }
+            selectionController()->setSelectedTracks(importedTracks, true);
+            selectionController()->setSelectedClips(newClips, true);
+            trackNavigationController()->setFocusedTrack(importedTracks.front(), false);
+            LOGI() << "loadTrackToProject: appended to the mix at " << mixEnd << " s: " << t.title;
+        } else if (!importedTracks.empty()) {
+            MixHouseAlignRequest align;
+            align.importedTracks = importedTracks;
+            align.bpm = t.bpm;
+            align.firstBeatSec = t.beats.firstBeatSec;
+            align.downbeatSec = t.downbeatSec;
+            align.downbeatConfidence = t.downbeatConfidence;
+            align.projectWasEmpty = projectWasEmpty;
+            align.lockToBars = !libraryConfiguration() || libraryConfiguration()->syncEnabled();
+            align.snapBars = 1;
+            const MixHouseAlignResult aligned = alignImportedTrackToBars(globalContext(), trackeditInteraction(), align);
+            if (!aligned.aligned) {
+                LOGI() << "loadTrackToProject: not aligned to bars (" << aligned.reason << "): " << t.title;
+            } else if (tempoMap() && !projectWasEmpty) {
+                tempoMap()->trackPlaced(aligned.stretchRatio);
+            }
+            selectionController()->setSelectedTracks(importedTracks, true);
+            // GlideMix: the new song alone is selected -- a clip left selected
+            // from before moved along with it on the next drag.
+            if (const auto prj = globalContext()->currentTrackeditProject()) {
+                trackedit::ClipKeyList clips;
+                for (const trackedit::TrackId id : importedTracks) {
+                    for (const trackedit::Clip& c : prj->clipList(id)) {
+                        clips.push_back(c.key);
+                    }
+                }
+                selectionController()->setSelectedClips(clips, true);
+            }
+            trackNavigationController()->setFocusedTrack(importedTracks.front(), false);
+            LOGI() << "loadTrackToProject: selected/focused imported track " << importedTracks.front();
+        } else {
+            LOGW() << "loadTrackToProject: import succeeded but no new track was found for " << t.filePath;
+        }
+    }
+    LOGI() << "loadTrackToProject: imported " << t.artist << " - " << t.title;
+    return true;
+}
+
+//! The physical left button right now, not Qt's queued view of it.
+static bool leftMouseButtonHeld()
+{
+#if defined(Q_OS_MACOS)
+    return CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft);
+#elif defined(Q_OS_WIN)
+    const int key = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+    return (GetAsyncKeyState(key) & 0x8000) != 0;
+#else
+    return true;
+#endif
+}
+
+void MixHouseTrackListModel::startExternalDrag(const QVariantList& rows)
+{
+    // Real mixxx: DragAndDropHelper::dragTrackLocations() (src/util/dnd.cpp)
+    // builds this same QList<QUrl> from getSelectedRows(), one
+    // QUrl::fromLocalFile() per real track_locations.location -- then hands
+    // it to dragUrls(), which is exactly the QMimeData::setUrls() +
+    // QDrag::exec(Qt::CopyAction) below. There's no separate "this is an
+    // internal drag" MIME type on either side: Qt tells drop targets
+    // in-app apart from external ones via QDropEvent::source() (null when
+    // the drag came from another application), not via anything this
+    // method needs to set up.
+    QList<QUrl> urls;
+    QStringList titles;
+    QStringList missing;
+    urls.reserve(rows.size());
+    titles.reserve(rows.size());
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+            continue;
+        }
+        const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+        // Never drag out a row with no real file (a Missing Tracks entry,
+        // or -- in principle -- a stale index from a reload mid-drag).
+        if (t.filePath.isEmpty()) {
+            continue;
+        }
+        // GlideMix: a file moved or deleted since it was added. Dropped on the
+        // timeline it used to fail without a word.
+        if (!QFileInfo::exists(t.filePath)) {
+            missing << (t.artist.isEmpty() ? t.title : (t.artist + QStringLiteral(" - ") + t.title));
+            continue;
+        }
+        urls.append(QUrl::fromLocalFile(t.filePath));
+        titles.append(t.artist.isEmpty() ? t.title : (t.artist + QStringLiteral(" - ") + t.title));
+    }
+    if (!missing.isEmpty()) {
+        library()->verifyTrackLocations();   // they now show under Missing Tracks
+        interactive()->warning(muse::trc("mixhouse", "Track file not found"),
+                               muse::qtrc("mixhouse", "The file of %1 is no longer where the library last found it "
+                                                      "(moved, renamed or deleted). It is listed under Missing Tracks.")
+                               .arg(missing.join(QStringLiteral(", "))).toStdString());
+    }
+    if (urls.isEmpty()) {
+        return;
+    }
+
+    QMimeData* mimeData = new QMimeData();
+    mimeData->setUrls(urls);
+    // Real mixxx's own sourceIdentifier (dragUrls()'s 3rd argument) --
+    // "library" here, a deck group name (e.g. "[Channel1]") when the drag
+    // instead starts from a deck's waveform. Nothing in this port reads it
+    // back yet (no in-app drop targets exist), but setting it now keeps
+    // this call a faithful match to the real one, and costs nothing.
+    mimeData->setText(QStringLiteral("library"));
+
+    // QDrag(this): `this` only matters for QDropEvent::source() checks an
+    // in-app drop target could make later (real mixxx passes its own
+    // WTrackTableView* the same way) -- irrelevant to a drop in Finder or
+    // another application, which is the case this method exists for.
+    QDrag* drag = new QDrag(this);
+    drag->setMimeData(mimeData);
+    drag->setPixmap(dragPixmap(titles));
+    // Blocking, like real mixxx's own call: QDrag::exec() runs its own
+    // event loop until the drag is dropped or cancelled. Qt hands mouse
+    // tracking to the OS's native drag session for the duration, so this
+    // does not re-enter QML's own mouse handling.
+    // GlideMix: only while the button is really still held. When GlideMix was
+    // busy (the previous song importing), the drag could start after the user
+    // had let go: the OS drag then waited for a release that had already
+    // happened, and the song stuck to the mouse until the next click.
+    if (leftMouseButtonHeld()) {
+        drag->exec(Qt::CopyAction);
+    } else {
+        // The real release already reached the row (Qt handled it before
+        // this deferred call), so there is no grab left to release.
+        delete drag;
+        LOGI() << "Library drag not started: the mouse button was already released";
+        return;
+    }
+
+    // GlideMix: the OS drag swallowed the mouse release, so the row that
+    // started the drag still holds the mouse grab. The next press then ended
+    // up finishing a stale drag instead of starting a new one: every other
+    // song dragged from the library was lost ("track 6 is not created",
+    // Chris, Mac). Hand the window the release it missed.
+    if (QWindow* window = QGuiApplication::topLevelAt(QCursor::pos()) ? QGuiApplication::topLevelAt(QCursor::pos())
+                                                                        : QGuiApplication::focusWindow()) {
+        const QPointF local = window->mapFromGlobal(QCursor::pos());
+        QMouseEvent release(QEvent::MouseButtonRelease, local, local, QCursor::pos(), Qt::LeftButton,
+                            Qt::NoButton, QGuiApplication::keyboardModifiers());
+        QCoreApplication::sendEvent(window, &release);
+    }
+}
+
+QString MixHouseTrackListModel::musicFolder() const
+{
+    const QString music = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
+    return QDir(music).exists() ? music : QDir::homePath();
+}
+
+QPixmap MixHouseTrackListModel::dragPixmap(const QStringList& titles)
+{
+    const QString label = titles.size() == 1
+                           ? titles.first()
+                           : muse::qtrc("mixhouse", "%1 tracks").arg(titles.size());
+    const QFont font = QGuiApplication::font();
+    const QFontMetrics metrics(font);
+    const QString elided = metrics.elidedText(label, Qt::ElideRight, 240);
+    const QRect textRect = metrics.boundingRect(elided);
+
+    QPixmap pixmap(textRect.width() + 16, textRect.height() + 10);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(32, 32, 32, 230));
+    painter.drawRoundedRect(pixmap.rect(), 4, 4);
+    painter.setFont(font);
+    painter.setPen(Qt::white);
+    painter.drawText(pixmap.rect(), Qt::AlignCenter, elided);
+    painter.end();
+
+    return pixmap;
+}
+
+int MixHouseTrackListModel::libraryRowHeight() const { return libraryConfiguration()->libraryRowHeight(); }
+bool MixHouseTrackListModel::greyOutPlayedTracks() const { return libraryConfiguration()->greyOutPlayedTracks(); }
+int MixHouseTrackListModel::searchDebounceMs() const { return libraryConfiguration()->searchDebounceMs(); }
+QString MixHouseTrackListModel::libraryFontFamily() const { return libraryConfiguration()->libraryFontFamily(); }
+int MixHouseTrackListModel::libraryFontPointSize() const { return libraryConfiguration()->libraryFontPointSize(); }
+int MixHouseTrackListModel::bpmPrecision() const { return libraryConfiguration()->bpmPrecision(); }
+int MixHouseTrackListModel::keyNotation() const { return static_cast<int>(libraryConfiguration()->keyNotation()); }
+int MixHouseTrackListModel::waveformOverviewType() const
+{
+    return static_cast<int>(libraryConfiguration()->waveformOverviewType());
+}
+bool MixHouseTrackListModel::showWaveformMinuteMarkers() const
+{
+    return libraryConfiguration()->showWaveformMinuteMarkers();
+}
+
+void MixHouseTrackListModel::handleTrackDoubleClicked(int row)
+{
+    switch (libraryConfiguration()->trackDoubleClickAction()) {
+    case MixHouseTrackDoubleClickAction::LoadToProject:
+        loadTrackToProject(row);
+        break;
+    case MixHouseTrackDoubleClickAction::AddToAutoDjBottom:
+        addTrackToAutoDj(row, AutoDjBottom);
+        break;
+    case MixHouseTrackDoubleClickAction::AddToAutoDjTop:
+        addTrackToAutoDj(row, AutoDjTop);
+        break;
+    case MixHouseTrackDoubleClickAction::Ignore:
+        break;
+    }
+}
+
+QVariantList MixHouseTrackListModel::playlistsForMenu() const { return toVariantList(library()->playlists()); }
+QVariantList MixHouseTrackListModel::cratesForMenu() const { return toVariantList(library()->crates()); }
+
+bool MixHouseTrackListModel::addTrackToPlaylist(int row, int playlistId)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->addTrackToPlaylist(m_tracks[static_cast<size_t>(row)].id, playlistId);
+    if (ok) {
+        load();   // sidebar counts and the current view may both depend on this
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::addTrackToCrate(int row, int crateId)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->addTrackToCrate(m_tracks[static_cast<size_t>(row)].id, crateId);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackColor(int row, int color)
+{
+    return setTracksColor(QVariantList { row }, color);
+}
+
+bool MixHouseTrackListModel::setTrackHidden(int row, bool hidden)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackHidden(m_tracks[static_cast<size_t>(row)].id, hidden);
+    if (ok) {
+        load();   // hiding must remove the row from the current (Tracks) view now
+    }
+    return ok;
+}
+
+int MixHouseTrackListModel::createPlaylistWithTrack(const QString& name, int row, int parentId)
+{
+    const int playlistId = library()->createPlaylist(name, parentId);
+    if (playlistId >= 0) {
+        // row < 0 is the real, expected case when creating from the sidebar
+        // (Playlists right-click), not just a from-a-track shortcut -- still
+        // needs a reload so the new playlist actually shows up there.
+        if (row >= 0) {
+            addTrackToPlaylist(row, playlistId);   // also calls load()
+        } else {
+            load();
+        }
+    }
+    return playlistId;
+}
+
+int MixHouseTrackListModel::createPlaylistFolder(const QString& name, int parentId)
+{
+    // See MixHouseNamedItem::parentId's own comment for why this whole
+    // feature is original work, not a port.
+    const int folderId = library()->createPlaylistFolder(name, parentId);
+    if (folderId >= 0) {
+        load();
+    }
+    return folderId;
+}
+
+bool MixHouseTrackListModel::movePlaylistToFolder(int playlistId, int newParentId)
+{
+    return library()->movePlaylistToFolder(playlistId, newParentId);
+}
+
+bool MixHouseTrackListModel::movePlaylist(int playlistId, int parentId, int beforeId)
+{
+    return library() && library()->movePlaylist(playlistId, parentId, beforeId);
+}
+
+bool MixHouseTrackListModel::movePlaylistOrder(int playlistId, bool moveUp)
+{
+    return library()->movePlaylistOrder(playlistId, moveUp);
+}
+
+int MixHouseTrackListModel::createCrateWithTrack(const QString& name, int row)
+{
+    const int crateId = library()->createCrate(name);
+    if (crateId >= 0) {
+        if (row >= 0) {
+            addTrackToCrate(row, crateId);   // also calls load()
+        } else {
+            load();
+        }
+    }
+    return crateId;
+}
+
+bool MixHouseTrackListModel::renamePlaylist(int playlistId, const QString& name)
+{
+    const bool ok = library()->renamePlaylist(playlistId, name);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::renameCrate(int crateId, const QString& name)
+{
+    const bool ok = library()->renameCrate(crateId, name);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setPlaylistLocked(int playlistId, bool locked)
+{
+    const bool ok = library()->setPlaylistLocked(playlistId, locked);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setCrateLocked(int crateId, bool locked)
+{
+    const bool ok = library()->setCrateLocked(crateId, locked);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+void MixHouseTrackListModel::deletePlaylistWithConfirm(int playlistId, const QString& name, bool isFolder)
+{
+    // testing caught this directly testing folders: the dialog said "Delete
+    // playlist ..." even when the real target was a folder. Wording only --
+    // the delete itself already cascades correctly either way (a plain
+    // playlist's own "subtree" is just itself).
+    const std::string title = isFolder
+        ? muse::qtrc("mixhouse", "Delete folder “%1”?").arg(name).toStdString()
+        : muse::qtrc("mixhouse", "Delete playlist “%1”?").arg(name).toStdString();
+    const std::string question = isFolder
+        ? muse::trc("mixhouse",
+              "The folder and everything inside it (playlists and sub-folders) will be removed. "
+              "Tracks are not deleted from the library.")
+        : muse::trc("mixhouse",
+              "The playlist will be removed. Tracks in it are not deleted from the library.");
+    const int deleteBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(title, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(deleteBtn, muse::trc("mixhouse", "Delete"), true) },
+        deleteBtn);
+    promise.onResolve(this, [this, playlistId](const muse::IInteractive::Result& res) {
+        if (!res.isButton(muse::IInteractive::Button::Cancel) && library()->deletePlaylist(playlistId)) {
+            // Real bug we hit directly: deleting the playlist currently
+            // being VIEWED left m_query.playlistId pointing at an id that no
+            // longer exists anywhere -- tracks()'s own JOIN against
+            // PlaylistTracks then correctly (if unhelpfully) matches
+            // nothing, so the table silently stayed empty forever
+            // afterward, for every column/sort, while the header still
+            // showed the real GLOBAL track count (a different, unrelated
+            // query) -- looking exactly like a real crash even though nothing
+            // actually failed. setPlaylist(-1) is the same reset every other
+            // "leave a collection view" path already uses.
+            if (m_query.playlistId == playlistId) {
+                setPlaylist(-1);
+            } else {
+                load();
+            }
+        }
+    });
+}
+
+void MixHouseTrackListModel::deleteCrateWithConfirm(int crateId, const QString& name)
+{
+    const std::string title = muse::qtrc("mixhouse", "Delete crate “%1”?").arg(name).toStdString();
+    const std::string question = muse::trc("mixhouse",
+        "The crate will be removed. Tracks in it are not deleted from the library.");
+    const int deleteBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(title, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(deleteBtn, muse::trc("mixhouse", "Delete"), true) },
+        deleteBtn);
+    promise.onResolve(this, [this, crateId](const muse::IInteractive::Result& res) {
+        if (!res.isButton(muse::IInteractive::Button::Cancel) && library()->deleteCrate(crateId)) {
+            // Same real bug/fix as deletePlaylistWithConfirm's own comment,
+            // for the crate-scoped view.
+            if (m_query.crateId == crateId) {
+                setPlaylist(-1);
+            } else {
+                load();
+            }
+        }
+    });
+}
+
+void MixHouseTrackListModel::deletePlaylistsWithConfirm(const QVariantList& playlistIds)
+{
+    QList<int> ids;
+    ids.reserve(playlistIds.size());
+    for (const QVariant& v : playlistIds) {
+        ids.append(v.toInt());
+    }
+    if (ids.isEmpty()) {
+        return;
+    }
+    const int count = static_cast<int>(ids.size());
+
+    const std::string title = muse::qtrc("mixhouse", "Delete %1 playlists?").arg(count).toStdString();
+    const std::string question = muse::trc("mixhouse",
+        "The playlists will be removed. Tracks in them are not deleted from the library.");
+    const int deleteBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(title, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(deleteBtn, muse::trc("mixhouse", "Delete"), true) },
+        deleteBtn);
+    promise.onResolve(this, [this, ids](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        bool any = false;
+        for (int id : ids) {
+            if (library()->deletePlaylist(id)) {
+                any = true;
+            }
+        }
+        if (any) {
+            // Same real bug/fix as deletePlaylistWithConfirm's own comment
+            // -- a batch delete that happens to include whichever playlist
+            // is currently being viewed hits it exactly the same way.
+            if (ids.contains(m_query.playlistId)) {
+                setPlaylist(-1);
+            } else {
+                load();
+            }
+        }
+    });
+}
+
+void MixHouseTrackListModel::deleteCratesWithConfirm(const QVariantList& crateIds)
+{
+    QList<int> ids;
+    ids.reserve(crateIds.size());
+    for (const QVariant& v : crateIds) {
+        ids.append(v.toInt());
+    }
+    if (ids.isEmpty()) {
+        return;
+    }
+    const int count = static_cast<int>(ids.size());
+
+    const std::string title = muse::qtrc("mixhouse", "Delete %1 crates?").arg(count).toStdString();
+    const std::string question = muse::trc("mixhouse",
+        "The crates will be removed. Tracks in them are not deleted from the library.");
+    const int deleteBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(title, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(deleteBtn, muse::trc("mixhouse", "Delete"), true) },
+        deleteBtn);
+    promise.onResolve(this, [this, ids](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        bool any = false;
+        for (int id : ids) {
+            if (library()->deleteCrate(id)) {
+                any = true;
+            }
+        }
+        if (any) {
+            // Same real bug/fix as deleteCrateWithConfirm's own comment.
+            if (ids.contains(m_query.crateId)) {
+                setPlaylist(-1);
+            } else {
+                load();
+            }
+        }
+    });
+}
+
+void MixHouseTrackListModel::revealInFileBrowser(const QString& filePath) const
+{
+    if (filePath.isEmpty()) {
+        return;
+    }
+    // `open -R` reveals AND selects the file in Finder -- the real "show me
+    // where this lives" gesture. Qt.openUrlExternally("file://" + path) on a
+    // FILE (not a directory) instead launches its default player, which is
+    // not the same thing at all.
+#ifdef Q_OS_WIN
+    // Explorer's equivalent: "/select," then the native path as its own
+    // argument (QProcess quotes it when it has spaces; Explorer accepts that).
+    QProcess::startDetached(QStringLiteral("explorer.exe"), { QStringLiteral("/select,"), QDir::toNativeSeparators(filePath) });
+#else
+    QProcess::startDetached(QStringLiteral("/usr/bin/open"), { QStringLiteral("-R"), filePath });
+#endif
+}
+
+bool MixHouseTrackListModel::addTrackToAutoDj(int row, int loc)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    MixHouseAutoDjLoc realLoc = MixHouseAutoDjLoc::Bottom;
+    switch (static_cast<AutoDjLoc>(loc)) {
+    case AutoDjTop:     realLoc = MixHouseAutoDjLoc::Top;     break;
+    case AutoDjBottom:  realLoc = MixHouseAutoDjLoc::Bottom;  break;
+    case AutoDjReplace: realLoc = MixHouseAutoDjLoc::Replace; break;
+    }
+    const bool ok = library()->addTrackToAutoDj(m_tracks[static_cast<size_t>(row)].id, realLoc);
+    if (ok) {
+        load();   // the Auto DJ sidebar row's count depends on this
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackRating(int row, int rating)
+{
+    return setTracksRating(QVariantList { row }, rating);
+}
+
+bool MixHouseTrackListModel::setTrackComment(int row, const QString& text)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackComment(m_tracks[static_cast<size_t>(row)].id, text);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackGrouping(int row, const QString& text)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackGrouping(m_tracks[static_cast<size_t>(row)].id, text);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackComposer(int row, const QString& text)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackComposer(m_tracks[static_cast<size_t>(row)].id, text);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackAlbumArtist(int row, const QString& text)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackAlbumArtist(m_tracks[static_cast<size_t>(row)].id, text);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackNumber(int row, const QString& text)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackNumber(m_tracks[static_cast<size_t>(row)].id, text);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::scaleTrackBpm(int row, double factor)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->scaleTrackBpm(m_tracks[static_cast<size_t>(row)].id, factor);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::setTrackBpmLocked(int row, bool locked)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    const bool ok = library()->setTrackBpmLocked(m_tracks[static_cast<size_t>(row)].id, locked);
+    if (ok) {
+        load();   // the Adjust BPM submenu itself depends on the new lock state
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::clearTrackField(int row, int field)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return false;
+    }
+    MixHouseClearField realField;
+    switch (static_cast<ClearField>(field)) {
+    case ClearBeats:       realField = MixHouseClearField::Beats;      break;
+    case ClearPlayCount:   realField = MixHouseClearField::PlayCount;  break;
+    case ClearRatingField: realField = MixHouseClearField::Rating;     break;
+    case ClearComment:     realField = MixHouseClearField::Comment;    break;
+    case ClearMainCue:     realField = MixHouseClearField::MainCue;    break;
+    case ClearHotCues:     realField = MixHouseClearField::HotCues;    break;
+    case ClearIntroCue:    realField = MixHouseClearField::IntroCue;   break;
+    case ClearOutroCue:    realField = MixHouseClearField::OutroCue;   break;
+    case ClearLoops:       realField = MixHouseClearField::Loops;      break;
+    case ClearKey:         realField = MixHouseClearField::Key;        break;
+    case ClearReplayGain:  realField = MixHouseClearField::ReplayGain; break;
+    case ClearWaveform:    realField = MixHouseClearField::Waveform;   break;
+    case ClearAll: default: realField = MixHouseClearField::All;      break;
+    }
+    const int trackId = m_tracks[static_cast<size_t>(row)].id;
+    const bool ok = library()->clearTrackField(trackId, realField);
+    if (ok && (realField == MixHouseClearField::Waveform || realField == MixHouseClearField::All)) {
+        // The decoded overview is cached by track id for the process's
+        // lifetime -- without this the cleared waveform kept drawing.
+        m_overviewCache.remove(trackId);
+    }
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::addTracksToPlaylist(const QVariantList& rows, int playlistId)
+{
+    const QList<int> ids = resolveOrImportTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->addTrackToPlaylist(id, playlistId)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::addTracksToCrate(const QVariantList& rows, int crateId)
+{
+    const QList<int> ids = resolveOrImportTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->addTrackToCrate(id, crateId)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::setTracksColor(const QVariantList& rows, int color)
+{
+    // Lexicon / rekordbox songs: stored on the same file in the Music Collection.
+    const QList<int> ids = resolveOrImportTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->setTrackColor(id, color)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::addTracksToAutoDj(const QVariantList& rows, int loc)
+{
+    MixHouseAutoDjLoc realLoc = MixHouseAutoDjLoc::Bottom;
+    switch (static_cast<AutoDjLoc>(loc)) {
+    case AutoDjTop:     realLoc = MixHouseAutoDjLoc::Top;     break;
+    case AutoDjBottom:  realLoc = MixHouseAutoDjLoc::Bottom;  break;
+    case AutoDjReplace: realLoc = MixHouseAutoDjLoc::Replace; break;
+    }
+    const QList<int> ids = resolveTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->addTrackToAutoDj(id, realLoc)) {
+            any = true;
+        }
+        // Replace only makes sense once -- every id after the first would
+        // otherwise wipe the queue again and leave only the LAST track in
+        // it. Real mixxx's own AddToAutoDJTrackPointerOperation only clears
+        // once for the whole batch the same way (wtrackmenu.cpp:2818-2857).
+        if (realLoc == MixHouseAutoDjLoc::Replace) {
+            realLoc = MixHouseAutoDjLoc::Bottom;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+void MixHouseTrackListModel::addTracksToAutoDjReplaceWithConfirm(const QVariantList& rows)
+{
+    // Resolve ids now, before the dialog -- same rule as every other
+    // confirm-dialog action here.
+    const QList<int> ids = resolveTrackIds(rows);
+    if (ids.isEmpty()) {
+        return;
+    }
+    const std::string dlgTitle = muse::trc("mixhouse", "Replace Auto DJ Queue?");
+    const std::string question = muse::qtrc("mixhouse",
+        "This replaces everything currently in the Auto DJ queue with %1 track(s). "
+        "The current queue cannot be recovered afterward.")
+        .arg(ids.size()).toStdString();
+    const int replaceBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(replaceBtn, muse::trc("mixhouse", "Replace"), true) },
+        replaceBtn);
+    promise.onResolve(this, [this, ids](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        MixHouseAutoDjLoc loc = MixHouseAutoDjLoc::Replace;
+        bool any = false;
+        for (int id : ids) {
+            if (library()->addTrackToAutoDj(id, loc)) {
+                any = true;
+            }
+            loc = MixHouseAutoDjLoc::Bottom;   // see addTracksToAutoDj()'s own comment
+        }
+        if (any) {
+            load();
+        }
+    });
+}
+
+void MixHouseTrackListModel::applyTagFields(MixHouseTrack& t, const QVariantMap& f)
+{
+    auto take = [&f](const char* key, QString& field) {
+        const QString k = QString::fromLatin1(key);
+        if (f.contains(k)) {
+            field = f.value(k).toString();
+        }
+    };
+    take("title", t.title);
+    take("artist", t.artist);
+    take("album", t.album);
+    take("albumArtist", t.albumArtist);
+    take("genre", t.genre);
+    take("year", t.year);
+    take("trackNumber", t.trackNumber);
+    take("composer", t.composer);
+    take("grouping", t.grouping);
+    take("comment", t.comment);
+}
+
+QVariantMap MixHouseTrackListModel::tagsForRow(int row) const
+{
+    QVariantMap m;
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return m;
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    m[QStringLiteral("title")] = t.title;
+    m[QStringLiteral("artist")] = t.artist;
+    m[QStringLiteral("album")] = t.album;
+    m[QStringLiteral("albumArtist")] = t.albumArtist;
+    m[QStringLiteral("genre")] = t.genre;
+    m[QStringLiteral("year")] = t.year;
+    m[QStringLiteral("trackNumber")] = t.trackNumber;
+    m[QStringLiteral("composer")] = t.composer;
+    m[QStringLiteral("grouping")] = t.grouping;
+    m[QStringLiteral("comment")] = t.comment;
+    return m;
+}
+
+bool MixHouseTrackListModel::editTags(const QVariantList& rows, const QVariantMap& fields, bool writeFile)
+{
+    if (fields.isEmpty()) {
+        return false;
+    }
+    // Lexicon / rekordbox rows: the same file in the Music Collection, and the
+    // edit kept to lay over their rows (their databases stay read-only).
+    bool anyExternal = false;
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size()) && isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+            anyExternal = true;
+        }
+    }
+    const QList<int> ids = resolveOrImportTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->setTrackTags(id, fields, writeFile, anyExternal)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::setTracksRating(const QVariantList& rows, int rating)
+{
+    // Lexicon / rekordbox songs: stored on the same file in the Music Collection.
+    const QList<int> ids = resolveOrImportTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->setTrackRating(id, rating)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::scaleTracksBpm(const QVariantList& rows, double factor)
+{
+    const QList<int> ids = resolveTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        // Per-track: scaleTrackBpm() itself silently skips (returns false,
+        // no write) a BPM-locked track -- exactly real mixxx's own
+        // per-track behavior when scaling a mixed lock-state selection.
+        if (library()->scaleTrackBpm(id, factor)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::setTracksBpmLocked(const QVariantList& rows, bool locked)
+{
+    const QList<int> ids = resolveTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        if (library()->setTrackBpmLocked(id, locked)) {
+            any = true;
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::clearTracksField(const QVariantList& rows, int field)
+{
+    MixHouseClearField realField;
+    switch (static_cast<ClearField>(field)) {
+    case ClearBeats:       realField = MixHouseClearField::Beats;      break;
+    case ClearPlayCount:   realField = MixHouseClearField::PlayCount;  break;
+    case ClearRatingField: realField = MixHouseClearField::Rating;     break;
+    case ClearComment:     realField = MixHouseClearField::Comment;    break;
+    case ClearMainCue:     realField = MixHouseClearField::MainCue;    break;
+    case ClearHotCues:     realField = MixHouseClearField::HotCues;    break;
+    case ClearIntroCue:    realField = MixHouseClearField::IntroCue;   break;
+    case ClearOutroCue:    realField = MixHouseClearField::OutroCue;   break;
+    case ClearLoops:       realField = MixHouseClearField::Loops;      break;
+    case ClearKey:         realField = MixHouseClearField::Key;        break;
+    case ClearReplayGain:  realField = MixHouseClearField::ReplayGain; break;
+    case ClearWaveform:    realField = MixHouseClearField::Waveform;   break;
+    case ClearAll: default: realField = MixHouseClearField::All;      break;
+    }
+    const QList<int> ids = resolveTrackIds(rows);
+    bool any = false;
+    for (int id : ids) {
+        // Per-track: clearTrackField(Beats/All) itself silently skips a
+        // BPM-locked track now -- see that method's own comment.
+        if (library()->clearTrackField(id, realField)) {
+            any = true;
+            if (realField == MixHouseClearField::Waveform || realField == MixHouseClearField::All) {
+                m_overviewCache.remove(id);   // see clearTrackField(row, field)
+            }
+        }
+    }
+    if (any) {
+        load();
+    }
+    return any;
+}
+
+bool MixHouseTrackListModel::isAnyTrackBpmLocked(const QVariantList& rows) const
+{
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size())
+            && m_tracks[static_cast<size_t>(row)].bpmLocked) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MixHouseTrackListModel::purgeTrackWithConfirm(int row, const QString& title)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return;
+    }
+    const int trackId = m_tracks[static_cast<size_t>(row)].id;
+    const std::string dlgTitle = muse::qtrc("mixhouse", "Purge “%1” from library?").arg(title).toStdString();
+    const std::string question = muse::trc("mixhouse",
+        "The track's metadata, ratings, cues and analysis will be removed from the library "
+        "database. The audio file itself is not touched.");
+    const int purgeBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(purgeBtn, muse::trc("mixhouse", "Purge"), true) },
+        purgeBtn);
+    promise.onResolve(this, [this, trackId](const muse::IInteractive::Result& res) {
+        if (!res.isButton(muse::IInteractive::Button::Cancel) && library()->purgeTrack(trackId)) {
+            load();
+        }
+    });
+}
+
+void MixHouseTrackListModel::moveTrackFileToTrashWithConfirm(int row, const QString& title)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())
+        || isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        return;
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    const int trackId = t.id;
+    const QString filePath = t.filePath;
+    // Real mixxx (Qt >= 5.15): "Move these files to the trash bin?" -- the OS
+    // Trash, recoverable, not a permanent unlink.
+    const std::string dlgTitle = muse::trc("mixhouse", "Move Track File to Trash?");
+    const std::string question = muse::qtrc("mixhouse",
+        "“%1” will be moved to the Trash and purged from the library database.")
+        .arg(title).toStdString();
+    const int moveBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(moveBtn, muse::trc("mixhouse", "Move to Trash"), true) },
+        moveBtn);
+    promise.onResolve(this, [this, trackId, filePath](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        // Purge only follows a file that was actually moved -- matches real
+        // mixxx's RemoveTrackFilesFromDiskTrackPointerOperation, which only
+        // queues a track for purgeTracks() once its file is confirmed gone.
+        if (!filePath.isEmpty() && QFile::moveToTrash(filePath)) {
+            library()->purgeTrack(trackId);
+            load();
+        } else {
+            LOGW() << "moveTrackFileToTrashWithConfirm: QFile::moveToTrash failed for " << filePath;
+        }
+    });
+}
+
+int MixHouseTrackListModel::libraryIdForFile(const QString& filePath) const
+{
+    if (filePath.isEmpty() || !library()) {
+        return -1;
+    }
+    IMixHouseLibrary::TrackQuery query;
+    query.location = filePath;
+    query.limit = 1;
+    const MixHouseTrackList found = library()->tracks(query);
+    return found.empty() ? -1 : found.front().id;
+}
+
+void MixHouseTrackListModel::collectAnalysisTargets(const QVariantList& rows, QList<int>& ids,
+                                                    QStringList& externalFiles) const
+{
+    ids = resolveTrackIds(rows);
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size()) && isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+            externalFiles << m_tracks[static_cast<size_t>(row)].filePath;
+        }
+    }
+}
+
+QList<int> MixHouseTrackListModel::analysisTrackIds(QList<int> ids, const QStringList& externalFiles)
+{
+    QStringList toAdd;
+    for (const QString& file : externalFiles) {
+        if (libraryIdForFile(file) < 0) {
+            toAdd << file;
+        }
+    }
+    if (!toAdd.isEmpty()) {
+        library()->addTracksFromFiles(toAdd);
+    }
+    for (const QString& file : externalFiles) {
+        const int id = libraryIdForFile(file);
+        if (id >= 0 && !ids.contains(id)) {
+            ids << id;
+        }
+    }
+    return ids;
+}
+
+QList<int> MixHouseTrackListModel::resolveTrackIds(const QVariantList& rows) const
+{
+    QList<int> ids;
+    ids.reserve(rows.size());
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        // Lexicon tracks (negative ids) aren't in this library: no writes.
+        if (row >= 0 && row < static_cast<int>(m_tracks.size()) && !isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+            ids.append(m_tracks[static_cast<size_t>(row)].id);
+        }
+    }
+    return ids;
+}
+
+/// Resolves to the real PlaylistTracks.position of each row -- see
+/// removeTracksFromPlaylist()'s own comment for why position, not track id,
+/// is the only way to remove ONE occurrence of a duplicated track. Only
+/// meaningful when currently viewing a playlist (m_tracks[row].
+/// playlistPosition is -1 otherwise, and silently skipped).
+QList<int> MixHouseTrackListModel::resolvePlaylistPositions(const QVariantList& rows) const
+{
+    QList<int> positions;
+    positions.reserve(rows.size());
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size())) {
+            const int pos = m_tracks[static_cast<size_t>(row)].playlistPosition;
+            if (pos >= 0) {
+                positions.append(pos);
+            }
+        }
+    }
+    return positions;
+}
+
+bool MixHouseTrackListModel::removeTracksFromCurrentCollection(const QVariantList& rows)
+{
+    if (m_query.crateId >= 0) {
+        // crate_tracks has no position/duplicates -- track id is enough.
+        const QList<int> trackIds = resolveTrackIds(rows);
+        if (trackIds.isEmpty()) {
+            return false;
+        }
+        const bool ok = library()->removeTracksFromCrate(m_query.crateId, trackIds);
+        if (ok) {
+            load();
+        }
+        return ok;
+    }
+    if (m_query.playlistId < 0) {
+        return false;   // not viewing a playlist/crate -- nothing to remove from
+    }
+    const QList<int> positions = resolvePlaylistPositions(rows);
+    if (positions.isEmpty()) {
+        return false;
+    }
+    const bool ok = library()->removeTracksFromPlaylist(m_query.playlistId, positions);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+bool MixHouseTrackListModel::removeAllMatchingFromCurrentCollection()
+{
+    // No page cap here (unlike resolveTrackIds/resolvePlaylistPositions,
+    // which only ever see the loaded m_tracks) -- matchingTracks() re-runs
+    // the current view's own filter/join against the database directly.
+    const IMixHouseLibrary::MatchingTracks matching = library()->matchingTracks(m_query);
+    if (m_query.crateId >= 0) {
+        if (matching.ids.isEmpty()) {
+            return false;
+        }
+        const bool ok = library()->removeTracksFromCrate(m_query.crateId, matching.ids);
+        if (ok) {
+            load();
+        }
+        return ok;
+    }
+    if (m_query.playlistId < 0) {
+        return false;
+    }
+    if (matching.playlistPositions.isEmpty()) {
+        return false;
+    }
+    const bool ok = library()->removeTracksFromPlaylist(m_query.playlistId, matching.playlistPositions);
+    if (ok) {
+        load();
+    }
+    return ok;
+}
+
+void MixHouseTrackListModel::removeAllMatchingFromLibraryWithConfirm()
+{
+    // See this method's own header comment for the real bug this exists to
+    // fix. Resolved directly from the database via the current query, NOT
+    // from m_tracks/rows -- so this is correct regardless of how many
+    // matches there are, whether that's 3 or 33,688.
+    const QList<int> trackIds = library()->matchingTracks(m_query).ids;
+    if (trackIds.isEmpty()) {
+        return;
+    }
+    const int count = static_cast<int>(trackIds.size());
+
+    const std::string dlgTitle = muse::trc("mixhouse", "Remove from Library?");
+    const std::string question = muse::qtrc("mixhouse",
+        "%1 track(s) will be removed from the library for good (playlists, crates, cues and "
+        "analysis data go with them). The audio files themselves are not touched.")
+        .arg(count).toStdString();
+    const int removeBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(removeBtn, muse::trc("mixhouse", "Remove"), true) },
+        removeBtn);
+    promise.onResolve(this, [this, trackIds](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        library()->purgeTracks(trackIds);
+        load();
+    });
+}
+
+void MixHouseTrackListModel::removeTracksFromLibraryWithConfirm(const QVariantList& rows)
+{
+    // Resolve ids now, before the dialog -- a reload while it's open must not
+    // renumber rows out from under this list (same rule as every other
+    // confirm-dialog action here). This purges for real (see the header doc
+    // comment for why it no longer soft-hides) so, unlike the old Hide it
+    // replaces, it needs a real confirmation.
+    const QList<int> trackIds = resolveTrackIds(rows);
+    if (trackIds.isEmpty()) {
+        return;
+    }
+    const int count = static_cast<int>(trackIds.size());
+
+    const std::string dlgTitle = muse::trc("mixhouse", "Remove from Library?");
+    const std::string question = muse::qtrc("mixhouse",
+        "%1 track(s) will be removed from the library for good (playlists, crates, cues and "
+        "analysis data go with them). The audio files themselves are not touched.")
+        .arg(count).toStdString();
+    const int removeBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(removeBtn, muse::trc("mixhouse", "Remove"), true) },
+        removeBtn);
+    promise.onResolve(this, [this, trackIds](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        library()->purgeTracks(trackIds);
+        load();
+    });
+}
+
+void MixHouseTrackListModel::removeFromCollectionAndLibraryWithConfirm(const QVariantList& rows)
+{
+    // Resolve ids AND snapshot which playlist this was about now, before any
+    // dialog -- a reload while the dialog is open must not change which
+    // collection this action was asked to remove from.
+    const QList<int> trackIds = resolveTrackIds(rows);
+    if (trackIds.isEmpty()) {
+        return;
+    }
+    const int playlistId = m_query.playlistId;
+    const int count = static_cast<int>(trackIds.size());
+
+    const std::string dlgTitle = muse::trc("mixhouse", "Remove from Collection and Library?");
+    const std::string question = playlistId >= 0
+        ? muse::qtrc("mixhouse",
+              "%1 track(s) will be removed from this playlist and removed from the library for "
+              "good. The audio files themselves are not touched.").arg(count).toStdString()
+        : muse::qtrc("mixhouse",
+              "%1 track(s) will be removed from the library for good. The audio files themselves "
+              "are not touched.").arg(count).toStdString();
+    const int removeBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(removeBtn, muse::trc("mixhouse", "Remove"), true) },
+        removeBtn);
+    promise.onResolve(this, [this, trackIds, playlistId](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        if (playlistId >= 0) {
+            library()->removeTracksFromPlaylist(playlistId, trackIds);
+        }
+        library()->purgeTracks(trackIds);
+        load();
+    });
+}
+
+void MixHouseTrackListModel::moveTracksToTrashWithConfirm(const QVariantList& rows)
+{
+    // Snapshot id+filePath pairs now, before the dialog -- a reload while
+    // it's open must not renumber rows out from under this list (same rule
+    // as moveTrackFileToTrashWithConfirm's single-track version above).
+    QList<int> trackIds;
+    QStringList filePaths;
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size())) {
+            const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+            trackIds.append(t.id);
+            filePaths.append(t.filePath);
+        }
+    }
+    if (trackIds.isEmpty()) {
+        return;
+    }
+    const int count = static_cast<int>(trackIds.size());
+
+    // Real mixxx (Qt >= 5.15): "Move these files to the trash bin?" -- the
+    // OS Trash, recoverable, not a permanent unlink.
+    const std::string dlgTitle = muse::trc("mixhouse", "Delete Track File(s) from Disk?");
+    const std::string question = muse::qtrc("mixhouse",
+        "%1 track file(s) will be moved to the Trash and purged from the library database.")
+        .arg(count).toStdString();
+    const int moveBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(moveBtn, muse::trc("mixhouse", "Delete from Disk"), true) },
+        moveBtn);
+    promise.onResolve(this, [this, trackIds, filePaths](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        // Purge only follows files actually moved -- matches real mixxx's
+        // RemoveTrackFilesFromDiskTrackPointerOperation, which only queues a
+        // track for purgeTracks() once its file is confirmed gone.
+        QList<int> purgeIds;
+        for (int i = 0; i < trackIds.size(); ++i) {
+            if (!filePaths[i].isEmpty() && QFile::moveToTrash(filePaths[i])) {
+                purgeIds.append(trackIds[i]);
+            } else {
+                LOGW() << "moveTracksToTrashWithConfirm: QFile::moveToTrash failed for " << filePaths[i];
+            }
+        }
+        if (!purgeIds.isEmpty()) {
+            library()->purgeTracks(purgeIds);
+            load();
+        }
+    });
+}
+
+void MixHouseTrackListModel::analyzeTrackWithConfirm(int row, const QString& title)
+{
+    if (row >= 0 && row < static_cast<int>(m_tracks.size()) && isExternalTrack(m_tracks[static_cast<size_t>(row)])) {
+        analyzeTracksWithConfirm({ row });
+        return;
+    }
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return;
+    }
+    const int trackId = m_tracks[static_cast<size_t>(row)].id;
+
+    const std::string dlgTitle = muse::qtrc("mixhouse", "Analyze “%1”?").arg(title).toStdString();
+    const std::string question = muse::trc("mixhouse",
+        "Detects this track's BPM and beatgrid (Queen Mary DSP), "
+        "musical key (OpenKeyScan) and waveform from its audio. Existing values will be "
+        "overwritten.");
+    const int analyzeBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(analyzeBtn, muse::trc("mixhouse", "Analyze"), true) },
+        analyzeBtn);
+    promise.onResolve(this, [this, trackId](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        // Overview cache keyed by id would otherwise still show a
+        // now-stale-key/bpm-inconsistent row until a real reload -- clear it
+        // for this track so a later Overview repaint re-reads whatever the
+        // next analysis actually produces (bpm/key here, not the waveform
+        // itself, but keeping this one cache invalidation rule in one place
+        // avoids a second, easy-to-forget copy of the same "clear on
+        // reanalyze" logic once that's wired too).
+        m_overviewCache.remove(trackId);
+
+        const MixHouseAnalyzeResult result = library()->analyzeTrack(trackId);
+        if (!result.valid) {
+            interactive()->error(muse::trc("mixhouse", "Analysis failed"), result.error.toStdString());
+            return;
+        }
+        load();
+        const QString keyText = result.key.isEmpty() ? QStringLiteral("—") : result.key;
+        std::string text;
+        if (result.bpmSkippedLocked) {
+            // Real mixxx's analyzer refuses to touch bpm/beats on a locked
+            // track at all -- key is still real/updated, bpm/beatgrid is
+            // exactly what it was before.
+            text = muse::qtrc("mixhouse", "BPM is locked, left unchanged. Key: %1")
+                       .arg(keyText).toStdString();
+        } else if (result.bpm > 0.0) {
+            text = muse::qtrc("mixhouse", "BPM: %1, Key: %2")
+                       .arg(QString::number(result.bpm, 'f', 1), keyText).toStdString();
+        } else {
+            text = muse::qtrc("mixhouse", "No beat detected. Key: %1").arg(keyText).toStdString();
+        }
+        interactive()->info(muse::trc("mixhouse", "Analysis finished"), text);
+    });
+}
+
+void MixHouseTrackListModel::analyzeTracksWithConfirm(const QVariantList& rows)
+{
+    // Resolve ids now, before the dialog -- same rule as every other
+    // confirm-dialog batch action in this file.
+    // Another DJ app's tracks are analyzed as Music Collection tracks (their
+    // files get added there).
+    QList<int> trackIds;
+    QStringList externalFiles;
+    collectAnalysisTargets(rows, trackIds, externalFiles);
+    if (trackIds.isEmpty() && externalFiles.isEmpty()) {
+        return;
+    }
+    const int count = static_cast<int>(trackIds.size() + externalFiles.size());
+
+    const std::string dlgTitle = muse::qtrc("mixhouse", "Analyze %1 track(s)?").arg(count).toStdString();
+    const std::string question = muse::trc("mixhouse",
+        "Detects each track's BPM and beatgrid (Queen Mary DSP), "
+        "musical key (OpenKeyScan) and waveform from its audio. Existing values will be "
+        "overwritten. Analysis runs in the background, so you can keep working -- each "
+        "track's progress shows in the library list.");
+    const int analyzeBtn = int(muse::IInteractive::Button::Ok);
+    auto promise = interactive()->question(dlgTitle, question,
+        { interactive()->buttonData(muse::IInteractive::Button::Cancel),
+          muse::IInteractive::ButtonData(analyzeBtn, muse::trc("mixhouse", "Analyze"), true) },
+        analyzeBtn);
+    promise.onResolve(this, [this, trackIds, externalFiles](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Cancel)) {
+            return;
+        }
+        startBatchAnalysisForIds(analysisTrackIds(trackIds, externalFiles));
+    });
+}
+
+QVariantList MixHouseTrackListModel::rowsForAnalysisScope(bool newOnly) const
+{
+    QVariantList rows;
+    // Real mixxx: analysislibrarytablemodel.cpp's own recentFilter() --
+    // datetime_added > datetime('now', '-7 days'), ported exactly (a real
+    // 7-day window, not an arbitrary round number).
+    const QDateTime cutoff = QDateTime::currentDateTimeUtc().addDays(-7);
+    for (int i = 0; i < static_cast<int>(m_tracks.size()); ++i) {
+        if (newOnly) {
+            const QDateTime added = QDateTime::fromString(
+                m_tracks[static_cast<size_t>(i)].dateAdded, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+            if (!added.isValid() || added < cutoff) {
+                continue;
+            }
+        }
+        rows.append(i);
+    }
+    return rows;
+}
+
+bool MixHouseTrackListModel::analyzing() const { return library()->isAnalyzing(); }
+int MixHouseTrackListModel::analyzeProcessed() const { return m_analyzeProcessed; }
+int MixHouseTrackListModel::analyzeTotal() const { return m_analyzeTotal; }
+
+void MixHouseTrackListModel::startBatchAnalysis(const QVariantList& rows)
+{
+    QList<int> ids;
+    QStringList externalFiles;
+    collectAnalysisTargets(rows, ids, externalFiles);
+    startBatchAnalysisForIds(analysisTrackIds(ids, externalFiles));
+}
+
+void MixHouseTrackListModel::startBatchAnalysisForIds(const QList<int>& trackIds)
+{
+    if (analyzing() || trackIds.isEmpty()) {
+        return;   // already running -- the QML button is Stop while this is true, but guard anyway
+    }
+    for (int trackId : trackIds) {
+        m_overviewCache.remove(trackId);   // see analyzeTrackWithConfirm's own comment
+    }
+    library()->startBackgroundAnalysis(trackIds);
+    if (analyzing()) {
+        m_analysisProgressByTrack.clear();
+        for (int trackId : trackIds) {
+            m_analysisProgressByTrack.insert(trackId, 0);
+            emitAnalysisProgressChanged(trackId);
+        }
+    }
+    emit analyzingChanged();   // library()->isAnalyzing() already flips true synchronously inside the call above
+}
+
+void MixHouseTrackListModel::emitAnalysisProgressChanged(int trackId, bool allRoles)
+{
+    // Linear scan over the loaded page (<= 2000 rows, see load()) instead of
+    // a trackId->row index: throttled progress is at most ~17 updates/s per
+    // worker, and a scan can never go stale across load()'s model resets.
+    for (size_t row = 0; row < m_tracks.size(); ++row) {
+        if (m_tracks[row].id == trackId) {
+            const int r = static_cast<int>(row);
+            const QModelIndex first = index(r, 0);
+            const QModelIndex last = index(r, std::max(0, m_uiColumnCount - 1));
+            if (allRoles) {
+                emit dataChanged(first, last);   // finished: BPM/key/grid changed too
+            } else {
+                emit dataChanged(first, last, { AnalysisProgressRole, AnalyzedRole });
+            }
+            return;
+        }
+    }
+}
+
+void MixHouseTrackListModel::stopBatchAnalysis()
+{
+    library()->stopBackgroundAnalysis();
+    // Deliberately no load()/analyzingChanged() here -- any track(s)
+    // already in flight on a worker keep running (no mid-decode
+    // cancellation hook, see stopBackgroundAnalysis's own comment) until
+    // analysisFinished fires from load()'s own subscription, which is what
+    // actually flips analyzing back to false and refreshes the view.
+}
+
+void MixHouseTrackListModel::addFolderToLibrary(const QString& folder)
+{
+    if (folder.isEmpty()) {
+        return;   // the native picker was cancelled -- not an error
+    }
+    // Real bug this now avoids, confirmed against the reference library: this
+    // used to call library()->addTracksFromFolder() directly, a blocking
+    // call on this (the UI) thread -- fine for a small folder, but the same
+    // freeze risk as the startup rescan for a large one. See
+    // IMixHouseLibrary::startBackgroundScan's own comment. The scan-
+    // finished summary dialog/error is now handled once, generically, by
+    // load()'s own scanFinished subscription -- shared with the startup
+    // rescan below instead of duplicated per call site.
+    if (mixHouseFolderTooBroadToScan(folder)) {
+        interactive()->warning(muse::trc("mixhouse", "Choose your music folder"),
+                               muse::qtrc("mixhouse", "%1 is much more than a music folder -- scanning it would go through "
+                                                      "everything on it. Choose the folder your music is in.")
+                               .arg(QDir::cleanPath(folder)).toStdString());
+        return;
+    }
+    library()->startBackgroundScan({ folder });
+    emit scanningChanged();
+}
+
+//! The same file types the library's scanner takes.
+static const QStringList& droppedAudioSuffixes()
+{
+    static const QStringList kAudio = { QStringLiteral("mp3"), QStringLiteral("m4a"), QStringLiteral("aac"),
+                                        QStringLiteral("flac"), QStringLiteral("ogg"), QStringLiteral("opus"),
+                                        QStringLiteral("wav"), QStringLiteral("aiff"), QStringLiteral("aif"),
+                                        QStringLiteral("wv") };
+    return kAudio;
+}
+
+static bool isDroppedAudio(const QString& path)
+{
+    return droppedAudioSuffixes().contains(QFileInfo(path).suffix().toLower());
+}
+
+//! Whether `dir` holds any audio file, at any depth.
+static bool folderHasAudio(const QString& dir)
+{
+    QDirIterator it(dir, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        if (isDroppedAudio(it.next())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MixHouseTrackListModel::addDroppedUrls(const QVariantList& urls, int playlistId, int crateId)
+{
+    const auto isAudio = isDroppedAudio;
+    if (playlistId == kDropCurrentList || crateId == kDropCurrentList) {
+        const bool ownList = m_externalSource.isEmpty() && !m_emptyPlaceholder;
+        playlistId = ownList ? m_query.playlistId : -1;
+        crateId = ownList ? m_query.crateId : -1;
+    }
+
+    QStringList folders, files;
+    for (const QVariant& v : urls) {
+        const QString path = v.toUrl().toLocalFile();
+        if (path.isEmpty()) {
+            continue;
+        }
+        if (QFileInfo(path).isDir()) {
+            if (mixHouseFolderTooBroadToScan(path)) {
+                interactive()->warning(muse::trc("mixhouse", "Choose your music folder"),
+                                       muse::qtrc("mixhouse", "%1 is much more than a music folder -- scanning it would "
+                                                              "go through everything on it. Choose the folder your music is in.")
+                                       .arg(QDir::cleanPath(path)).toStdString());
+                return;
+            }
+            folders << path;
+        } else if (isAudio(path)) {
+            files << path;
+        }
+    }
+    if (folders.isEmpty() && files.isEmpty()) {
+        return;
+    }
+
+    const bool intoList = playlistId >= 0 || crateId >= 0;
+    if (!intoList && !folders.isEmpty()) {
+        // Into the library only: folders the way Add Folder does (in the
+        // background, with its summary), loose files straight away.
+        if (!files.isEmpty()) {
+            library()->addTracksFromFiles(files);
+        }
+        library()->startBackgroundScan(folders);
+        emit scanningChanged();
+        load();
+        return;
+    }
+
+    // Into a list (or loose files only): every file is added now, so it can
+    // be listed, in the order dropped and then by folder.
+    for (const QString& folder : folders) {
+        QStringList inFolder;
+        QDirIterator it(folder, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            if (isAudio(path)) {
+                inFolder << path;
+            }
+        }
+        inFolder.sort(Qt::CaseInsensitive);
+        files << inFolder;
+    }
+    const IMixHouseLibrary::ScanResult result = library()->addTracksFromFiles(files);
+    if (!result.error.isEmpty()) {
+        interactive()->error(muse::trc("mixhouse", "Couldn't add files to library"), result.error.toStdString());
+        return;
+    }
+    int listed = 0;
+    if (intoList) {
+        for (const QString& path : files) {
+            IMixHouseLibrary::TrackQuery query;
+            query.location = path;
+            query.limit = 1;
+            const MixHouseTrackList found = library()->tracks(query);
+            if (found.empty()) {
+                continue;
+            }
+            const bool ok = playlistId >= 0 ? library()->addTrackToPlaylist(found.front().id, playlistId)
+                                            : library()->addTrackToCrate(found.front().id, crateId);
+            listed += ok ? 1 : 0;
+        }
+    }
+    load();
+    if (m_dropTotals) {   // part of a dropped folder tree: one summary at the end
+        m_dropTotals->scanned += result.scanned;
+        m_dropTotals->added += result.added;
+        m_dropTotals->skipped += result.skipped;
+        m_dropTotals->unreadable += result.unreadable;
+        m_dropTotals->listed += listed;
+        return;
+    }
+    if (libraryConfiguration()->showScanSummaryDialog()) {
+        std::string text = muse::qtrc("mixhouse", "Scanned %1 file(s): %2 added to the library, %3 already known.")
+                           .arg(result.scanned).arg(result.added).arg(result.skipped).toStdString();
+        if (result.unreadable > 0) {
+            text += "\n" + muse::qtrc("mixhouse", "%n file(s) could not be read as audio (damaged or not audio) and were not added.",
+                                        nullptr, result.unreadable).toStdString();
+        }
+        if (intoList) {
+            text += "\n" + muse::qtrc("mixhouse", "%n track(s) added to the list.", nullptr, listed).toStdString();
+        }
+        interactive()->info(muse::trc("mixhouse", "Library scan finished"), text);
+    }
+}
+
+void MixHouseTrackListModel::addDroppedUrlsAsNewLists(const QVariantList& urls, bool crates, int parentId)
+{
+    // A name already taken gets a number, as Finder numbers copies.
+    const auto create = [&](const QString& baseName, int parent, bool folder) {
+        int id = -1;
+        for (int n = 1; id < 0 && n < 100; ++n) {
+            const QString name = n == 1 ? baseName : QStringLiteral("%1 %2").arg(baseName).arg(n);
+            id = crates ? library()->createCrate(name)
+                 : folder ? library()->createPlaylistFolder(name, parent) : library()->createPlaylist(name, parent);
+        }
+        return id;
+    };
+    m_dropTotals = DropTotals {};
+    const auto addList = [&](const QString& name, int parent, const QVariantList& items) {
+        const int id = create(name, parent, false);
+        if (id >= 0) {
+            ++m_dropTotals->lists;
+            addDroppedUrls(items, crates ? -1 : id, crates ? id : -1);
+        }
+    };
+    // GlideMix: a Finder folder with music in its subfolders becomes the same
+    // tree here: a playlist folder for it, a playlist for each folder that
+    // holds tracks (its own loose tracks in a playlist of its name). Crates
+    // do not nest: one crate per folder, with everything under it.
+    std::function<void(const QString&, int, int)> addFolder = [&](const QString& dir, int parent, int depth) {
+        const QString name = QDir(dir).dirName();
+        QStringList subfolders;
+        if (!crates && depth < 12) {
+            for (const QFileInfo& sub : QDir(dir).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase)) {
+                if (folderHasAudio(sub.absoluteFilePath())) {
+                    subfolders << sub.absoluteFilePath();
+                }
+            }
+        }
+        if (subfolders.isEmpty()) {
+            addList(name, parent, { QUrl::fromLocalFile(dir) });
+            return;
+        }
+        const int folderId = create(name, parent, true);
+        if (folderId < 0) {
+            return;
+        }
+        QVariantList loose;
+        for (const QFileInfo& f : QDir(dir).entryInfoList(QDir::Files, QDir::Name | QDir::IgnoreCase)) {
+            if (isDroppedAudio(f.absoluteFilePath())) {
+                loose << QUrl::fromLocalFile(f.absoluteFilePath());
+            }
+        }
+        if (!loose.isEmpty()) {
+            addList(name, folderId, loose);
+        }
+        for (const QString& sub : subfolders) {
+            addFolder(sub, folderId, depth + 1);
+        }
+    };
+
+    // Loose files are grouped by the folder they are in.
+    std::vector<std::pair<QString, QVariantList> > lists;
+    const auto listFor = [&](const QString& name) -> QVariantList& {
+        for (auto& [n, items] : lists) {
+            if (n == name) {
+                return items;
+            }
+        }
+        lists.push_back({ name, {} });
+        return lists.back().second;
+    };
+    for (const QVariant& v : urls) {
+        const QString path = v.toUrl().toLocalFile();
+        if (path.isEmpty()) {
+            continue;
+        }
+        // Finder's folder URLs end in "/", which leaves fileName() empty.
+        const QFileInfo info(QDir::cleanPath(path));
+        if (info.isDir()) {
+            if (mixHouseFolderTooBroadToScan(info.absoluteFilePath())) {
+                interactive()->warning(muse::trc("mixhouse", "Choose your music folder"),
+                                       muse::qtrc("mixhouse", "%1 is much more than a music folder -- scanning it would "
+                                                              "go through everything on it. Choose the folder your music is in.")
+                                       .arg(info.absoluteFilePath()).toStdString());
+                m_dropTotals.reset();
+                return;
+            }
+            if (folderHasAudio(info.absoluteFilePath())) {
+                addFolder(info.absoluteFilePath(), parentId, 0);
+            }
+        } else if (isDroppedAudio(path)) {
+            listFor(info.absoluteDir().dirName()) << v;
+        }
+    }
+    for (const auto& [name, items] : lists) {
+        addList(name, parentId, items);
+    }
+    const DropTotals totals = *m_dropTotals;
+    m_dropTotals.reset();
+    if (totals.lists > 0 && libraryConfiguration()->showScanSummaryDialog()) {
+        std::string text = muse::qtrc("mixhouse", "Scanned %1 file(s): %2 added to the library, %3 already known.")
+                           .arg(totals.scanned).arg(totals.added).arg(totals.skipped).toStdString();
+        if (totals.unreadable > 0) {
+            text += "\n" + muse::qtrc("mixhouse", "%n file(s) could not be read as audio (damaged or not audio) and were not added.",
+                                        nullptr, totals.unreadable).toStdString();
+        }
+        text += "\n" + muse::qtrc("mixhouse", "%n list(s) made, with %1 track(s).", nullptr, totals.lists)
+                .arg(totals.listed).toStdString();
+        interactive()->info(muse::trc("mixhouse", "Library scan finished"), text);
+    }
+}
+
+void MixHouseTrackListModel::importFromRekordboxXml(const QString& path)
+{
+    if (path.isEmpty()) {
+        return;   // the native picker was cancelled -- not an error
+    }
+    // A real rekordbox collection XML can be tens of thousands of tracks
+    // (a real one: 70k+) -- parsing that much XML plus the
+    // analysis-enrichment pass's own per-track lookups is real, sometimes-
+    // slow work, and library()->importFromRekordboxXml() runs it as one
+    // single blocking call with no way to report progress mid-call. the brief
+    // caught this directly: he ran a real import and had no visible sign
+    // anything was happening until the finished dialog appeared. This
+    // can't show a LIVE percentage without either threading the import
+    // (this app's own established rule: no SQL off the main thread, see
+    // MixHouseLibraryPanel.qml's cover-art comment for exactly why) or
+    // pumping the event loop mid-call (a real reentrancy risk: an event
+    // pumped mid-import could trigger another action reaching the same
+    // SQLite connection). What this DOES give, honestly: a real, visible
+    // "something is happening" dialog for the whole duration, using the
+    // same muse::IInteractive::showProgress() this app's own Home-screen
+    // audio import already shows for its own long operations -- not
+    // invented for this.
+    muse::Progress progress;
+    interactive()->showProgress(muse::trc("mixhouse", "Importing from Rekordbox…"), progress);
+    progress.start();
+
+    const MixHouseImportResult result = library()->importFromRekordboxXml(path);
+
+    progress.finish(muse::ProgressResult::make_ok({}));
+
+    if (!result.error.isEmpty()) {
+        interactive()->error(muse::trc("mixhouse", "Couldn't import Rekordbox XML"), result.error.toStdString());
+        return;
+    }
+    load();   // real mixxx's own scan-finished handling refreshes the view too
+    const std::string title = muse::trc("mixhouse", "Rekordbox import finished");
+    const std::string text = muse::qtrc("mixhouse",
+        "%1 playlist(s) created, %2 track(s) matched, %3 got real bpm/beatgrid/key from rekordbox's own analysis.")
+        .arg(result.playlistsCreated).arg(result.tracksMatched + result.tracksAdded).arg(result.analysisImported)
+        .toStdString();
+    interactive()->info(title, text);
+}
+
+QStringList MixHouseTrackListModel::musicDirectories() const
+{
+    return libraryConfiguration()->musicDirectories();
+}
+
+void MixHouseTrackListModel::addMusicDirectory(const QString& path)
+{
+    if (path.isEmpty()) {
+        return;   // the native picker was cancelled -- not an error
+    }
+    // Real mixxx: clicking "Add" in the Music Directories list immediately
+    // scans the new folder, it doesn't just remember it for later -- same
+    // real INSERT-only scan (addTracksFromFolder) the File menu's own "Add
+    // Folder to Library" and this same class's addFolderToLibrary() above
+    // already use.
+    libraryConfiguration()->addMusicDirectory(path);
+    addFolderToLibrary(path);
+}
+
+void MixHouseTrackListModel::removeMusicDirectory(const QString& path)
+{
+    // Real mixxx: removing a watched directory only stops rescanning it --
+    // tracks already added to the library from it are untouched.
+    libraryConfiguration()->removeMusicDirectory(path);
+}
+
+void MixHouseTrackListModel::runStartupRescanIfNeeded()
+{
+    if (m_ranStartupRescan || !libraryConfiguration()->rescanOnStartup()) {
+        return;
+    }
+    m_ranStartupRescan = true;
+    const QStringList dirs = libraryConfiguration()->musicDirectories();
+    if (dirs.isEmpty()) {
+        return;
+    }
+    // Real bug this fixes, confirmed against a real ~35k-track
+    // library: this used to call library()->addTracksFromFolder() once per
+    // directory, blocking on THIS (the UI) thread for the whole walk --
+    // right after a big rekordbox import added thousands of files at once,
+    // that ran long enough for macOS's own "Application Not Responding"
+    // watchdog to fire. See IMixHouseLibrary::startBackgroundScan's own
+    // comment for the real, threaded fix (a dedicated worker thread with
+    // its own DB connection, matching real mixxx's own LibraryScanner) and
+    // load()'s own scanFinished subscription for where the summary dialog/
+    // error now gets shown, generically, for every background scan.
+    library()->startBackgroundScan(dirs);
+    emit scanningChanged();
+}
+
+QVariantList MixHouseTrackListModel::overviewBuckets(int row, int bucketCount)
+{
+    QVariantList out;
+    if (row < 0 || row >= static_cast<int>(m_tracks.size()) || bucketCount <= 0) {
+        return out;
+    }
+    const MixHouseTrack& track = m_tracks[static_cast<size_t>(row)];
+    const int trackId = track.id;
+
+    auto it = m_overviewCache.find(trackId);
+    if (it == m_overviewCache.end()) {
+        MixHouseWaveformOverview overview;
+        // rekordbox's own waveform first, for every track it has analysed:
+        // the goal is to look like rekordbox, and rekordbox already stored
+        // each column's finished colour and height. Recomputing bands from our
+        // own analysis can only approximate that. Our analysis stays as the
+        // fallback for files rekordbox has never seen (and while its index is
+        // still loading -- overviewDataChanged() re-fetches once it is ready).
+        if (rekordboxAnalysis() && !track.filePath.isEmpty()) {
+            overview = rekordboxAnalysis()->waveformOverview(track.filePath, track.bpm);
+        }
+        if (!overview.valid) {
+            // Another DJ app's track: the Music Collection's analysis of the
+            // same file.
+            const int libraryId = isExternalTrack(track) ? libraryIdForFile(track.filePath) : trackId;
+            if (libraryId >= 0) {
+                overview = decodeWaveformOverview(library()->overviewAnalysisBlob(libraryId));
+            }
+        }
+        it = m_overviewCache.insert(trackId, overview);
+    }
+    if (!it->valid) {
+        return out;   // not analyzed (yet) -- an empty cell, not a fabricated flat line
+    }
+
+    const std::vector<MixHouseOverviewBucket> buckets = resampleOverview(*it, bucketCount);
+    out.reserve(static_cast<int>(buckets.size()));
+    for (const MixHouseOverviewBucket& b : buckets) {
+        QVariantMap m;
+        m["low"] = b.low;
+        m["mid"] = b.mid;
+        m["high"] = b.high;
+        m["all"] = b.all;
+        m["hasColor"] = b.hasColor;
+        m["color"] = static_cast<uint>(b.color);   // 0xRRGGBB
+        out.push_back(m);
+    }
+    return out;
+}
+
+int MixHouseTrackListModel::rowCount(const QModelIndex& parent) const
+{
+    return parent.isValid() ? 0 : static_cast<int>(m_tracks.size());
+}
+
+int MixHouseTrackListModel::columnCount(const QModelIndex& parent) const
+{
+    return parent.isValid() ? 0 : m_uiColumnCount;
+}
+
+void MixHouseTrackListModel::setUiColumnCount(int n)
+{
+    if (m_uiColumnCount == n) {
+        return;
+    }
+    beginResetModel();
+    m_uiColumnCount = n;
+    endResetModel();
+    emit uiColumnCountChanged();
+}
+
+QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
+{
+    if (!index.isValid() || index.row() < 0 || index.row() >= static_cast<int>(m_tracks.size())) {
+        return QVariant();
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(index.row())];
+    switch (role) {
+    case TitleRole:       return t.title;
+    case ArtistRole:      return t.artist;
+    case AlbumRole:       return t.album;
+    case GenreRole:       return t.genre;
+    case YearRole:        return t.year;
+    case BpmRole:         return t.bpm;
+    case KeyRole:         return t.key;
+    case KeyIdRole:       return t.keyId;
+    case DurationRole:    return t.durationSec;
+    case RatingRole:      return t.rating;
+    case HasBeatgridRole: return t.hasBeatgrid();
+    case FilePathRole:    return t.filePath;
+    case ColorRole:       return t.color;
+    case FirstBeatSecRole:  return t.beats.firstBeatSec;
+    case BeatLengthSecRole: return t.beats.beatLengthSec;
+    case ConstantTempoRole: return t.beats.constantTempo;
+    case AlbumArtistRole: return t.albumArtist;
+    case ComposerRole:    return t.composer;
+    case GroupingRole:    return t.grouping;
+    case TrackNumberRole: return t.trackNumber;
+    case FileTypeRole:    return t.fileType;
+    case CommentRole:     return t.comment;
+    case BitrateRole:     return t.bitrate;
+    case ReplayGainRole:  return t.replaygain;
+    case DateAddedRole:   return t.dateAdded;
+    case TimesPlayedRole: return t.timesPlayed;
+    case LastPlayedAtRole: return t.lastPlayedAt;
+    case BpmLockedRole:   return t.bpmLocked;
+    case TrackIdRole:     return t.id;
+    case CoverArtTypeRole: return t.coverArtType;
+    case SampleRateRole:  return t.sampleRate;
+    case AnalysisProgressRole: return m_analysisProgressByTrack.value(t.id, -1);
+    case AnalyzedRole:    return t.analyzed;
+    default:              return QVariant();
+    }
+}
+
+QHash<int, QByteArray> MixHouseTrackListModel::roleNames() const
+{
+    return {
+        { TitleRole, "title" }, { ArtistRole, "artist" }, { AlbumRole, "album" },
+        { GenreRole, "genre" }, { YearRole, "year" }, { BpmRole, "bpm" },
+        { KeyRole, "musicalKey" }, { KeyIdRole, "keyId" }, { DurationRole, "durationSec" },
+        { RatingRole, "rating" }, { HasBeatgridRole, "hasBeatgrid" },
+        { FilePathRole, "filePath" }, { ColorRole, "color" },
+        { FirstBeatSecRole, "firstBeatSec" }, { BeatLengthSecRole, "beatLengthSec" },
+        { ConstantTempoRole, "constantTempo" },
+        { AlbumArtistRole, "albumArtist" }, { ComposerRole, "composer" },
+        { GroupingRole, "grouping" }, { TrackNumberRole, "trackNumber" },
+        { FileTypeRole, "fileType" }, { CommentRole, "comment" },
+        { BitrateRole, "bitrate" }, { ReplayGainRole, "replaygain" },
+        { DateAddedRole, "dateAdded" }, { TimesPlayedRole, "timesPlayed" },
+        { LastPlayedAtRole, "lastPlayedAt" }, { BpmLockedRole, "bpmLocked" },
+        { TrackIdRole, "trackId" }, { CoverArtTypeRole, "coverArtType" },
+        { SampleRateRole, "sampleRate" },
+        { AnalysisProgressRole, "analysisProgress" }, { AnalyzedRole, "analyzed" }
+    };
+}
+
+bool MixHouseTrackListModel::scanning() const { return library()->isScanning(); }
+QString MixHouseTrackListModel::scanStatusText() const
+{
+    return muse::qtrc("mixhouse", "Scanning… %1 tracks found, %2 new")
+           .arg(m_scanScanned).arg(m_scanAdded);
+}
+
+int MixHouseTrackListModel::trackCount() const { return library()->trackCount(); }
+int MixHouseTrackListModel::matchingCount() const
+{
+    return static_cast<int>(library()->matchingTracks(m_query).ids.size());
+}
+bool MixHouseTrackListModel::available() const { return library()->isAvailable(); }
+
+QString MixHouseTrackListModel::statusMessage() const
+{
+    if (library()->isAvailable()) {
+        return QStringLiteral("%1 tracks — %2").arg(library()->trackCount()).arg(library()->databasePath());
+    }
+    return library()->lastError();
+}

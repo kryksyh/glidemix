@@ -1,0 +1,7 @@
+[submodule "muse"]
+	path = muse
+	url = https://github.com/cristitm76/glidemix-muse.git
+	branch = mixhouse-dj2
+[submodule "muse_deps"]
+	path = muse_deps
+	url = https://github.com/musescore/muse_deps.git

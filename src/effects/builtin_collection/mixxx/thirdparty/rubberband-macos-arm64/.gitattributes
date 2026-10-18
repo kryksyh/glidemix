@@ -1,0 +1,2 @@
+# Prebuilt static libraries: never convert line endings.
+*.a -text binary

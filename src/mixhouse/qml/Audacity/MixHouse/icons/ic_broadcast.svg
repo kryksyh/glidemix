@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GlideMix: the broadcast tower. Drawn for this app: a mast with two
+     cross-braces and two arcs of signal either side. The stroke colour is
+     explicit, because Qt's SVG renderer does not resolve currentColor, and
+     there is 2px of margin so nothing is clipped at small sizes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <g fill="none" stroke="#E4E6EB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.6 5.6a8.6 8.6 0 0 0 0 10.2"/>
+    <path d="M17.4 5.6a8.6 8.6 0 0 1 0 10.2"/>
+    <path d="M9.3 8.1a4.6 4.6 0 0 0 0 5.2"/>
+    <path d="M14.7 8.1a4.6 4.6 0 0 1 0 5.2"/>
+    <path d="M9.9 21 12 10.7 14.1 21"/>
+    <path d="M10.6 17.6h2.8"/>
+  </g>
+  <circle cx="12" cy="10.7" r="1.7" fill="#E4E6EB"/>
+</svg>

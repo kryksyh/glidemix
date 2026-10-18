@@ -1,0 +1,49 @@
+/*
+ * Audacity: A Digital Audio Editor
+ */
+#pragma once
+
+#include <QObject>
+#include <QtQml/qqmlregistration.h>
+
+#include "framework/global/modularity/ioc.h"
+#include "framework/global/async/asyncable.h"
+
+#include "audio/main/iaudioconfiguration.h"
+#include "playback/iplaybackconfiguration.h"
+
+namespace au::appshell {
+class PlaybackPreferencesModel : public QObject, public muse::async::Asyncable, public muse::Contextable
+{
+    Q_OBJECT
+    QML_ELEMENT
+
+    Q_PROPERTY(
+        playback::PlaybackQualityPrefs::PlaybackQuality currentPlaybackQuality READ currentPlaybackQuality NOTIFY currentPlaybackQualityChanged)
+    Q_PROPERTY(QVariantList playbackQualityList READ playbackQualityList CONSTANT)
+
+    Q_PROPERTY(playback::DitherTypePrefs::DitherType currentDithering READ currentDithering NOTIFY currentDitheringChanged)
+    Q_PROPERTY(QVariantList ditheringList READ ditheringList CONSTANT)
+
+
+    muse::GlobalInject<playback::IPlaybackConfiguration> playbackConfiguration;
+
+public:
+    explicit PlaybackPreferencesModel(QObject* parent = nullptr);
+
+    Q_INVOKABLE void init();
+
+    playback::PlaybackQualityPrefs::PlaybackQuality currentPlaybackQuality() const;
+    QVariantList playbackQualityList() const;
+    Q_INVOKABLE void setPlaybackQuality(playback::PlaybackQualityPrefs::PlaybackQuality quality);
+
+    playback::DitherTypePrefs::DitherType currentDithering() const;
+    QVariantList ditheringList() const;
+    Q_INVOKABLE void setDithering(playback::DitherTypePrefs::DitherType quality);
+
+signals:
+    void currentPlaybackQualityChanged();
+    void currentDitheringChanged();
+
+};
+}

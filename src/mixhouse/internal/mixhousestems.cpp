@@ -1,0 +1,591 @@
+/*
+ * GlideMix
+ */
+#include "mixhousestems.h"
+#include "mixhouse/glidemixpaths.h"
+#include "mixhouse/mixhousenativepath.h"
+
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QStandardPaths>
+
+#include <sndfile.h>
+
+#include "au3-wave-track/WaveClip.h"
+#include "au3-wave-track/WaveTrack.h"
+#include "au3wrap/internal/domaccessor.h"
+#include "au3wrap/internal/domconverter.h"
+#include "au3wrap/internal/progressdialog.h"
+#include "au3wrap/internal/trackcolor.h"
+#include "project/iaudacityproject.h"
+#include "log.h"
+
+using namespace au::mixhouse;
+
+namespace {
+//! Demucs's stems, in the order the tracks are added.
+struct StemInfo {
+    const char* file;
+    const char* title;
+    int colorIndex;   ///< the clip palette (projectsceneconfiguration.cpp), DJ.Studio's stem colours
+};
+constexpr StemInfo kStems[] = {
+    { "drums", "Drums", 16 },    // blue
+    { "bass", "Bass", 1 },       // red
+    { "vocals", "Vocals", 9 },   // green
+    { "other", "Other", 4 },     // yellow
+};
+
+//! A clip's whole source (not just the visible part), interleaved float, as
+//! GlideMix decoded it -- so the stems line up with it sample for sample.
+bool writeClipSource(const WaveClip& clip, const QString& path, sf_count_t* frames, QCryptographicHash* hash)
+{
+    const size_t channels = clip.NChannels();
+    const sampleCount total = clip.GetSequenceSamplesCount() / static_cast<long long>(std::max<size_t>(1, channels));   // per channel
+    const sampleCount trimLeft = clip.TimeToSamples(clip.GetTrimLeft());
+    SF_INFO info {};
+    info.samplerate = clip.GetRate();
+    info.channels = static_cast<int>(channels);
+    info.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT;
+    SNDFILE* file = au::mixhouse::openSndfile(path, SFM_WRITE, &info);
+    if (!file) {
+        return false;
+    }
+    constexpr size_t kBlock = 65536;
+    std::vector<std::vector<float> > planes(channels, std::vector<float>(kBlock));
+    std::vector<float> interleaved(kBlock * channels);
+    for (sampleCount pos = 0; pos < total; pos += kBlock) {
+        const size_t len = static_cast<size_t>(std::min<sampleCount>(kBlock, total - pos).as_long_long());
+        for (size_t ch = 0; ch < channels; ++ch) {
+            clip.GetSamples(ch, reinterpret_cast<samplePtr>(planes[ch].data()), floatSample, pos - trimLeft, len, false);
+        }
+        for (size_t i = 0; i < len; ++i) {
+            for (size_t ch = 0; ch < channels; ++ch) {
+                interleaved[i * channels + ch] = planes[ch][i];
+            }
+        }
+        sf_writef_float(file, interleaved.data(), static_cast<sf_count_t>(len));
+        // The cache key: the samples only -- the file itself carries a time
+        // stamp (libsndfile's PEAK chunk), so it differs every time.
+        hash->addData(QByteArrayView(reinterpret_cast<const char*>(interleaved.data()),
+                                     static_cast<qsizetype>(len * channels * sizeof(float))));
+    }
+    sf_close(file);
+    *frames = total.as_long_long();
+    return true;
+}
+
+//! One stem file as `channels` planes of exactly `frames` samples, resampled
+//! (linearly) if Demucs's 44.1 kHz differs from the clip's rate.
+bool readStem(const QString& path, size_t channels, sf_count_t frames, std::vector<std::vector<float> >* out)
+{
+    SF_INFO info {};
+    SNDFILE* file = au::mixhouse::openSndfile(path, SFM_READ, &info);
+    if (!file || info.channels < 1) {
+        return false;
+    }
+    std::vector<float> interleaved(static_cast<size_t>(info.frames) * info.channels);
+    sf_readf_float(file, interleaved.data(), info.frames);
+    sf_close(file);
+
+    out->assign(channels, std::vector<float>(static_cast<size_t>(frames), 0.0f));
+    const double step = frames > 1 && info.frames > 1 ? double(info.frames - 1) / double(frames - 1) : 1.0;
+    for (sf_count_t i = 0; i < frames; ++i) {
+        const double src = info.frames == frames ? double(i) : i * step;
+        const sf_count_t i0 = std::min<sf_count_t>(static_cast<sf_count_t>(src), info.frames - 1);
+        const sf_count_t i1 = std::min<sf_count_t>(i0 + 1, info.frames - 1);
+        const float frac = static_cast<float>(src - double(i0));
+        for (size_t ch = 0; ch < channels; ++ch) {
+            // A mono clip gets the mix of Demucs's two channels.
+            auto sampleAt = [&](sf_count_t f) {
+                if (channels == 1 && info.channels >= 2) {
+                    return 0.5f * (interleaved[f * info.channels] + interleaved[f * info.channels + 1]);
+                }
+                const int c = std::min<int>(static_cast<int>(ch), info.channels - 1);
+                return interleaved[f * info.channels + c];
+            };
+            (*out)[ch][static_cast<size_t>(i)] = sampleAt(i0) + (sampleAt(i1) - sampleAt(i0)) * frac;
+        }
+    }
+    return true;
+}
+
+qint64 folderSize(const QString& dir)
+{
+    qint64 size = 0;
+    QDirIterator it(dir, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        size += it.fileInfo().size();
+    }
+    return size;
+}
+}
+
+MixHouseStems::MixHouseStems(const muse::modularity::ContextPtr& iocCtx)
+    : muse::Contextable(iocCtx)
+{
+}
+
+QString MixHouseStems::cacheRoot()
+{
+    return paths::glidemixDataPath(QStringLiteral("Stems"));
+}
+
+namespace {
+//! A virtual environment's Python: bin/python, Scripts\python.exe on Windows.
+QString venvPython(const QString& dir)
+{
+#ifdef Q_OS_WIN
+    return dir + QStringLiteral("/.venv/Scripts/python.exe");
+#else
+    return dir + QStringLiteral("/.venv/bin/python");
+#endif
+}
+}
+
+//! Looked for like the key analyzer: $GLIDEMIX_STEMS_PYTHON, an installed
+//! add-on (Application Support/Glidemix/Helpers/glidemix-stems), then a
+//! developer checkout (~/Developer/glidemix-stems, development builds only),
+//! each a Python with Demucs.
+std::optional<MixHouseStems::Launch> MixHouseStems::findDemucs()
+{
+    const auto executable = [](const QString& path) {
+        const QFileInfo info(path);
+        return info.isFile() && info.isExecutable();
+    };
+    const QStringList demucs = { QStringLiteral("-m"), QStringLiteral("demucs") };
+    const QString env = qEnvironmentVariable("GLIDEMIX_STEMS_PYTHON");
+    if (!env.isEmpty() && executable(env)) {
+        return Launch { env, demucs };
+    }
+    QStringList dirs { helpersEngineDir() };
+#ifdef GLIDEMIX_DEV_HELPERS
+    dirs << QDir::homePath() + QStringLiteral("/Developer/glidemix-stems");
+#endif
+    for (const QString& dir : dirs) {
+        const QString python = venvPython(dir);
+        if (executable(python)) {
+            return Launch { python, demucs };
+        }
+    }
+    return std::nullopt;
+}
+
+bool MixHouseStems::available() const
+{
+    return findDemucs().has_value();
+}
+
+qint64 MixHouseStems::cacheSize() const
+{
+    return folderSize(cacheRoot());
+}
+
+void MixHouseStems::clearCache()
+{
+    QDir(cacheRoot()).removeRecursively();
+}
+
+//! Oldest separated songs go first once the cache is over its limit; the
+//! song just separated stays.
+void MixHouseStems::trimCache(const QString& keep) const
+{
+    const qint64 limit = qint64(configuration() ? configuration()->stemsCacheLimitGb() : 10) * 1024 * 1024 * 1024;
+    QFileInfoList songs = QDir(cacheRoot()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Time | QDir::Reversed);
+    qint64 total = cacheSize();
+    for (const QFileInfo& song : songs) {
+        if (total <= limit) {
+            break;
+        }
+        if (song.absoluteFilePath() == keep) {
+            continue;
+        }
+        total -= folderSize(song.absoluteFilePath());
+        QDir(song.absoluteFilePath()).removeRecursively();
+    }
+}
+
+void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
+{
+    const auto project = globalContext() ? globalContext()->currentProject() : nullptr;
+    const auto prj = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project || !prj) {
+        return;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    WaveTrack* track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(trackId));
+    if (!track || track->Intervals().empty()) {
+        return;
+    }
+    const std::optional<Launch> launch = findDemucs();
+    if (!launch) {
+        interactive()->errorSync(muse::trc("mixhouse", "Stem separation is not installed"),
+                                 muse::trc("mixhouse", "GlideMix could not find the stem separation helper (Demucs)."));
+        return;
+    }
+
+    const bool high = configuration() && configuration()->stemsHighQuality();
+    const QString model = high ? QStringLiteral("htdemucs_ft") : QStringLiteral("htdemucs");
+    const int bars = high ? 4 : 1;   // htdemucs_ft is a bag of four models, one progress bar each
+    const MixHouseStemsDevice deviceSetting = configuration() ? configuration()->stemsDevice() : MixHouseStemsDevice::Automatic;
+
+    std::vector<std::shared_ptr<WaveClip> > clips;
+    for (const auto& clip : track->Intervals()) {
+        clips.push_back(clip);
+    }
+
+    au::au3::ProgressDialog progress(iocContext(), muse::trc("mixhouse", "Separating stems"));
+    // Per clip: its four stems, as planes per channel.
+    std::vector<std::vector<std::vector<std::vector<float> > > > stems(clips.size());
+
+    for (size_t c = 0; c < clips.size(); ++c) {
+        const WaveClip& clip = *clips[c];
+        const QString temp = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                             + QStringLiteral("/glidemix-stem-source-%1.wav").arg(QCoreApplication::applicationPid());
+        sf_count_t frames = 0;
+        QCryptographicHash hash(QCryptographicHash::Sha1);
+        hash.addData(QByteArray::number(clip.GetRate()) + "/" + QByteArray::number(qulonglong(clip.NChannels())));
+        if (!writeClipSource(clip, temp, &frames, &hash)) {
+            interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
+                                     muse::trc("mixhouse", "Could not prepare the audio."));
+            return;
+        }
+        // The song's stems are kept by what they were made from: the audio
+        // itself, and (in the folder below) the model.
+        const QString songDir = cacheRoot() + QLatin1Char('/') + QString::fromLatin1(hash.result().toHex().left(20));
+        const QString stemDir = songDir + QLatin1Char('/') + model;
+        const auto haveAll = [&]() {
+            return std::all_of(std::begin(kStems), std::end(kStems), [&](const StemInfo& s) {
+                return QFileInfo::exists(stemDir + QLatin1Char('/') + QLatin1String(s.file) + QStringLiteral(".wav"));
+            });
+        };
+
+        const QString clipLabel = muse::qtrc("mixhouse", "Separating %1 of %2").arg(c + 1).arg(clips.size());
+        if (!haveAll()) {
+            QDir().mkpath(songDir);
+            const auto run = [&](const QString& device) -> bool {
+                QProcess process;
+                process.setProcessChannelMode(QProcess::MergedChannels);
+                QStringList args = launch->prefixArgs;
+                args << QStringLiteral("-n") << model << QStringLiteral("-d") << device << QStringLiteral("--float32")
+                     << QStringLiteral("-o") << songDir << QStringLiteral("--filename") << QStringLiteral("{stem}.{ext}") << temp;
+                // The model lives in the engine's own folder (installed there),
+                // so Uninstall removes it too.
+                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+                env.insert(QStringLiteral("TORCH_HOME"), helpersEngineDir() + QStringLiteral("/models"));
+                env.insert(QStringLiteral("HF_HOME"), helpersEngineDir() + QStringLiteral("/models"));
+                env.insert(QStringLiteral("HF_HUB_DISABLE_TELEMETRY"), QStringLiteral("1"));
+                process.setProcessEnvironment(env);
+                process.start(launch->program, args);
+                if (!process.waitForStarted(15000)) {
+                    return false;
+                }
+                static const QRegularExpression percent(QStringLiteral("(\\d+)%\\|"));
+                int bar = 0;
+                int last = 0;
+                QByteArray pending;
+                while (process.state() != QProcess::NotRunning) {
+                    process.waitForReadyRead(100);
+                    pending += process.readAll();
+                    auto it = percent.globalMatch(QString::fromUtf8(pending));
+                    while (it.hasNext()) {
+                        const int value = it.next().captured(1).toInt();
+                        if (value < last && bar + 1 < bars) {
+                            ++bar;   // the next model of the bag started
+                        }
+                        last = value;
+                    }
+                    if (pending.size() > 4096) {
+                        pending = pending.right(512);
+                    }
+                    const unsigned long long done = static_cast<unsigned long long>(bar * 100 + last);
+                    if (progress.Poll(c * 100ull * bars + done, clips.size() * 100ull * bars,
+                                      Verbatim(wxString::FromUTF8(clipLabel.toStdString()))) == ProgressResult::Cancelled) {
+                        process.kill();
+                        process.waitForFinished(3000);
+                        return false;
+                    }
+                }
+                return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+            };
+            bool ok = false;
+            if (deviceSetting == MixHouseStemsDevice::Cpu) {
+                ok = run(QStringLiteral("cpu"));
+            } else {
+#ifdef Q_OS_WIN
+                // NVIDIA GPUs. The installer's torch is PyPI's, CPU-only on
+                // Windows, so Automatic falls back to the CPU until a CUDA
+                // build of torch is installed instead.
+                ok = run(QStringLiteral("cuda"));
+#else
+                ok = run(QStringLiteral("mps"));
+#endif
+                if (!ok && !progress.Cancelled() && deviceSetting == MixHouseStemsDevice::Automatic) {
+                    LOGW() << "GlideMix stems: GPU separation failed, trying the CPU";
+                    ok = run(QStringLiteral("cpu"));
+                }
+            }
+            if (!ok || !haveAll()) {
+                QFile::remove(temp);
+                if (!progress.Cancelled()) {
+                    interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
+                                             muse::trc("mixhouse", "Demucs could not separate this track."));
+                }
+                return;
+            }
+        }
+        QFile::remove(temp);
+
+        stems[c].resize(std::size(kStems));
+        for (size_t s = 0; s < std::size(kStems); ++s) {
+            const QString path = stemDir + QLatin1Char('/') + QLatin1String(kStems[s].file) + QStringLiteral(".wav");
+            if (!readStem(path, clip.NChannels(), frames, &stems[c][s])) {
+                interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
+                                         muse::trc("mixhouse", "Could not read the separated stems."));
+                return;
+            }
+        }
+        // Touch the song so the cache keeps recently used songs longest.
+        QFile(songDir).setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime);
+        trimCache(songDir);
+    }
+
+    // Each stem track is a copy of the original -- same clips, positions,
+    // trims, tempo stretch and beat grid -- with the stem's audio written
+    // over each clip's samples.
+    auto& tracks = TrackList::Get(*au3Project);
+    auto next = tracks.Find(track);
+    ++next;
+    const Track* before = next != tracks.end() ? *next : nullptr;
+    std::vector<trackedit::TrackId> added;
+    for (size_t s = 0; s < std::size(kStems); ++s) {
+        auto copy = std::static_pointer_cast<WaveTrack>(track->Duplicate());
+        TrackList::AssignUniqueId(copy);
+        // GlideMix: the stem first ("Drums \u2014 <song>"): the lane header
+        // shows the start of the name, and every stem of a song looked alike.
+        copy->SetName(wxString::FromUTF8(kStems[s].title) + wxString::FromUTF8(" \xE2\x80\x94 ") + track->GetName());
+        copy->SetMute(false);
+        au::au3::TrackColor::Get(copy.get()).SetColorIndex(kStems[s].colorIndex);
+        size_t c = 0;
+        for (const auto& clip : copy->Intervals()) {
+            if (c >= stems.size()) {
+                break;
+            }
+            clip->SetColorIndex(0);   // follow the stem track's colour
+            const sampleCount trimLeft = clip->TimeToSamples(clip->GetTrimLeft());
+            for (size_t ch = 0; ch < clip->NChannels(); ++ch) {
+                const auto& plane = stems[c][s][ch];
+                clip->SetSamples(ch, reinterpret_cast<constSamplePtr>(plane.data()), floatSample,
+                                 sampleCount(0) - trimLeft, plane.size(), floatSample);
+            }
+            ++c;
+        }
+        tracks.Insert(before, copy, true);
+        prj->notifyAboutTrackInserted(au::au3::DomConverter::track(copy.get()),
+                                      static_cast<int>(std::distance(tracks.begin(), tracks.Find(copy.get()))));
+        for (const auto& clip : prj->clipList(copy->GetId())) {
+            prj->notifyAboutClipAdded(clip);
+        }
+        added.push_back(copy->GetId());
+    }
+
+    track->SetMute(true);
+    prj->notifyAboutTrackChanged(au::au3::DomConverter::track(track));
+    if (projectHistory()) {
+        projectHistory()->pushHistoryState(muse::trc("mixhouse", "Separated stems"), muse::trc("mixhouse", "Separate stems"));
+    }
+    // Four copies of one song all tinted by the same key say nothing: show
+    // each stem track in its own colour.
+    if (clipColors()) {
+        for (const auto& id : added) {
+            clipColors()->setColorByKey(id, false);
+        }
+    }
+    LOGI() << "GlideMix stems: separated track " << trackId << " with " << model.toStdString();
+}
+
+namespace {
+#ifdef Q_OS_WIN
+//! The installer on Windows, run with Windows PowerShell 5.1 (in every
+//! Windows 10/11): the bash one below, step for step, with the same STEP
+//! lines and checks. The destination comes in $env:GLIDEMIX_STEMS_DEST.
+//! Differences: uv's Windows zip, the venv's Python is .venv\Scripts\python.exe,
+//! and after the move only pyvenv.cfg needs pointing at the new folder (a
+//! Windows venv finds its base Python through pyvenv.cfg's "home"; no symlink).
+const char* kInstallScript = R"PS(
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+trap { Write-Output "ERROR $_"; exit 1 }
+function Check { if ($LASTEXITCODE -ne 0) { Write-Output "ERROR exit code $LASTEXITCODE"; exit 1 } }
+$Dest = $env:GLIDEMIX_STEMS_DEST
+if (-not $Dest) { Write-Output "ERROR no destination"; exit 1 }
+$Tmp = "$Dest.installing"
+if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
+$Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+Write-Output "STEP 1/4 Downloading the installer (uv)"
+Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/astral-sh/uv/releases/latest/download/uv-$Arch-pc-windows-msvc.zip" -OutFile "$Tmp\uv.zip"
+Expand-Archive -LiteralPath "$Tmp\uv.zip" -DestinationPath "$Tmp\uv" -Force
+$Uv = (Get-ChildItem -LiteralPath "$Tmp\uv" -Recurse -Filter 'uv.exe' | Select-Object -First 1).FullName
+if (-not $Uv) { Write-Output "ERROR uv.exe not found"; exit 1 }
+$env:UV_CACHE_DIR = "$Tmp\cache"
+$env:UV_PYTHON_INSTALL_DIR = "$Tmp\python"
+Write-Output "STEP 2/4 Downloading Python"
+& $Uv venv --quiet --python 3.12 "$Tmp\.venv"; Check
+Write-Output "STEP 3/4 Downloading Demucs and PyTorch (about 1 GB)"
+& $Uv pip install --quiet --python "$Tmp\.venv\Scripts\python.exe" "demucs==4.1.0" "soundfile" "torch"; Check
+Write-Output "STEP 4/4 Downloading the separation model"
+$env:TORCH_HOME = "$Tmp\models"
+$env:HF_HOME = "$Tmp\models"
+$env:HF_HUB_DISABLE_TELEMETRY = '1'
+& "$Tmp\.venv\Scripts\python.exe" -c "from demucs.pretrained import get_model; get_model('htdemucs')" | Out-Null; Check
+Remove-Item -LiteralPath "$Tmp\cache", "$Tmp\uv", "$Tmp\uv.zip" -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
+Move-Item -LiteralPath $Tmp -Destination $Dest
+# The environment was made in the temporary folder and names it: point it
+# at the moved one (written back as UTF-8 without a BOM), then make sure it runs.
+$Cfg = "$Dest\.venv\pyvenv.cfg"
+[IO.File]::WriteAllText($Cfg, [IO.File]::ReadAllText($Cfg).Replace($Tmp, $Dest))
+& "$Dest\.venv\Scripts\python.exe" -c "import demucs, torch" | Out-Null; Check
+Write-Output "DONE"
+)PS";
+#else
+//! The installer, run with bash. Each "STEP" line is shown in Preferences.
+//! uv (Astral's Python installer) brings its own Python, so nothing on the
+//! Mac is touched outside the one folder.
+const char* kInstallScript = R"SH(
+set -euo pipefail
+DEST="$1"
+TMP="$DEST.installing"
+rm -rf "$TMP"
+mkdir -p "$TMP"
+case "$(uname -m)" in
+    arm64) ARCH=aarch64 ;;
+    *) ARCH=x86_64 ;;
+esac
+echo "STEP 1/4 Downloading the installer (uv)"
+curl -fsSL "https://github.com/astral-sh/uv/releases/latest/download/uv-$ARCH-apple-darwin.tar.gz" -o "$TMP/uv.tar.gz"
+tar -xzf "$TMP/uv.tar.gz" -C "$TMP" --strip-components 1
+export UV_CACHE_DIR="$TMP/cache"
+export UV_PYTHON_INSTALL_DIR="$TMP/python"
+echo "STEP 2/4 Downloading Python"
+"$TMP/uv" venv --quiet --python 3.12 "$TMP/.venv"
+echo "STEP 3/4 Downloading Demucs and PyTorch (about 1 GB)"
+"$TMP/uv" pip install --quiet --python "$TMP/.venv/bin/python" "demucs==4.1.0" "soundfile" "torch"
+echo "STEP 4/4 Downloading the separation model"
+TORCH_HOME="$TMP/models" HF_HOME="$TMP/models" HF_HUB_DISABLE_TELEMETRY=1 "$TMP/.venv/bin/python" -c "from demucs.pretrained import get_model; get_model('htdemucs')" >/dev/null 2>&1
+rm -rf "$TMP/cache" "$TMP/uv.tar.gz"
+rm -rf "$DEST"
+mv "$TMP" "$DEST"
+# The environment was made in the temporary folder and names it: point its
+# Python at the moved one, then make sure it runs.
+PYBIN="$(ls -d "$DEST"/python/cpython-3.12*/bin/python3.12 | head -1)"
+ln -sfn "$PYBIN" "$DEST/.venv/bin/python"
+sed -i '' "s|$TMP|$DEST|g" "$DEST/.venv/pyvenv.cfg"
+"$DEST/.venv/bin/python" -c "import demucs, torch" >/dev/null
+echo "DONE"
+)SH";
+#endif
+}
+
+QString MixHouseStems::helpersEngineDir()
+{
+    return paths::glidemixDataPath(QStringLiteral("Helpers/glidemix-stems"));
+}
+
+bool MixHouseStems::installing() const
+{
+    return m_installer != nullptr;
+}
+
+void MixHouseStems::installEngine()
+{
+    if (m_installer) {
+        return;
+    }
+    QDir().mkpath(QFileInfo(helpersEngineDir()).absolutePath());
+    m_installer = new QProcess();
+    m_installer->setProcessChannelMode(QProcess::MergedChannels);
+    QObject::connect(m_installer, &QProcess::readyReadStandardOutput, m_installer, [this]() {
+        while (m_installer && m_installer->canReadLine()) {
+            const QString line = QString::fromUtf8(m_installer->readLine()).trimmed();
+            if (line.startsWith(QStringLiteral("STEP "))) {
+                m_installProgress.send(line.mid(5));
+            }
+            LOGI() << "GlideMix stems install: " << line;
+        }
+    });
+    QObject::connect(m_installer, &QProcess::finished, m_installer, [this](int code, QProcess::ExitStatus status) {
+        const bool ok = status == QProcess::NormalExit && code == 0;
+        m_installer->deleteLater();
+        m_installer = nullptr;
+        if (!ok) {
+            QDir(helpersEngineDir() + QStringLiteral(".installing")).removeRecursively();
+        }
+        m_installProgress.send(ok ? muse::qtrc("mixhouse", "Installed") : muse::qtrc("mixhouse", "The install did not finish"));
+        m_installFinished.send(ok);
+    });
+    m_installProgress.send(muse::qtrc("mixhouse", "Starting"));
+#ifdef Q_OS_WIN
+    // -EncodedCommand (base64 of UTF-16LE) sidesteps command-line quoting;
+    // the destination goes in through the environment for the same reason.
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("GLIDEMIX_STEMS_DEST"), QDir::toNativeSeparators(helpersEngineDir()));
+    m_installer->setProcessEnvironment(env);
+    const QString script = QString::fromUtf8(kInstallScript);
+    const QByteArray encoded = QByteArray(reinterpret_cast<const char*>(script.utf16()),
+                                          script.size() * qsizetype(sizeof(char16_t))).toBase64();
+    QString powershell = qEnvironmentVariable("SystemRoot") + QStringLiteral("/System32/WindowsPowerShell/v1.0/powershell.exe");
+    if (!QFileInfo::exists(powershell)) {
+        powershell = QStringLiteral("powershell.exe");
+    }
+    m_installer->start(powershell, { QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
+                                     QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+                                     QStringLiteral("-EncodedCommand"), QString::fromLatin1(encoded) });
+#else
+    m_installer->start(QStringLiteral("/bin/bash"), { QStringLiteral("-c"), QString::fromUtf8(kInstallScript),
+                                                      QStringLiteral("glidemix-stems-install"), helpersEngineDir() });
+#endif
+}
+
+void MixHouseStems::cancelInstall()
+{
+    if (m_installer) {
+        m_installer->kill();   // finished() tidies up
+    }
+}
+
+bool MixHouseStems::engineInHelpers() const
+{
+    return QFileInfo(venvPython(helpersEngineDir())).isExecutable();
+}
+
+void MixHouseStems::uninstallEngine()
+{
+    if (!m_installer) {
+        QDir(helpersEngineDir()).removeRecursively();
+    }
+}
+
+muse::async::Channel<QString> MixHouseStems::installProgress() const
+{
+    return m_installProgress;
+}
+
+muse::async::Channel<bool> MixHouseStems::installFinished() const
+{
+    return m_installFinished;
+}

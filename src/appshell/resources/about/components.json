@@ -1,0 +1,532 @@
+[
+ {
+  "id": "audacity",
+  "group": "Built on",
+  "name": "Audacity",
+  "url": "https://github.com/audacity/audacity",
+  "copyright": "Copyright © 1999-2026 Audacity Team and Muse Group",
+  "license": "GPL-3.0 and GPL-2.0-or-later",
+  "licenseFiles": [
+   "audacity.txt"
+  ]
+ },
+ {
+  "id": "muse-framework",
+  "group": "Built on",
+  "name": "MuseScore framework",
+  "url": "https://github.com/musescore/MuseScore",
+  "copyright": "Copyright © MuseScore Limited, Muse Group and others",
+  "license": "GPL-3.0-only",
+  "licenseFiles": [
+   "muse-framework.txt"
+  ]
+ },
+ {
+  "id": "mixxx",
+  "group": "Built on",
+  "name": "Mixxx",
+  "url": "https://github.com/mixxxdj/mixxx",
+  "copyright": "Copyright © 2001-2026 Mixxx Development Team",
+  "license": "GPL-2.0-or-later",
+  "licenseFiles": [
+   "mixxx.txt"
+  ]
+ },
+ {
+  "id": "qm-dsp",
+  "group": "DJ analysis",
+  "name": "Queen Mary DSP library",
+  "url": "https://github.com/c4dm/qm-dsp",
+  "copyright": "Copyright © Centre for Digital Music, Queen Mary University of London",
+  "license": "GPL-2.0-or-later",
+  "licenseFiles": [
+   "qm-dsp.txt"
+  ]
+ },
+ {
+  "id": "kissfft",
+  "group": "DJ analysis",
+  "name": "KISS FFT",
+  "url": "https://github.com/mborgerding/kissfft",
+  "copyright": "Copyright © 2003-2010 Mark Borgerding",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "kissfft.txt"
+  ]
+ },
+ {
+  "id": "beat-this",
+  "group": "DJ analysis",
+  "name": "Beat This! (model)",
+  "url": "https://github.com/CPJKU/beat_this",
+  "copyright": "Copyright © 2024 Institute of Computational Perception, JKU Linz",
+  "license": "MIT",
+  "licenseFiles": [
+   "beat-this.txt"
+  ]
+ },
+ {
+  "id": "beat-this-cpp",
+  "group": "DJ analysis",
+  "name": "beat_this_cpp",
+  "url": "https://github.com/mosynthkey/beat_this_cpp",
+  "copyright": "Copyright © 2025 Masaki Ono / Melissa Audio",
+  "license": "MIT",
+  "licenseFiles": [
+   "beat-this-cpp.txt"
+  ]
+ },
+ {
+  "id": "onnxruntime",
+  "group": "DJ analysis",
+  "name": "ONNX Runtime",
+  "url": "https://github.com/microsoft/onnxruntime",
+  "copyright": "Copyright © Microsoft Corporation",
+  "license": "MIT",
+  "licenseFiles": [
+   "onnxruntime.txt",
+   "onnxruntime-2.txt"
+  ]
+ },
+ {
+  "id": "r8brain",
+  "group": "DJ analysis",
+  "name": "r8brain-free-src",
+  "url": "https://github.com/avaneev/r8brain-free-src",
+  "copyright": "Copyright © 2013-2026 Aleksey Vaneev",
+  "license": "MIT",
+  "licenseFiles": [
+   "r8brain.txt"
+  ]
+ },
+ {
+  "id": "pocketfft",
+  "group": "DJ analysis",
+  "name": "pocketfft",
+  "url": "https://github.com/mreineck/pocketfft",
+  "copyright": "Copyright © 2010-2018 Max-Planck-Society",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "pocketfft.txt"
+  ]
+ },
+ {
+  "id": "openkeyscan",
+  "group": "DJ analysis",
+  "name": "OpenKeyScan",
+  "url": "https://github.com/rekordcloud/openkeyscan-analyzer",
+  "copyright": "Copyright © 2025 Alexander Sommer",
+  "license": "MIT",
+  "licenseFiles": [
+   "openkeyscan.txt"
+  ]
+ },
+ {
+  "id": "portaudio",
+  "group": "Audio engine and file formats",
+  "name": "PortAudio",
+  "url": "https://www.portaudio.com/",
+  "copyright": "Copyright © 1999-2011 Ross Bencina and Phil Burk",
+  "license": "MIT",
+  "licenseFiles": [
+   "portaudio.txt"
+  ]
+ },
+ {
+  "id": "portmixer",
+  "group": "Audio engine and file formats",
+  "name": "PortMixer",
+  "url": "https://github.com/audacity/audacity/tree/master/lib-src/portmixer",
+  "copyright": "Copyright © 2002, 2006 Dominic Mazzoni and Leland Lucius",
+  "license": "MIT",
+  "licenseFiles": [
+   "portmixer.txt"
+  ]
+ },
+ {
+  "id": "libsndfile",
+  "group": "Audio engine and file formats",
+  "name": "libsndfile",
+  "url": "https://libsndfile.github.io/libsndfile/",
+  "copyright": "Copyright © 1999-2024 Erik de Castro Lopo and contributors",
+  "license": "LGPL-2.1-or-later",
+  "licenseFiles": [
+   "libsndfile.txt"
+  ]
+ },
+ {
+  "id": "flac",
+  "group": "Audio engine and file formats",
+  "name": "FLAC",
+  "url": "https://xiph.org/flac/",
+  "copyright": "Copyright © 2000-2009 Josh Coalson, 2011-2023 Xiph.Org Foundation",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "flac.txt"
+  ]
+ },
+ {
+  "id": "ogg",
+  "group": "Audio engine and file formats",
+  "name": "Ogg",
+  "url": "https://xiph.org/ogg/",
+  "copyright": "Copyright © 2002 Xiph.Org Foundation",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "ogg.txt"
+  ]
+ },
+ {
+  "id": "vorbis",
+  "group": "Audio engine and file formats",
+  "name": "Vorbis",
+  "url": "https://xiph.org/vorbis/",
+  "copyright": "Copyright © 2002-2020 Xiph.Org Foundation",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "vorbis.txt"
+  ]
+ },
+ {
+  "id": "opus",
+  "group": "Audio engine and file formats",
+  "name": "Opus",
+  "url": "https://opus-codec.org/",
+  "copyright": "Copyright © 2001-2023 Xiph.Org, Skype Limited, Octasic and others",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "opus.txt"
+  ]
+ },
+ {
+  "id": "opusfile",
+  "group": "Audio engine and file formats",
+  "name": "opusfile",
+  "url": "https://opus-codec.org/",
+  "copyright": "Copyright © 1994-2013 Xiph.Org Foundation and contributors",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "opusfile.txt"
+  ]
+ },
+ {
+  "id": "wavpack",
+  "group": "Audio engine and file formats",
+  "name": "WavPack",
+  "url": "https://www.wavpack.com/",
+  "copyright": "Copyright © 1998-2024 David Bryant",
+  "license": "BSD-3-Clause",
+  "licenseFiles": [
+   "wavpack.txt"
+  ]
+ },
+ {
+  "id": "lame",
+  "group": "Audio engine and file formats",
+  "name": "LAME",
+  "url": "https://lame.sourceforge.io/",
+  "copyright": "Copyright © 1999-2017 The LAME Project",
+  "license": "LGPL-2.0-or-later",
+  "licenseFiles": [
+   "lame.txt"
+  ]
+ },
+ {
+  "id": "mpg123",
+  "group": "Audio engine and file formats",
+  "name": "mpg123",
+  "url": "https://www.mpg123.de/",
+  "copyright": "Copyright © 1995-2024 by Michael Hipp and others",
+  "license": "LGPL-2.1-only",
+  "licenseFiles": [
+   "mpg123.txt"
+  ]
+ },
+ {
+  "id": "twolame",
+  "group": "Audio engine and file formats",
+  "name": "TwoLAME",
+  "url": "https://www.twolame.org/",
+  "copyright": "Copyright © 2001-2019 Nicholas J. Humfrey, Mike Cheng and others",
+  "license": "LGPL-2.1-or-later",
+  "licenseFiles": [
+   "twolame.txt"
+  ]
+ },
+ {
+  "id": "taglib",
+  "group": "Audio engine and file formats",
+  "name": "TagLib",
+  "url": "https://taglib.org/",
+  "copyright": "Copyright © 2002-2024 Scott Wheeler and contributors",
+  "license": "LGPL-2.1-only OR MPL-1.1",
+  "licenseFiles": [
+   "taglib.txt",
+   "taglib-2.txt"
+  ]
+ },
+ {
+  "id": "soxr",
+  "group": "Audio engine and file formats",
+  "name": "libsoxr",
+  "url": "https://sourceforge.net/projects/soxr/",
+  "copyright": "Copyright © 2007-2018 robs@users.sourceforge.net",
+  "license": "LGPL-2.1-or-later",
+  "licenseFiles": [
+   "soxr.txt"
+  ]
+ },
+ {
+  "id": "soundtouch",
+  "group": "Audio engine and file formats",
+  "name": "SoundTouch",
+  "url": "https://www.surina.net/soundtouch/",
+  "copyright": "Copyright © Olli Parviainen",
+  "license": "LGPL-2.1-or-later",
+  "licenseFiles": [
+   "soundtouch.txt"
+  ]
+ },
+ {
+  "id": "sbsms",
+  "group": "Audio engine and file formats",
+  "name": "SBSMS",
+  "url": "https://github.com/claytonotey/libsbsms",
+  "copyright": "Copyright © Clayton Otey",
+  "license": "GPL-2.0-or-later",
+  "licenseFiles": [
+   "sbsms.txt"
+  ]
+ },
+ {
+  "id": "nyquist",
+  "group": "Audio engine and file formats",
+  "name": "Nyquist",
+  "url": "https://www.cs.cmu.edu/~music/nyquist/",
+  "copyright": "Copyright © Roger B. Dannenberg; XLISP Copyright © David Michael Betz",
+  "license": "Nyquist / XLISP license",
+  "licenseFiles": [
+   "nyquist.txt"
+  ]
+ },
+ {
+  "id": "pffft",
+  "group": "Audio engine and file formats",
+  "name": "PFFFT",
+  "url": "https://bitbucket.org/jpommier/pffft",
+  "copyright": "Copyright © 2013 Julien Pommier, 2020 Hayati Ayguen; FFTPACK © 2004 UCAR",
+  "license": "BSD-like (FFTPACK)",
+  "licenseFiles": [
+   "pffft.txt"
+  ]
+ },
+ {
+  "id": "loop-tempo-estimator",
+  "group": "Audio engine and file formats",
+  "name": "loop-tempo-estimator",
+  "url": "https://github.com/audacity/loop-tempo-estimator",
+  "copyright": "Copyright © Muse Group",
+  "license": "GPL-3.0",
+  "licenseFiles": [
+   "loop-tempo-estimator.txt"
+  ]
+ },
+ {
+  "id": "tft",
+  "group": "Audio engine and file formats",
+  "name": "tft (time/frequency transforms)",
+  "url": "https://github.com/audacity/tft",
+  "copyright": "Copyright © Muse Group",
+  "license": "GPL-3.0",
+  "licenseFiles": [
+   "loop-tempo-estimator.txt"
+  ]
+ },
+ {
+  "id": "vst3sdk",
+  "group": "Audio engine and file formats",
+  "name": "VST 3 SDK",
+  "url": "https://github.com/steinbergmedia/vst3sdk",
+  "copyright": "VST is a registered trademark of Steinberg Media Technologies GmbH. Copyright © Steinberg Media Technologies GmbH",
+  "license": "GPL-3.0 (dual-licensed)",
+  "licenseFiles": [
+   "vst3sdk.txt"
+  ]
+ },
+ {
+  "id": "qt",
+  "group": "Application framework",
+  "name": "Qt 6",
+  "url": "https://www.qt.io/",
+  "copyright": "Copyright © The Qt Company Ltd. and other contributors",
+  "license": "LGPL-3.0-only",
+  "licenseFiles": [
+   "qt.txt"
+  ]
+ },
+ {
+  "id": "kddockwidgets",
+  "group": "Application framework",
+  "name": "KDDockWidgets",
+  "url": "https://github.com/KDAB/KDDockWidgets",
+  "copyright": "Copyright © 2018-2021 Klarälvdalens Datakonsult AB",
+  "license": "GPL-2.0-only OR GPL-3.0-only",
+  "licenseFiles": [
+   "kddockwidgets.txt"
+  ]
+ },
+ {
+  "id": "wxwidgets",
+  "group": "Application framework",
+  "name": "wxWidgets (wxBase)",
+  "url": "https://wxwidgets.org/",
+  "copyright": "Copyright © 1998-2005 Julian Smart, Robert Roebling et al",
+  "license": "wxWindows Library Licence 3.1",
+  "licenseFiles": [
+   "wxwidgets.txt"
+  ]
+ },
+ {
+  "id": "kors",
+  "group": "Application framework",
+  "name": "kors (async, logger, modularity, msgpack, profiler, rpcqueue)",
+  "url": "https://github.com/igorkorsukov",
+  "copyright": "Copyright © 2020-2025 Igor Korsukov",
+  "license": "MIT",
+  "licenseFiles": [
+   "kors.txt"
+  ]
+ },
+ {
+  "id": "sg14",
+  "group": "Application framework",
+  "name": "SG14 inplace_function",
+  "url": "https://github.com/WG21-SG14/SG14",
+  "copyright": "Copyright © the SG14 contributors",
+  "license": "BSL-1.0",
+  "licenseFiles": [
+   "sg14.txt"
+  ]
+ },
+ {
+  "id": "sqlite",
+  "group": "Application framework",
+  "name": "SQLite",
+  "url": "https://sqlite.org/",
+  "copyright": "Public domain",
+  "license": "Public domain",
+  "licenseFiles": [
+   "sqlite.txt"
+  ]
+ },
+ {
+  "id": "pugixml",
+  "group": "Application framework",
+  "name": "pugixml",
+  "url": "https://pugixml.org/",
+  "copyright": "Copyright © 2006-2025 Arseny Kapoulkine",
+  "license": "MIT",
+  "licenseFiles": [
+   "pugixml.txt"
+  ]
+ },
+ {
+  "id": "rapidjson",
+  "group": "Application framework",
+  "name": "RapidJSON",
+  "url": "https://rapidjson.org/",
+  "copyright": "Copyright © 2015 THL A29 Limited, a Tencent company, and Milo Yip",
+  "license": "MIT",
+  "licenseFiles": [
+   "rapidjson.txt"
+  ]
+ },
+ {
+  "id": "picojson",
+  "group": "Application framework",
+  "name": "picojson",
+  "url": "https://github.com/kazuho/picojson",
+  "copyright": "Copyright © 2009-2010 Cybozu Labs, 2011-2014 Kazuho Oku",
+  "license": "BSD-2-Clause",
+  "licenseFiles": [
+   "picojson.txt"
+  ]
+ },
+ {
+  "id": "utfcpp",
+  "group": "Application framework",
+  "name": "UTF8-CPP",
+  "url": "https://github.com/nemtrif/utfcpp",
+  "copyright": "Copyright © 2006 Nemanja Trifunovic",
+  "license": "BSL-1.0",
+  "licenseFiles": [
+   "utfcpp.txt"
+  ]
+ },
+ {
+  "id": "expat",
+  "group": "Application framework",
+  "name": "Expat",
+  "url": "https://libexpat.github.io/",
+  "copyright": "Copyright © 1998-2000 Thai Open Source Software Center Ltd and Clark Cooper, 2001-2025 Expat maintainers",
+  "license": "MIT",
+  "licenseFiles": [
+   "expat.txt"
+  ]
+ },
+ {
+  "id": "zlib",
+  "group": "Application framework",
+  "name": "zlib",
+  "url": "https://zlib.net/",
+  "copyright": "Copyright © 1995-2022 Jean-loup Gailly and Mark Adler",
+  "license": "Zlib",
+  "licenseFiles": [
+   "zlib.txt"
+  ]
+ },
+ {
+  "id": "libpng",
+  "group": "Application framework",
+  "name": "libpng",
+  "url": "http://www.libpng.org/pub/png/libpng.html",
+  "copyright": "Copyright © 1995-2025 The PNG Reference Library Authors",
+  "license": "libpng-2.0",
+  "licenseFiles": [
+   "libpng.txt"
+  ]
+ },
+ {
+  "id": "freetype",
+  "group": "Application framework",
+  "name": "FreeType",
+  "url": "https://freetype.org/",
+  "copyright": "Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved.",
+  "license": "FTL OR GPL-2.0-or-later",
+  "licenseFiles": [
+   "freetype.txt"
+  ]
+ },
+ {
+  "id": "tabler-icons",
+  "group": "Application framework",
+  "name": "Tabler Icons",
+  "url": "https://tabler.io/icons",
+  "copyright": "Copyright © 2020-2026 Paweł Kuna",
+  "license": "MIT",
+  "licenseFiles": [
+   "tabler-icons.txt"
+  ]
+ },
+ {
+  "id": "harfbuzz",
+  "group": "Application framework",
+  "name": "HarfBuzz",
+  "url": "https://harfbuzz.github.io/",
+  "copyright": "Copyright © 2010-2022 Google, Inc., 2015-2020 Ebrahim Byagowi and others",
+  "license": "MIT-Modern-Variant",
+  "licenseFiles": [
+   "harfbuzz.txt"
+  ]
+ }
+]
