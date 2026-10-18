@@ -48,6 +48,7 @@ static const muse::Settings::Key USE_REKORDBOX_ANALYSIS(module_name, "mixhouse/l
 static const muse::Settings::Key USE_LEXICON_LIBRARY(module_name, "mixhouse/library/useLexiconLibrary");
 static const muse::Settings::Key QUANTIZE_ENABLED(module_name, "mixhouse/deck/quantize");
 static const muse::Settings::Key KEYLOCK_ENABLED(module_name, "mixhouse/deck/keylock");
+static const muse::Settings::Key AUTOMATION_LATCH(module_name, "mixhouse/automation/latch");
 static const muse::Settings::Key TEMPO_LANE_VISIBLE(module_name, "mixhouse/arrangement/tempoLaneVisible");
 static const muse::Settings::Key TEMPO_LANE_HEIGHT(module_name, "mixhouse/arrangement/tempoLaneHeight");
 static constexpr int kMaxSearchHistoryEntries = 50;
@@ -519,6 +520,17 @@ void MixHouseLibraryConfiguration::setKeylockEnabled(bool enabled)
 {
     muse::settings()->setSharedValue(KEYLOCK_ENABLED, muse::Val(enabled));
     mixtape::SetKeylock(enabled);
+    m_settingsChanged.notify();
+}
+
+bool MixHouseLibraryConfiguration::automationLatch() const
+{
+    return muse::settings()->value(AUTOMATION_LATCH).toBool();
+}
+
+void MixHouseLibraryConfiguration::setAutomationLatch(bool latch)
+{
+    muse::settings()->setSharedValue(AUTOMATION_LATCH, muse::Val(latch));
     m_settingsChanged.notify();
 }
 

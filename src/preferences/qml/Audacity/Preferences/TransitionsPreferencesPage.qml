@@ -51,6 +51,14 @@ PreferencesPage {
         { text: qsTrc("preferences", "Swap"), value: 4 }
     ]
 
+    readonly property var shapeChoices: [
+        { text: qsTrc("preferences", "Equal power (steady level)"), value: 0 },
+        { text: qsTrc("preferences", "Linear"), value: 1 },
+        { text: qsTrc("preferences", "S-curve (smooth ends)"), value: 2 },
+        { text: qsTrc("preferences", "Early (changes at the start)"), value: 3 },
+        { text: qsTrc("preferences", "Late (changes at the end)"), value: 4 }
+    ]
+
     readonly property var filterChoices: [
         { text: qsTrc("preferences", "None"), value: 0 },
         { text: qsTrc("preferences", "Outgoing thins out (high-pass)"), value: 1 },
@@ -394,6 +402,26 @@ PreferencesPage {
                                 navigation.name: "TransitionsCurve" + lane.index
                                 navigation.panel: buildSection.navigation
                                 navigation.row: 10 + lane.index * 10
+                            }
+
+                            ComboBoxWithTitle {
+                                readonly property int curve: lane.settings.curve ?? 0
+                                visible: curve >= 1 && curve <= 3
+                                title: qsTrc("preferences", "Shape:")
+                                columnWidth: 208
+
+                                currentIndex: root.indexOfValue(root.shapeChoices, lane.settings.shape ?? 0)
+                                model: root.shapeChoices
+                                textRole: "text"
+                                valueRole: "value"
+
+                                onValueEdited: function(newIndex, newValue) {
+                                    root.setLane(lane.modelData.key, "shape", newValue)
+                                }
+
+                                navigation.name: "TransitionsShape" + lane.index
+                                navigation.panel: buildSection.navigation
+                                navigation.row: 14 + lane.index * 10
                             }
 
                             IncrementalPropertyControlWithTitle {

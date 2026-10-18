@@ -11,6 +11,9 @@
 **********************************************************************/
 
 #include "ExportPluginHelpers.h"
+
+#include <mutex>
+#include <utility>
 #include "au3-track/Track.h"
 #include "au3-mixer/Mix.h"
 #include "au3-wave-track/WaveTrack.h"
@@ -31,6 +34,23 @@ ExportPluginHelpers::MixRenderHook& MixRenderHookRef()
 void ExportPluginHelpers::SetMixRenderHook(MixRenderHook hook)
 {
     MixRenderHookRef() = std::move(hook);
+}
+
+namespace {
+std::mutex s_loudnessMutex;
+std::optional<ExportPluginHelpers::Loudness> s_lastLoudness;
+}
+
+void ExportPluginHelpers::SetLastExportLoudness(std::optional<Loudness> loudness)
+{
+    std::lock_guard<std::mutex> lock(s_loudnessMutex);
+    s_lastLoudness = loudness;
+}
+
+std::optional<ExportPluginHelpers::Loudness> ExportPluginHelpers::TakeLastExportLoudness()
+{
+    std::lock_guard<std::mutex> lock(s_loudnessMutex);
+    return std::exchange(s_lastLoudness, std::nullopt);
 }
 
 std::unique_ptr<Mixer> ExportPluginHelpers::CreateMixer(

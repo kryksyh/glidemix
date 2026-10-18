@@ -38,6 +38,29 @@ void specAdd(std::vector<SpecPoint>& line, double offset, double value)
     line.push_back({ offset, value });
 }
 
+// The level (0..1) of a fading line at `u` (0..1) through the fade. A falling
+// line mirrors the rising one, so in a crossfade both tracks move alike.
+double specFadeShape(MixHouseFadeShape shape, double u, bool falling)
+{
+    switch (shape) {
+    case MixHouseFadeShape::EqualPower:
+        // The two lines' squares sum to 1 at full strength.
+        return falling ? std::cos(u * kSpecHalfPi) : std::sin(u * kSpecHalfPi);
+    case MixHouseFadeShape::Linear:
+        return falling ? 1.0 - u : u;
+    case MixHouseFadeShape::SCurve: {
+        const double s = u * u * (3.0 - 2.0 * u);
+        return falling ? 1.0 - s : s;
+    }
+    case MixHouseFadeShape::Early:
+        // The incoming track is up quickly, the outgoing one drops quickly.
+        return falling ? (1.0 - u) * (1.0 - u) : 1.0 - (1.0 - u) * (1.0 - u);
+    case MixHouseFadeShape::Late:
+        return falling ? 1.0 - u * u : u * u;
+    }
+    return falling ? 1.0 - u : u;
+}
+
 // One track's line for one lane. `outgoing` picks which of the two tracks it is.
 std::vector<SpecPoint> specLine(const MixHouseTransitionLane& lane, double length, bool outgoing)
 {
@@ -46,8 +69,7 @@ std::vector<SpecPoint> specLine(const MixHouseTransitionLane& lane, double lengt
     const auto fade = [&](bool fallingLine) {
         for (int i = 0; i <= kSpecCurveSteps; ++i) {
             const double u = double(i) / kSpecCurveSteps;
-            // Equal power: the two lines' squares sum to 1 at full strength.
-            const double shape = fallingLine ? std::cos(u * kSpecHalfPi) : std::sin(u * kSpecHalfPi);
+            const double shape = specFadeShape(lane.shape, u, fallingLine);
             specAdd(line, u * length, 1.0 - strength * (1.0 - shape));
         }
     };

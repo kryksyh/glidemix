@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "au3-mixer/WideSampleSequence.h"
+#include "MixtapeLoudness.h"
 
 namespace mixtape {
 class Renderer;
@@ -44,6 +45,10 @@ public:
         return mBuffer.size() == 1 ? AudioGraph::MonoChannel : AudioGraph::LeftChannel;
     }
 
+    //! Called once, from the export thread, when the last frame has been
+    //! rendered: how loud the whole export is.
+    void SetOnFinished(std::function<void(const LoudnessReport&)> onFinished);
+
     //! Seconds of output the renderer gives for timeline t0..t1 with the
     //! tempo line as it is now.
     static double OutputSeconds(double t0, double t1);
@@ -62,5 +67,8 @@ private:
     mutable int64_t mBufferStart = 0;
     mutable int64_t mRendered = 0;   // frames rendered so far (output time)
     mutable int64_t mToSkip = -1;    // latency compensation still to drop
+    mutable std::unique_ptr<LoudnessMeter> mMeter;
+    mutable int64_t mMeasured = 0;   // frames the meter has seen
+    std::function<void(const LoudnessReport&)> mOnFinished;
 };
 }

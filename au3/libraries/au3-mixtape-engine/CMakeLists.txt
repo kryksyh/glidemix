@@ -14,6 +14,8 @@ set( SOURCES
    MixtapeDeck.h
    MixtapeEffects.cpp
    MixtapeEffects.h
+   MixtapeLoudness.cpp
+   MixtapeLoudness.h
    MixtapeRenderedSequence.cpp
    MixtapeDemo.h
    MixtapeDemo.cpp
@@ -28,6 +30,7 @@ set( SOURCES
 set( LIBRARIES
 PUBLIC
    au3-audio-devices
+   au3-math
    au3-mixer
    au3-project
    au3-realtime-effects

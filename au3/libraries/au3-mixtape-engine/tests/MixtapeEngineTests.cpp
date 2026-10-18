@@ -14,6 +14,7 @@
 #include "au3-mixtape-engine/MixtapeArrangement.h"
 #include "au3-mixtape-engine/MixtapeClipVoice.h"
 #include "au3-mixtape-engine/MixtapeDeck.h"
+#include "au3-mixtape-engine/MixtapeLoudness.h"
 #include "au3-mixtape-engine/MixtapeRenderer.h"
 #include "au3-mixtape-engine/MixtapeTransport.h"
 #include <thread>
@@ -24,6 +25,19 @@
 #include "au3-mixer/PlaybackSpeedCurve.h"
 
 using namespace mixtape;
+
+#ifdef _WIN32
+// POSIX setenv/unsetenv for the tests that switch engine options on Windows.
+static int setenv(const char* name, const char* value, int)
+{
+    return _putenv_s(name, value);
+}
+
+static int unsetenv(const char* name)
+{
+    return _putenv_s(name, "");
+}
+#endif
 
 namespace {
 constexpr double kRate = 44100.0;
@@ -63,11 +77,13 @@ std::shared_ptr<const Arrangement> OneClip(const WaveClip& clip, uint64_t genera
     return arrangement;
 }
 
-//! Renders `seconds` of stereo in blocks of `block` frames; returns channel 0.
+//! Renders `seconds` of stereo in blocks of `block` frames; returns channel 0,
+//! lined up with the timeline (the master limiter's look-ahead taken off).
 std::vector<float> RenderLeft(Renderer& renderer, double seconds, size_t block = 512,
                               const std::function<void(double)>& beforeBlock = {})
 {
-    const size_t total = static_cast<size_t>(seconds * kRate);
+    const size_t lookahead = renderer.LimiterDelayFrames();
+    const size_t total = static_cast<size_t>(seconds * kRate) + lookahead;
     std::vector<float> left(total), right(total);
     size_t done = 0;
     while (done < total) {
@@ -79,6 +95,7 @@ std::vector<float> RenderLeft(Renderer& renderer, double seconds, size_t block =
         renderer.Render(out, n);
         done += n;
     }
+    left.erase(left.begin(), left.begin() + static_cast<std::ptrdiff_t>(lookahead));
     return left;
 }
 
@@ -470,7 +487,8 @@ void TempoCurveKeepsPitch()
     }
     std::cout << "  ramp 128->155: tone off by at most " << worst << " Hz over 9 s\n";
     Require(worst < 2.0, "pitch moved on the tempo ramp");
-    const double expectedTimeline = curve->SolveIntegralOfInverse(0.0, 10.0);
+    // RenderLeft renders the limiter's look-ahead on top of the 10 s.
+    const double expectedTimeline = curve->SolveIntegralOfInverse(0.0, 10.0 + renderer.LimiterDelayFrames() / kRate);
     std::cout << "  playhead after 10 s real: " << renderer.Position() << " (curve says " << expectedTimeline << ")\n";
     Require(std::abs(renderer.Position() - expectedTimeline) < 1e-6, "playhead does not follow the curve");
 }
@@ -503,7 +521,7 @@ void LatencyCompensationHoldsOtherTracksBack()
         worst = std::max(worst, double(std::abs(out[i] - expected)));
     }
     std::cout << "  output delay " << delayed.OutputDelayFrames() << " frames, worst mismatch " << worst << "\n";
-    Require(delayed.OutputDelayFrames() == 441, "output delay not reported");
+    Require(delayed.OutputDelayFrames() == 441 + delayed.LimiterDelayFrames(), "output delay not reported");
     Require(worst < 1e-4, "the track without effects was not held back by the latency");
 }
 
@@ -595,7 +613,7 @@ void LoopWrapsAtTheLoopEnd()
     Require(std::abs(renderer.Position() - 1.2) < 0.01, "loop position wrong");
     Require(maxPosition <= 1.5 + 1e-9, "played past the loop end");
     // Sample 0.6 s in is 0.1 s into the second pass: source second 1.1.
-    const size_t at = static_cast<size_t>(0.6 * kRate) + 50;
+    const size_t at = static_cast<size_t>(0.6 * kRate) + 50 + renderer.LimiterDelayFrames();
     const float expected = static_cast<float>(0.5 * std::sin(2 * kPi * 440.0 * (1.1 * kRate + 50) / kRate));
     Require(std::abs(left[at] - expected) < 1e-3f, "second loop pass does not replay the loop start");
 }
@@ -684,6 +702,74 @@ void DeckMetronomeClicksOnBeats()
 //! The small-machine resampler keeps the highs clean: a 15 kHz tone from a
 //! 44.1 kHz clip on a 48 kHz output, with everything that is not the tone at
 //! least 60 dB down (the old Hermite interpolation left only 12 dB).
+void LoudnessMeterMeasuresSineAndPeaks()
+{
+    // EBU Tech 3341's test 1: a 1 kHz sine at -23 dBFS on both channels of a
+    // stereo file reads -23 LUFS; here at -20 dBFS, so -20 LUFS.
+    constexpr double rate = 48000.0;
+    const size_t frames = static_cast<size_t>(10.0 * rate);
+    const double amplitude = std::pow(10.0, -20.0 / 20.0);
+    std::vector<float> left(frames), right(frames);
+    for (size_t i = 0; i < frames; ++i) {
+        left[i] = right[i] = static_cast<float>(amplitude * std::sin(2 * kPi * 1000.0 * i / rate));
+    }
+    LoudnessMeter meter(rate, 2);
+    for (size_t at = 0; at < frames; at += 1024) {
+        const size_t n = std::min<size_t>(1024, frames - at);
+        const float* ch[] = { left.data() + at, right.data() + at };
+        meter.Process(ch, n);
+    }
+    const LoudnessReport report = meter.Report();
+    std::cout << "  " << report.integratedLufs << " LUFS, true peak " << report.truePeakDb << " dBTP, peak "
+              << report.samplePeakDb << " dBFS\n";
+    Require(std::abs(report.integratedLufs - -20.0) < 0.1, "a -20 dBFS stereo 1 kHz sine should read -20 LUFS");
+    Require(std::abs(report.samplePeakDb - -20.0) < 0.1, "sample peak of a -20 dBFS sine");
+    Require(std::abs(report.truePeakDb - -20.0) < 0.2, "true peak of a slow sine equals its peak");
+    Require(std::abs(report.seconds - 10.0) < 1e-6, "length");
+
+    // A sine at fs/4 sampled 45 degrees off its peaks: every sample is at
+    // 0.707 of the real peak, which only the oversampled meter sees (+3 dB).
+    std::vector<float> off(frames);
+    for (size_t i = 0; i < frames; ++i) {
+        off[i] = static_cast<float>(0.5 * std::sin(2 * kPi * (rate / 4) * i / rate + kPi / 4));
+    }
+    LoudnessMeter inter(rate, 1);
+    const float* ch[] = { off.data() };
+    inter.Process(ch, frames);
+    const LoudnessReport between = inter.Report();
+    std::cout << "  between samples: true peak " << between.truePeakDb << " dBTP, peak " << between.samplePeakDb << " dBFS\n";
+    Require(std::abs(between.truePeakDb - 20 * std::log10(0.5)) < 0.3, "true peak finds the peak between samples");
+    Require(between.truePeakDb - between.samplePeakDb > 2.5, "true peak above sample peak");
+}
+
+void LimiterHoldsTruePeakUnderCeiling()
+{
+    // Two in-phase 0.5 sines at 10 kHz sum to a full-scale tone whose peaks
+    // fall mostly between the samples: the limiter must hold the true peak
+    // (what an MP3 encoder sees) at -1 dBTP, not just the samples.
+    auto clip = SineClip(4.0, 10000.0, 0.0);
+    auto arrangement = std::make_shared<Arrangement>();
+    for (int t = 0; t < 2; ++t) {
+        TrackSnapshot track;
+        track.trackId = t + 1;
+        track.clips.push_back(SnapshotClip(*clip));
+        arrangement->tracks.push_back(track);
+    }
+    Renderer renderer(kRate, 2);
+    renderer.SetArrangement(arrangement);
+    const auto out = RenderLeft(renderer, 3.5);
+    // The whole output from its first frame: starting the meter mid-tone
+    // would itself read as a jump from silence, a peak that isn't there.
+    LoudnessMeter meter(kRate, 1);
+    const float* ch[] = { out.data() };
+    meter.Process(ch, out.size());
+    const LoudnessReport report = meter.Report();
+    std::cout << "  limited: true peak " << report.truePeakDb << " dBTP, sample peak " << report.samplePeakDb
+              << " dBFS, look-ahead " << renderer.LimiterDelayFrames() << " frames\n";
+    Require(report.truePeakDb <= -1.0, "true peak above -1 dBTP");
+    Require(report.truePeakDb >= -1.6, "limited far more than needed");
+}
+
 void ResamplerKeepsHighsClean()
 {
     constexpr double outRate = 48000.0;
@@ -827,6 +913,8 @@ int main(int argc, char** argv)
         { "pan", MuteSoloPan },
         { "44.1 kHz clip on a 48 kHz output, stretcher and resampler", RateMismatchResamples },
         { "the small-machine resampler keeps the highs clean", ResamplerKeepsHighsClean },
+        { "loudness meter: LUFS, true peak, sample peak", LoudnessMeterMeasuresSineAndPeaks },
+        { "limiter holds the true peak at -1 dBTP", LimiterHoldsTruePeakUnderCeiling },
         { "CPU: 8 stretched stereo clips", StretchedVoicesCpu },
         { "CPU: 4 clips at their own tempo, 48 kHz output", OwnTempoVoicesCpu },
         { "loop wraps at the loop end", LoopWrapsAtTheLoopEnd },

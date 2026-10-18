@@ -35,6 +35,25 @@ double IMixHouseTempoMap::curveShape(double t, double curve)
     return std::pow(std::clamp(t, 0.0, 1.0), curveExponent(curve));
 }
 
+double IMixHouseTempoMap::segmentShape(double t, const Point& from)
+{
+    t = std::clamp(t, 0.0, 1.0);
+    if (from.shape == Shape::SCurve) {
+        return t * t * (3.0 - 2.0 * t);   // smoothstep: flat at both ends
+    }
+    return curveShape(t, from.curve);
+}
+
+double IMixHouseTempoMap::segmentShapeIntegral(double t, const Point& from)
+{
+    t = std::clamp(t, 0.0, 1.0);
+    if (from.shape == Shape::SCurve) {
+        return t * t * t - 0.5 * t * t * t * t;
+    }
+    const double k = curveExponent(std::abs(from.curve) < 1e-6 ? 0.0 : from.curve);
+    return std::pow(t, k + 1.0) / (k + 1.0);
+}
+
 MixHouseTempoMap::MixHouseTempoMap(const muse::modularity::ContextPtr& iocCtx)
     : muse::Contextable(iocCtx)
 {
@@ -112,6 +131,9 @@ IMixHouseTempoMap::Points MixHouseTempoMap::sanitized(Points points)
         p.time = std::isfinite(p.time) ? std::max(0.0, p.time) : 0.0;
         p.bpm = std::isfinite(p.bpm) ? std::clamp(p.bpm, kMinBpm, kMaxBpm) : kFallbackBpm;
         p.curve = std::isfinite(p.curve) ? std::clamp(p.curve, -1.0, 1.0) : 0.0;
+        if (p.shape != Shape::Curve && p.shape != Shape::SCurve) {
+            p.shape = Shape::Curve;
+        }
     }
     std::stable_sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a.time < b.time; });
     if (points.empty()) {
@@ -171,7 +193,7 @@ double MixHouseTempoMap::bpmAt(double time) const
             if (dur <= 0.0) {
                 return b.bpm;
             }
-            return a.bpm + (b.bpm - a.bpm) * curveShape((time - a.time) / dur, a.curve);
+            return a.bpm + (b.bpm - a.bpm) * segmentShape((time - a.time) / dur, a);
         }
     }
     return m_points.back().bpm;
@@ -190,25 +212,24 @@ std::vector<MixHouseTempoMap::TablePoint> MixHouseTempoMap::table() const
     // first point the first BPM holds, so the table starts at time 0.
     std::vector<TablePoint> t;
     const Point& first = m_points.front();
-    t.push_back({ 0.0, 0.0, first.bpm, 0.0 });
+    t.push_back({ 0.0, 0.0, first.bpm, Point {} });
     double cum = 0.0;
     double prevSec = 0.0;
     double prevBpm = first.bpm;
-    double prevCurve = 0.0;
+    Point prevShape;   // before the first point: flat
     for (const Point& p : m_points) {
         if (p.time > prevSec) {
-            // bpm(t) = bpm0 + (bpm1 - bpm0) * t^k over the segment integrates to
-            // (dur / 60) * [bpm0 + (bpm1 - bpm0) / (k + 1)].
-            const double k = curveExponent(prevCurve);
-            cum += (p.time - prevSec) / 60.0 * (prevBpm + (p.bpm - prevBpm) / (k + 1.0));
-            t.push_back({ p.time, cum, p.bpm, p.curve });
+            // bpm(t) = bpm0 + (bpm1 - bpm0) * shape(t) over the segment
+            // integrates to (dur / 60) * [bpm0 + (bpm1 - bpm0) * integral(1)].
+            cum += (p.time - prevSec) / 60.0 * (prevBpm + (p.bpm - prevBpm) * segmentShapeIntegral(1.0, prevShape));
+            t.push_back({ p.time, cum, p.bpm, p });
         } else {
             t.back().bpm = p.bpm;   // a point at the same time replaces the value
-            t.back().curve = p.curve;
+            t.back().shape = p;
         }
         prevSec = p.time;
         prevBpm = p.bpm;
-        prevCurve = p.curve;
+        prevShape = p;
     }
     return t;
 }
@@ -225,9 +246,8 @@ double MixHouseTempoMap::secToBeat(double sec) const
             if (dur <= 0.0) {
                 return t[j].beats;
             }
-            const double k = curveExponent(t[j].curve);
             const double u = std::clamp((sec - t[j].sec) / dur, 0.0, 1.0);
-            return t[j].beats + dur / 60.0 * (t[j].bpm * u + (t[j + 1].bpm - t[j].bpm) * std::pow(u, k + 1.0) / (k + 1.0));
+            return t[j].beats + dur / 60.0 * (t[j].bpm * u + (t[j + 1].bpm - t[j].bpm) * segmentShapeIntegral(u, t[j].shape));
         }
     }
     return t.back().beats + (sec - t.back().sec) * t.back().bpm / 60.0;
@@ -253,9 +273,8 @@ double MixHouseTempoMap::beatToSec(double beat) const
             }
             // Beats are strictly increasing inside a segment (BPM >= 50), so
             // bisection on the forward integral finds the one root.
-            const double k = curveExponent(t[j].curve);
             auto beatsAt = [&](double u) {
-                return dur / 60.0 * (bpm0 * u + (bpm1 - bpm0) * std::pow(u, k + 1.0) / (k + 1.0));
+                return dur / 60.0 * (bpm0 * u + (bpm1 - bpm0) * segmentShapeIntegral(u, t[j].shape));
             };
             double lo = 0.0, hi = 1.0;
             for (int it = 0; it < 48; ++it) {
@@ -295,12 +314,12 @@ void MixHouseTempoMap::rebuildPlaybackWarp()
     for (size_t i = 0; i < m_points.size(); ++i) {
         const Point& a = m_points[i];
         add(a.time, a.bpm);
-        if (i + 1 < m_points.size() && std::abs(a.curve) >= 1e-6) {
+        if (i + 1 < m_points.size() && (a.shape == Shape::SCurve || std::abs(a.curve) >= 1e-6)) {
             const Point& b = m_points[i + 1];
             constexpr int steps = 64;
             for (int k = 1; k < steps; ++k) {
                 const double t = double(k) / steps;
-                add(a.time + (b.time - a.time) * t, a.bpm + (b.bpm - a.bpm) * curveShape(t, a.curve));
+                add(a.time + (b.time - a.time) * t, a.bpm + (b.bpm - a.bpm) * segmentShape(t, a));
             }
         }
     }
@@ -422,7 +441,10 @@ void MixHouseTempoMap::followTracksNow(bool force)
         if (next.start < current.end) {
             // Beatmix: over the overlap the tempo glides from the outgoing
             // track's BPM to the incoming one's.
+            // An S-curve, as a DJ rides the pitch fader: it leaves the old
+            // tempo gently and settles gently into the new one.
             add(next.start, current.bpm);
+            points.back().shape = Shape::SCurve;
             add(current.end, next.bpm);
         } else {
             // A gap: hold, then the next track starts at its own tempo.

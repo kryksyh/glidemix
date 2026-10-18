@@ -129,7 +129,8 @@ void MixHouseTempoLane::paint(QPainter* p)
     for (size_t i = 0; i < points.size(); ++i) {
         const QPointF a(timeToX(points[i].time), bpmToY(points[i].bpm));
         path.lineTo(a);
-        if (i + 1 >= points.size() || std::abs(points[i].curve) < 1e-6) {
+        if (i + 1 >= points.size()
+            || (points[i].shape == IMixHouseTempoMap::Shape::Curve && std::abs(points[i].curve) < 1e-6)) {
             continue;
         }
         const QPointF b(timeToX(points[i + 1].time), bpmToY(points[i + 1].bpm));
@@ -139,7 +140,7 @@ void MixHouseTempoLane::paint(QPainter* p)
         const int steps = std::clamp(static_cast<int>(std::abs(b.x() - a.x()) / 4.0), 2, 256);
         for (int k = 1; k < steps; ++k) {
             const double t = double(k) / steps;
-            const double e = IMixHouseTempoMap::curveShape(t, points[i].curve);
+            const double e = IMixHouseTempoMap::segmentShape(t, points[i]);
             path.lineTo(a.x() + (b.x() - a.x()) * t, a.y() + (b.y() - a.y()) * e);
         }
     }
@@ -200,7 +201,7 @@ void MixHouseTempoLane::mousePressEvent(QMouseEvent* e)
             if (time >= points[i].time && time <= points[i + 1].time) {
                 m_drag = Drag::Curve;
                 m_dragIndex = i;
-                m_dragStartValue = points[i].curve;
+                m_dragStartValue = points[i].shape == IMixHouseTempoMap::Shape::Curve ? points[i].curve : 0.0;
                 e->accept();
                 return;
             }
@@ -256,6 +257,7 @@ void MixHouseTempoLane::mouseMoveEvent(QMouseEvent* e)
         const double dy = (m_dragStartY - pos.y()) / kBendSpanPx;
         const bool rising = points[m_dragIndex + 1].bpm >= points[m_dragIndex].bpm;
         points[m_dragIndex].curve = std::clamp(m_dragStartValue + (rising ? dy : -dy), -1.0, 1.0);
+        points[m_dragIndex].shape = IMixHouseTempoMap::Shape::Curve;   // bending replaces an S-curve
     } else {
         const double lo = m_dragIndex > 0 ? points[m_dragIndex - 1].time + kMinPointGapSec : 0.0;
         const double hi = m_dragIndex + 1 < static_cast<int>(points.size())
@@ -338,6 +340,36 @@ bool MixHouseTempoLane::deletePoint(int index)
     tempoMap()->setPoints(points, true);
     update();
     return true;
+}
+
+bool MixHouseTempoLane::isSCurve(int index) const
+{
+    if (!tempoMap()) {
+        return false;
+    }
+    const Points points = tempoMap()->points();
+    return index >= 0 && index < static_cast<int>(points.size())
+           && points[index].shape == IMixHouseTempoMap::Shape::SCurve;
+}
+
+bool MixHouseTempoLane::hasNextPoint(int index) const
+{
+    return tempoMap() && index >= 0 && index + 1 < static_cast<int>(tempoMap()->points().size());
+}
+
+void MixHouseTempoLane::setGlideShape(int index, bool sCurve)
+{
+    if (!tempoMap() || m_drag != Drag::None) {
+        return;
+    }
+    Points points = tempoMap()->points();
+    if (index < 0 || index + 1 >= static_cast<int>(points.size())) {
+        return;
+    }
+    points[index].shape = sCurve ? IMixHouseTempoMap::Shape::SCurve : IMixHouseTempoMap::Shape::Curve;
+    points[index].curve = 0.0;
+    tempoMap()->setPoints(points, true);
+    update();
 }
 
 void MixHouseTempoLane::clearPointHighlight()

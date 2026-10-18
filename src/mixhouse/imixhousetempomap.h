@@ -29,10 +29,17 @@ public:
     static constexpr double kMinBpm = 50.0;    // parked kTempoMin
     static constexpr double kMaxBpm = 300.0;   // parked kTempoMax
 
+    /// How the segment to the next point runs.
+    enum class Shape {
+        Curve,    ///< bent by `curve` (0 is a straight ramp)
+        SCurve,   ///< eases out of the old tempo and into the new one
+    };
+
     struct Point {
         double time = 0.0;   ///< project seconds
         double bpm = 120.0;
         double curve = 0.0;  ///< shape of the segment to the NEXT point, -1..1
+        Shape shape = Shape::Curve;
     };
     using Points = std::vector<Point>;
 
@@ -79,5 +86,10 @@ public:
     /// k = 2^(-2 * curve); curve 0 is a straight ramp.
     static double curveExponent(double curve);
     static double curveShape(double t, double curve);
+
+    /// 0..1 along the segment that starts at `from`, at fraction `t` of its
+    /// length, and the integral of that from 0 to `t` (for counting beats).
+    static double segmentShape(double t, const Point& from);
+    static double segmentShapeIntegral(double t, const Point& from);
 };
 }

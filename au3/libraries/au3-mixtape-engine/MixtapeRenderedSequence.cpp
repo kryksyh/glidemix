@@ -20,6 +20,7 @@ RenderedSequence::RenderedSequence(std::unique_ptr<Renderer> renderer, std::shar
     , mOutputSeconds(outputSeconds)
     , mRate(rate)
     , mBuffer(mRenderer ? mRenderer->OutputChannels() : 2)
+    , mMeter(std::make_unique<LoudnessMeter>(rate, mBuffer.size()))
 {
     if (mRenderer) {
         mRenderer->Seek(startTime);
@@ -31,6 +32,12 @@ RenderedSequence::~RenderedSequence()
     // The renderer before what it uses.
     mRenderer.reset();
     mKeepAlive.reset();
+}
+
+void RenderedSequence::SetOnFinished(std::function<void(const LoudnessReport&)> onFinished)
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+    mOnFinished = std::move(onFinished);
 }
 
 size_t RenderedSequence::NChannels() const
@@ -85,6 +92,24 @@ void RenderedSequence::RenderUpTo(int64_t frame) const
             mBuffer[c].insert(mBuffer[c].end(), block[c].begin() + from, block[c].end());
         }
         mRendered += static_cast<int64_t>(kRenderBlockFrames - from);
+
+        // Every frame of the file passes the loudness meter once.
+        const int64_t total = static_cast<int64_t>(std::llround(mOutputSeconds * mRate));
+        if (mMeter && mMeasured < total) {
+            const size_t count = static_cast<size_t>(std::min<int64_t>(kRenderBlockFrames - from, total - mMeasured));
+            std::vector<const float*> measured(channels);
+            for (size_t c = 0; c < channels; ++c) {
+                measured[c] = block[c].data() + from;
+            }
+            mMeter->Process(measured.data(), count);
+            mMeasured += static_cast<int64_t>(count);
+            if (mMeasured >= total) {
+                if (mOnFinished) {
+                    mOnFinished(mMeter->Report());
+                }
+                mMeter.reset();
+            }
+        }
     }
 }
 

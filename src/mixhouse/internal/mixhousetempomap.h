@@ -52,7 +52,7 @@ private:
         double sec = 0.0;
         double beats = 0.0;   // beats elapsed at `sec`
         double bpm = 0.0;
-        double curve = 0.0;
+        Point shape;   // the segment from here to the next entry
     };
 
     void onProjectChanged();

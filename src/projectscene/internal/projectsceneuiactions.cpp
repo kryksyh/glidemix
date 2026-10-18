@@ -528,6 +528,7 @@ const ToolConfig& ProjectSceneUiActions::defaultPlaybackToolBarConfig()
             { "mixhouse-broadcast", true },
             { "mixhouse-mix-now", true },
             { "mixhouse-automation-arm", true },
+            { "mixhouse-automation-latch", true },
             { "mixhouse-reenable-automation", true },
             { "", true },
             { "mixtape-track-height", true },

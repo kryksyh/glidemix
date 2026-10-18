@@ -49,6 +49,29 @@ MixHouseCurveKind transitionCurveFromName(const QString& name)
     return MixHouseCurveKind::None;
 }
 
+const char* fadeShapeName(MixHouseFadeShape shape)
+{
+    switch (shape) {
+    case MixHouseFadeShape::Linear: return "linear";
+    case MixHouseFadeShape::SCurve: return "sCurve";
+    case MixHouseFadeShape::Early: return "early";
+    case MixHouseFadeShape::Late: return "late";
+    case MixHouseFadeShape::EqualPower: break;
+    }
+    return "equalPower";
+}
+
+MixHouseFadeShape fadeShapeFromName(const QString& name)
+{
+    for (const MixHouseFadeShape shape : { MixHouseFadeShape::Linear, MixHouseFadeShape::SCurve,
+                                           MixHouseFadeShape::Early, MixHouseFadeShape::Late }) {
+        if (name == QLatin1String(fadeShapeName(shape))) {
+            return shape;
+        }
+    }
+    return MixHouseFadeShape::EqualPower;
+}
+
 // The effect lanes, also by name.
 const char* filterSweepName(MixHouseFilterSweep sweep)
 {
@@ -117,6 +140,7 @@ QJsonObject transitionLaneToJson(const MixHouseTransitionLane& lane)
 {
     return QJsonObject {
         { "curve", QLatin1String(transitionCurveName(lane.curve)) },
+        { "shape", QLatin1String(fadeShapeName(lane.shape)) },
         { "strength", lane.strength },
         { "crossing", lane.crossing },
         { "leaveOutBeats", lane.leaveOutBeats },
@@ -127,6 +151,7 @@ MixHouseTransitionLane transitionLaneFromJson(const QJsonObject& json)
 {
     MixHouseTransitionLane lane;
     lane.curve = transitionCurveFromName(json.value("curve").toString());
+    lane.shape = fadeShapeFromName(json.value("shape").toString());
     lane.strength = json.value("strength").toDouble(1.0);
     lane.crossing = json.value("crossing").toDouble(0.5);
     lane.leaveOutBeats = json.value("leaveOutBeats").toDouble(0.0);

@@ -49,6 +49,10 @@ public:
     //! Removes point `index` (the last remaining point stays).
     Q_INVOKABLE bool deletePoint(int index);
     Q_INVOKABLE void clearPointHighlight();
+    //! The glide from point `index` to the next: S-curve, or straight.
+    Q_INVOKABLE bool isSCurve(int index) const;
+    Q_INVOKABLE bool hasNextPoint(int index) const;
+    Q_INVOKABLE void setGlideShape(int index, bool sCurve);
 
 signals:
     //! Right-click on a point: the owner shows "Delete point" at x, y.

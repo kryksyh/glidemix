@@ -3,8 +3,10 @@
  */
 #include "MixtapeRenderer.h"
 #include "MixtapeDemo.h"
+#include "MixtapeLoudness.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <mutex>
 #include <cmath>
@@ -61,33 +63,111 @@ float Renderer::CueGain()
 }
 
 namespace {
-constexpr float kLimitCeiling = 0.891f;     // -1 dBFS
+// -1.05 dBTP: room for MP3 and AAC encoders, and a hair under -1 so a meter
+// (ours, ffmpeg's) reads -1.0 or less.
+constexpr float kLimitCeiling = 0.886f;
 constexpr double kLimitReleaseSec = 0.15;
+constexpr double kLimitLookaheadSec = 0.0015;
+// The true-peak estimate is the loudness meter's own (8x), over
+// the kTpTaps frames ending kTpHalf - 1 frames after the judged one.
+constexpr int kTpTaps = TruePeakFilter::kTaps;
+constexpr int kTpHalf = kTpTaps / 2;
 }
 
 Renderer::Renderer(double outputRate, size_t outputChannels)
     : mOutputRate{outputRate}
     , mOutputChannels{outputChannels}
 {
-    mLimiter.release = static_cast<float>(std::exp(-1.0 / (kLimitReleaseSec * outputRate)));
+    Limiter& l = mLimiter;
+    l.release = static_cast<float>(std::exp(-1.0 / (kLimitReleaseSec * outputRate)));
+    l.lookahead = std::max<size_t>(8, static_cast<size_t>(std::lround(kLimitLookaheadSec * outputRate)));
+    // A frame is judged kTpHalf frames after it comes in (the true-peak
+    // filter needs the ones after it), and its gain is ready lookahead - 1
+    // frames after that.
+    l.delay = static_cast<size_t>(kTpHalf) + l.lookahead - 1;
+    l.input.assign(outputChannels, std::vector<float>(l.delay + kTpHalf + 1, 0.0f));
+    l.required.assign(l.lookahead, 1.0f);
+    l.box.assign(l.lookahead, 1.0f);
+    l.boxSum = static_cast<double>(l.lookahead);
+    l.minQueue.reserve(l.lookahead + 1);
+}
+
+// The largest magnitude around input frame `position` (a ring index): the
+// sample, and the meter's eight points between it and its neighbours.
+float Renderer::TruePeakAt(size_t position) const
+{
+    const Limiter& l = mLimiter;
+    const size_t size = l.input[0].size();
+    const auto& phases = TruePeakFilter::Phases();
+    float peak = 0.0f;
+    for (size_t c = 0; c < mOutputChannels; ++c) {
+        const auto& ring = l.input[c];
+        peak = std::max(peak, std::abs(ring[position]));
+        // Quiet stretches can't reach the ceiling between samples: skip the
+        // filter there (most of a mix), it is the costly part.
+        float around = 0.0f;
+        for (int k = 0; k < kTpTaps; ++k) {
+            around = std::max(around, std::abs(ring[(position + size + static_cast<size_t>(k) - static_cast<size_t>(kTpHalf)) % size]));
+        }
+        if (around < 0.5f * kLimitCeiling) {
+            continue;
+        }
+        for (const auto& phase : phases) {
+            float sum = 0.0f;
+            for (int k = 0; k < kTpTaps; ++k) {
+                // Frames position - kTpHalf .. position + kTpHalf - 1, oldest first.
+                const size_t at = (position + size + static_cast<size_t>(k) - static_cast<size_t>(kTpHalf)) % size;
+                sum += phase[static_cast<size_t>(k)] * ring[at];
+            }
+            peak = std::max(peak, std::abs(sum));
+        }
+    }
+    return peak;
 }
 
 void Renderer::Limit(float* const* out, size_t frames)
 {
     Limiter& l = mLimiter;
+    const size_t size = l.input[0].size();
     for (size_t i = 0; i < frames; ++i) {
-        float peak = 0.0f;
         for (size_t c = 0; c < mOutputChannels; ++c) {
-            peak = std::max(peak, std::abs(out[c][i]));
+            l.input[c][l.write] = out[c][i];
         }
-        const float needed = peak * l.gain > kLimitCeiling ? kLimitCeiling / peak : 1.0f;
-        // Down at once when a peak would pass the ceiling; back up slowly.
-        l.gain = needed < l.gain ? needed : 1.0f - (1.0f - l.gain) * l.release;
-        if (l.gain < 1.0f) {
-            for (size_t c = 0; c < mOutputChannels; ++c) {
-                out[c][i] *= l.gain;
-            }
+        // The frame kTpHalf back now has the frames after it: its true peak,
+        // and the gain it needs.
+        const size_t judged = (l.write + size - kTpHalf) % size;
+        const float peak = TruePeakAt(judged);
+        const float needed = peak > kLimitCeiling ? kLimitCeiling / peak : 1.0f;
+
+        // The smallest gain needed over the look-ahead window...
+        const size_t n = l.index++;
+        auto& q = l.minQueue;
+        while (q.size() > l.minHead && q.back().second >= needed) {
+            q.pop_back();
         }
+        q.emplace_back(n, needed);
+        while (q[l.minHead].first + l.lookahead <= n) {
+            ++l.minHead;
+        }
+        if (l.minHead > l.lookahead) {   // keep the vector small
+            q.erase(q.begin(), q.begin() + static_cast<std::ptrdiff_t>(l.minHead));
+            l.minHead = 0;
+        }
+        const float windowMin = q[l.minHead].second;
+        // ...averaged over the same window: the gain glides down over 1.5 ms
+        // and is at or below what each frame needs when that frame leaves.
+        const size_t slot = n % l.lookahead;
+        l.boxSum += static_cast<double>(windowMin) - l.box[slot];
+        l.box[slot] = windowMin;
+        const float target = static_cast<float>(std::min(1.0, l.boxSum / static_cast<double>(l.lookahead)));
+        // Down as the look-ahead says; back up slowly.
+        l.gain = target < l.gain ? target : target - (target - l.gain) * l.release;
+
+        const size_t leaving = (l.write + size - l.delay) % size;
+        for (size_t c = 0; c < mOutputChannels; ++c) {
+            out[c][i] = l.input[c][leaving] * l.gain;
+        }
+        l.write = (l.write + 1) % size;
     }
 }
 
@@ -211,7 +291,7 @@ std::pair<double, double> Renderer::Render(float* const* out, size_t frames)
         for (const TrackSnapshot& track : tracks) {
             maxLatency = std::max(maxLatency, track.latencyFrames);
         }
-        mOutputDelay = maxLatency;
+        mOutputDelay = maxLatency + mLimiter.delay;   // the limiter's look-ahead too
         mTrackPtrs.resize(mOutputChannels);
         for (const TrackJob& job : mJobs) {
             const TrackSnapshot& track = tracks[job.track];

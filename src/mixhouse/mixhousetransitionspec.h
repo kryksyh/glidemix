@@ -21,8 +21,20 @@ enum class MixHouseCurveKind {
     Swap,        ///< the two trade places at one moment, the crossing point
 };
 
+/// How a crossfade or fade moves between its ends. Equal power keeps the
+/// level steady through a crossfade; the others trade that for a feel.
+enum class MixHouseFadeShape {
+    EqualPower,   ///< the default: no dip in the middle of a crossfade
+    Linear,       ///< a straight line
+    SCurve,       ///< gentle at both ends, quickest in the middle
+    Early,        ///< most of the change happens at the start
+    Late,         ///< holds, then most of the change happens at the end
+};
+
 struct MixHouseTransitionLane {
     MixHouseCurveKind curve = MixHouseCurveKind::None;
+    /// Crossfade, fade in and fade out: the shape of the fade.
+    MixHouseFadeShape shape = MixHouseFadeShape::EqualPower;
     /// How far the value moves: 1 goes all the way (silence, or the bass fully
     /// out), 0.5 halfway, 0 not at all.
     double strength = 1.0;

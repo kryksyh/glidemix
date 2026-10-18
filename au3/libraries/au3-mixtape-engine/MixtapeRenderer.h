@@ -87,6 +87,8 @@ public:
     //! Any thread: frames the output lags the timeline by, to line tracks up
     //! with the one whose effects delay it most.
     size_t OutputDelayFrames() const { return mOutputDelay.load(); }
+    //! Of that, the master limiter's look-ahead (always there).
+    size_t LimiterDelayFrames() const { return mLimiter.delay; }
 
     //! Render thread (or before rendering starts).
     void Seek(double time) { mTime = time; }
@@ -110,14 +112,27 @@ private:
     const size_t mOutputChannels;
 
     //! GlideMix: the master's safety limiter, so overlapping loud tracks are
-    //! turned down instead of clipping. No look-ahead: nothing is delayed, and
-    //! audio below the ceiling passes untouched, sample for sample.
+    //! turned down instead of clipping. It watches the true peak (between the
+    //! samples too, as an MP3 or AAC encoder will see it) and looks 1.5 ms
+    //! ahead, so the gain glides down before a peak instead of jumping at it.
+    //! Audio well below the ceiling passes untouched, only delayed.
     struct Limiter {
-        float gain = 1.0f;
+        size_t lookahead = 0;                     //!< frames
+        size_t delay = 0;                         //!< total frames the output lags
         float release = 0.0f;
+        float gain = 1.0f;
+        std::vector<std::vector<float> > input;   //!< per channel, ring of `delay + 1` frames
+        size_t write = 0;
+        std::vector<float> required;              //!< ring of `lookahead` gains needed
+        std::vector<std::pair<size_t, float> > minQueue;   //!< sliding minimum (index, gain)
+        size_t minHead = 0;
+        double boxSum = 0.0;
+        std::vector<float> box;                   //!< ring of `lookahead` sliding minimums
+        size_t index = 0;
     };
     Limiter mLimiter;
     void Limit(float* const* out, size_t frames);
+    float TruePeakAt(size_t position) const;
 
     EffectsHost* mEffects = nullptr;
     TrackSink mTrackSink;

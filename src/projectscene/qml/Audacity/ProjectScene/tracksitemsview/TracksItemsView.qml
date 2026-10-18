@@ -513,13 +513,28 @@ Rectangle {
                 onHandleMenuItem: function(itemId) {
                     if (itemId === "delete-point") {
                         tempoLane.deletePoint(node)
+                    } else if (itemId === "glide-straight") {
+                        tempoLane.setGlideShape(node, false)
+                    } else if (itemId === "glide-s-curve") {
+                        tempoLane.setGlideShape(node, true)
                     }
                 }
                 onClosed: tempoLane.clearPointHighlight()
             }
             onPointMenuRequested: function(node, x, y) {
                 tempoPointMenu.node = node
-                tempoPointMenu.show(Qt.point(x, y), [{ id: "delete-point", title: qsTrc("projectscene", "Delete point") }])
+                let items = []
+                // GlideMix: how the tempo glides on to the next point.
+                if (tempoLane.hasNextPoint(node)) {
+                    const sCurve = tempoLane.isSCurve(node)
+                    items.push({ id: "glide-straight", title: qsTrc("projectscene", "Glide: straight"),
+                                 checkable: true, checked: !sCurve })
+                    items.push({ id: "glide-s-curve", title: qsTrc("projectscene", "Glide: S-curve (smooth start and end)"),
+                                 checkable: true, checked: sCurve })
+                    items.push({})
+                }
+                items.push({ id: "delete-point", title: qsTrc("projectscene", "Delete point") })
+                tempoPointMenu.show(Qt.point(x, y), items)
             }
 
             Rectangle {

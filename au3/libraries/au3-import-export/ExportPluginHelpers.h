@@ -14,6 +14,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "ExportPlugin.h"
 #include "ExportTypes.h"
@@ -44,6 +45,18 @@ public:
     using MixRenderHook = std::function<std::shared_ptr<const WideSampleSequence>(
                                             const AudacityProject&, double t0, double t1, double rate, bool tracksAsked)>;
     static void SetMixRenderHook(MixRenderHook hook);
+
+    //! GlideMix: how loud the last export rendered through the hook was,
+    //! measured as it was written (EBU R128).
+    struct Loudness {
+        double integratedLufs = -70.0;
+        double truePeakDb = -100.0;
+        double samplePeakDb = -100.0;
+        double seconds = 0.0;
+    };
+    static void SetLastExportLoudness(std::optional<Loudness> loudness);
+    //! Returns the last measurement and forgets it.
+    static std::optional<Loudness> TakeLastExportLoudness();
 
     ///\brief Sends progress update to delegate and retrieves state update from it.
     ///Typically used inside each export iteration.

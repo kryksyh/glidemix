@@ -89,6 +89,8 @@ public:
     bool keylockEnabled() const override;
     void setKeylockEnabled(bool enabled) override;
     void setPhraseRibbonVisible(bool visible) override;
+    bool automationLatch() const override;
+    void setAutomationLatch(bool latch) override;
     bool tempoLaneVisible() const override;
     void setTempoLaneVisible(bool visible) override;
     int tempoLaneHeight() const override;

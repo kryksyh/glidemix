@@ -88,7 +88,14 @@ MixtapePlayer::MixtapePlayer(const muse::modularity::ContextPtr& ctx)
             seconds = mixtape::kDemoExportLimitSec;
         }
         LOGI() << "Export: rendering " << t0 << "-" << t1 << " s of the mix (" << seconds << " s out) at " << rate;
-        return std::make_shared<mixtape::RenderedSequence>(std::move(renderer), effects, t0, seconds, rate);
+        auto sequence = std::make_shared<mixtape::RenderedSequence>(std::move(renderer), effects, t0, seconds, rate);
+        sequence->SetOnFinished([](const mixtape::LoudnessReport& report) {
+            LOGI() << "Export loudness: " << report.integratedLufs << " LUFS, true peak " << report.truePeakDb
+                   << " dBTP, sample peak " << report.samplePeakDb << " dBFS over " << report.seconds << " s";
+            ExportPluginHelpers::SetLastExportLoudness(ExportPluginHelpers::Loudness {
+                report.integratedLufs, report.truePeakDb, report.samplePeakDb, report.seconds });
+        });
+        return sequence;
     });
 }
 

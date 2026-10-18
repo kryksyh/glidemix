@@ -18,6 +18,7 @@ QVariantMap laneToVariant(const MixHouseTransitionLane& lane)
 {
     return QVariantMap {
         { "curve", static_cast<int>(lane.curve) },
+        { "shape", static_cast<int>(lane.shape) },
         { "strength", std::round(lane.strength * 100.0) },
         { "crossing", std::round(lane.crossing * 100.0) },
         { "leaveOutBeats", lane.leaveOutBeats },
@@ -29,6 +30,7 @@ MixHouseTransitionLane laneFromVariant(const QVariantMap& map)
     MixHouseTransitionLane lane;
     const int curve = std::clamp(map.value("curve").toInt(), 0, 4);
     lane.curve = static_cast<MixHouseCurveKind>(curve);
+    lane.shape = static_cast<MixHouseFadeShape>(std::clamp(map.value("shape").toInt(), 0, 4));
     lane.strength = map.value("strength", 100).toDouble() / 100.0;
     lane.crossing = map.value("crossing", 50).toDouble() / 100.0;
     lane.leaveOutBeats = map.value("leaveOutBeats", 0).toDouble();
@@ -66,13 +68,25 @@ MixHouseTransitionSpec specFromVariant(const QVariantMap& map)
     return spec;
 }
 
+QString shapeSummary(MixHouseFadeShape shape)
+{
+    switch (shape) {
+    case MixHouseFadeShape::EqualPower: return {};
+    case MixHouseFadeShape::Linear: return QString(" (linear)");
+    case MixHouseFadeShape::SCurve: return QString(" (S-curve)");
+    case MixHouseFadeShape::Early: return QString(" (early)");
+    case MixHouseFadeShape::Late: return QString(" (late)");
+    }
+    return {};
+}
+
 QString laneSummary(const char* what, const MixHouseTransitionLane& lane)
 {
     switch (lane.curve) {
     case MixHouseCurveKind::None: return {};
-    case MixHouseCurveKind::Crossfade: return QString("%1 crossfade").arg(what);
-    case MixHouseCurveKind::FadeIn: return QString("%1 fade in").arg(what);
-    case MixHouseCurveKind::FadeOut: return QString("%1 fade out").arg(what);
+    case MixHouseCurveKind::Crossfade: return QString("%1 crossfade%2").arg(what, shapeSummary(lane.shape));
+    case MixHouseCurveKind::FadeIn: return QString("%1 fade in%2").arg(what, shapeSummary(lane.shape));
+    case MixHouseCurveKind::FadeOut: return QString("%1 fade out%2").arg(what, shapeSummary(lane.shape));
     case MixHouseCurveKind::Swap:
         return lane.leaveOutBeats > 0.0 ? QString("%1 swap, %2 beats out").arg(what).arg(lane.leaveOutBeats)
                : QString("%1 swap").arg(what);

@@ -109,6 +109,9 @@ void MixHouseActionsController::init()
             LOGI() << what;
         }
     });
+    dispatcher()->reg(this, "mixhouse-automation-latch", [this]() {
+        libraryConfiguration()->setAutomationLatch(!libraryConfiguration()->automationLatch());
+    });
     dispatcher()->reg(this, "mixhouse-keylock", [this]() {
         libraryConfiguration()->setKeylockEnabled(!libraryConfiguration()->keylockEnabled());
     });

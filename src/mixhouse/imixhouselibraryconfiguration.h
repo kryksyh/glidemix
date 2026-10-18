@@ -269,6 +269,12 @@ public:
     virtual bool keylockEnabled() const = 0;
     virtual void setKeylockEnabled(bool enabled) = 0;
 
+    /// Automation Arm's Latch (Pro Tools): after a control is let go, its
+    /// last value keeps being written until playback stops. Off is Touch:
+    /// the line goes back to what it was. Default off.
+    virtual bool automationLatch() const = 0;
+    virtual void setAutomationLatch(bool latch) = 0;
+
     virtual bool tempoLaneVisible() const = 0;
     virtual void setTempoLaneVisible(bool visible) = 0;
     virtual int tempoLaneHeight() const = 0;

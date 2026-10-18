@@ -10,6 +10,8 @@
 
 #include "trackedit/trackeditutils.h"
 
+#include "au3-import-export/ExportPluginHelpers.h"
+
 using namespace au::importexport;
 
 namespace {
@@ -603,6 +605,35 @@ QStringList ExportPreferencesModel::fileFilter()
     return filter;
 }
 
+namespace {
+std::string loudnessReportText(const ExportPluginHelpers::Loudness& loudness)
+{
+    const auto number = [](double value) {
+        return QString::number(value, 'f', 1).toStdString();
+    };
+    std::string text = muse::qtrc("export", "Loudness: %1 LUFS\nTrue peak: %2 dBTP\nPeak: %3 dBFS")
+                       .arg(QString::fromStdString(number(loudness.integratedLufs)),
+                            QString::fromStdString(number(loudness.truePeakDb)),
+                            QString::fromStdString(number(loudness.samplePeakDb))).toStdString();
+    text += "\n\n";
+    if (loudness.integratedLufs > -14.0) {
+        text += muse::trc("export", "Spotify and YouTube play music at about -14 LUFS and Apple Music at -16, "
+                                    "so they will turn this mix down. That is fine: it keeps its punch, it just plays quieter.");
+    } else if (loudness.integratedLufs < -18.0) {
+        text += muse::trc("export", "This mix is on the quiet side: streaming sites play music at about -14 LUFS, "
+                                    "and not all of them turn a quiet mix up.");
+    } else {
+        text += muse::trc("export", "Right where Spotify, YouTube and Apple Music play music (-14 to -16 LUFS).");
+    }
+    if (loudness.truePeakDb > -1.0) {
+        text += "\n\n";
+        text += muse::trc("export", "The true peak is above -1 dBTP: an MP3 or AAC made from this file may distort a little. "
+                                    "Lowering the master by a dB or two avoids it.");
+    }
+    return text;
+}
+}
+
 void ExportPreferencesModel::exportData()
 {
     bool needToDisableMasterFx = needToDisableMasterFxBeforeExport();
@@ -646,6 +677,7 @@ void ExportPreferencesModel::exportData()
         }
     }
 
+    ExportPluginHelpers::TakeLastExportLoudness();   // forget an earlier export's
     muse::Ret result = exporter()->exportData(filePath);
     if (!result.success() && !result.text().empty()) {
         interactive()->error(muse::trc("export", "Export error"), result.text());
@@ -653,7 +685,13 @@ void ExportPreferencesModel::exportData()
     }
 
     emit exportCompleted();
+
+    // GlideMix: how loud the mix came out, as streaming sites measure it.
+    if (const auto loudness = ExportPluginHelpers::TakeLastExportLoudness(); loudness && result.success()) {
+        interactive()->info(muse::trc("export", "Export finished"), loudnessReportText(*loudness));
+    }
 }
+
 
 bool ExportPreferencesModel::customFFmpegOptionsVisible()
 {
