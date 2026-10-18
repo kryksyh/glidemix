@@ -680,6 +680,44 @@ void DeckMetronomeClicksOnBeats()
 }
 }
 
+
+//! The small-machine resampler keeps the highs clean: a 15 kHz tone from a
+//! 44.1 kHz clip on a 48 kHz output, with everything that is not the tone at
+//! least 60 dB down (the old Hermite interpolation left only 12 dB).
+void ResamplerKeepsHighsClean()
+{
+    constexpr double outRate = 48000.0;
+    constexpr double tone = 15000.0;
+    auto clip = SineClip(3.0, tone, 1.0);
+    setenv("MIXTAPE_RESAMPLE", "1", 1);
+    Renderer renderer(outRate, 2);
+    renderer.SetArrangement(OneClip(*clip));
+    const size_t total = static_cast<size_t>(4.0 * outRate);
+    std::vector<float> left(total), right(total);
+    for (size_t done = 0; done < total;) {
+        const size_t n = std::min<size_t>(512, total - done);
+        float* out[2] = { left.data() + done, right.data() + done };
+        renderer.Render(out, n);
+        done += n;
+    }
+    unsetenv("MIXTAPE_RESAMPLE");
+    // Least-squares fit of the 15 kHz tone over 2 s of steady output; the
+    // rest is distortion.
+    const size_t a = static_cast<size_t>(1.5 * outRate), b = static_cast<size_t>(3.5 * outRate);
+    double ss = 0, sc = 0, cc = 0, ys = 0, yc = 0, yy = 0;
+    for (size_t i = a; i < b; ++i) {
+        const double w = 2 * M_PI * tone * i / outRate;
+        const double s = std::sin(w), c = std::cos(w), y = left[i];
+        ss += s * s; sc += s * c; cc += c * c; ys += y * s; yc += y * c; yy += y * y;
+    }
+    const double det = ss * cc - sc * sc;
+    const double A = (ys * cc - yc * sc) / det, B = (yc * ss - ys * sc) / det;
+    const double fitted = A * ys + B * yc;
+    const double residualDb = 10 * std::log10(std::max(1e-20, (yy - fitted) / fitted));
+    std::cout << "  15 kHz through the resampler: distortion " << residualDb << " dB\n";
+    Require(residualDb < -60.0, "the resampler dulls or distorts the highs");
+}
+
 //! A 44.1 kHz clip on a 48 kHz output at stretch 1: pitch, place and level hold
 //! both through Rubber Band and through the small-machine resampler
 //! (MIXTAPE_RESAMPLE), and the resampler is the cheaper of the two.
@@ -788,6 +826,7 @@ int main(int argc, char** argv)
         { "added track joins without restart", AddedTrackJoinsWithoutRestart },
         { "pan", MuteSoloPan },
         { "44.1 kHz clip on a 48 kHz output, stretcher and resampler", RateMismatchResamples },
+        { "the small-machine resampler keeps the highs clean", ResamplerKeepsHighsClean },
         { "CPU: 8 stretched stereo clips", StretchedVoicesCpu },
         { "CPU: 4 clips at their own tempo, 48 kHz output", OwnTempoVoicesCpu },
         { "loop wraps at the loop end", LoopWrapsAtTheLoopEnd },

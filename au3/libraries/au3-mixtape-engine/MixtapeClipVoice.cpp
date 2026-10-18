@@ -77,14 +77,54 @@ bool SmallMachine()
 //! (0.2% = 3.5 cents).
 constexpr double kResampleStretch = 0.002;
 
-//! 4-point Hermite interpolation between y1 and y2.
-inline float Hermite(float y0, float y1, float y2, float y3, float t)
+//! Windowed-sinc interpolation (Kaiser, 32 taps, 256 phases): what the
+//! small-machine resampler uses. It replaced a 4-point Hermite whose highs
+//! were 12 dB of distortion at 15 kHz (dull, gritty cymbals); this is clean
+//! to well below audibility and still far cheaper than Rubber Band.
+constexpr int kSincTaps = 32;
+constexpr int kSincPhases = 256;
+
+double BesselI0(double x)
 {
-    const float c1 = 0.5f * (y2 - y0);
-    const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
-    const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-    return ((c3 * t + c2) * t + c1) * t + y1;
+    double sum = 1.0, term = 1.0;
+    for (int k = 1; k < 50; ++k) {
+        term *= (x / (2.0 * k)) * (x / (2.0 * k));
+        sum += term;
+        if (term < 1e-12 * sum) {
+            break;
+        }
+    }
+    return sum;
 }
+}
+
+void ClipVoice::BuildSincTable(double cutoff)
+{
+    if (mSincCutoff == cutoff && !mSincTable.empty()) {
+        return;
+    }
+    mSincCutoff = cutoff;
+    constexpr double beta = 8.6;   // about -85 dB stopband
+    const double i0beta = BesselI0(beta);
+    const int half = kSincTaps / 2;
+    mSincTable.assign(static_cast<size_t>((kSincPhases + 1) * kSincTaps), 0.0f);
+    for (int p = 0; p <= kSincPhases; ++p) {
+        const double frac = static_cast<double>(p) / kSincPhases;
+        double sum = 0.0;
+        float* row = mSincTable.data() + static_cast<size_t>(p) * kSincTaps;
+        for (int j = 0; j < kSincTaps; ++j) {
+            const double d = (j - half + 1) - frac;   // distance of tap j from the point
+            const double r = d / half;
+            const double w = std::abs(r) >= 1.0 ? 0.0 : BesselI0(beta * std::sqrt(1.0 - r * r)) / i0beta;
+            const double x = 3.14159265358979323846 * cutoff * d;
+            const double s = std::abs(x) < 1e-9 ? 1.0 : std::sin(x) / x;
+            row[j] = static_cast<float>(cutoff * s * w);
+            sum += row[j];
+        }
+        for (int j = 0; j < kSincTaps; ++j) {
+            row[j] = static_cast<float>(row[j] / sum);   // unity gain at DC
+        }
+    }
 }
 
 ClipVoice::ClipVoice(double outputRate, size_t outputChannels)
@@ -129,6 +169,11 @@ void ClipVoice::Assign(const ClipSnapshot& clip, bool alwaysStretch)
         mBassDry.resize(kMaxChunk);
     }
     mResample = Resamples();
+    if (mResample) {
+        // Cut below the lower Nyquist: input frames per output frame.
+        const double ratio = mClip.sampleRate / mOutputRate;
+        BuildSincTable(0.92 * std::min(1.0, 1.0 / ratio));
+    }
     if (Bypass() || mResample) {
         mStretcher.reset();
         return;
@@ -191,8 +236,8 @@ void ClipVoice::RenderResampled(float* const* out, size_t frames, double time, d
         const double t0 = time + produced * step;
         const double s0 = mClip.SourceAt(t0);
         const double inc = (mClip.SourceAt(t0 + n * step) - s0) / n;
-        const int64_t first = static_cast<int64_t>(std::floor(s0)) - 1;
-        const size_t need = std::min(kMaxChunk, static_cast<size_t>(std::ceil(s0 + n * inc) - first) + 3);
+        const int64_t first = static_cast<int64_t>(std::floor(s0)) - kSincTaps / 2;
+        const size_t need = std::min(kMaxChunk, static_cast<size_t>(std::ceil(s0 + n * inc) - first) + kSincTaps / 2 + 2);
         for (size_t c = 0; c < clipChannels; ++c) {
             float* in = mInput[c].data();
             if (c < mClip.channels.size()) {
@@ -203,8 +248,18 @@ void ClipVoice::RenderResampled(float* const* out, size_t frames, double time, d
             float* dst = mOutput[c].data();
             for (size_t i = 0; i < n; ++i) {
                 const double x = s0 + i * inc - static_cast<double>(first);
-                const size_t k = std::min(static_cast<size_t>(x), need - 3);
-                dst[i] = Hermite(in[k - 1], in[k], in[k + 1], in[k + 2], static_cast<float>(x - k));
+                const size_t k = std::min(static_cast<size_t>(x), need - kSincTaps / 2 - 1);
+                const double pf = (x - k) * kSincPhases;
+                const int p = std::min(static_cast<int>(pf), kSincPhases - 1);
+                const float a = static_cast<float>(pf - p);
+                const float* r0 = mSincTable.data() + static_cast<size_t>(p) * kSincTaps;
+                const float* r1 = r0 + kSincTaps;
+                const float* src = in + (k - kSincTaps / 2 + 1);
+                float acc = 0.0f;
+                for (int j = 0; j < kSincTaps; ++j) {
+                    acc += src[j] * (r0[j] + a * (r1[j] - r0[j]));
+                }
+                dst[i] = acc;
             }
         }
         ApplyBass(mOutput, 0, n, t0, step);

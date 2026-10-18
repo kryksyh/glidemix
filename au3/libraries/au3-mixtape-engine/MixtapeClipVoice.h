@@ -80,6 +80,9 @@ private:
     bool mStarted = false;
     bool mAlwaysStretch = false;
     bool mResample = false;
+    void BuildSincTable(double cutoff);
+    std::vector<float> mSincTable;   // (phases + 1) x taps
+    double mSincCutoff = 0.0;
     double mAppliedRatio = 0.0;
     double mAppliedPitch = 0.0;
     //! Rubber Band's pitch scale for a time ratio (output / input frames).
