@@ -27,7 +27,7 @@ QString MixHouseLicenceModel::tierName() const
         return tr("Demo version");
     }
     switch (licence()->tier()) {
-    case LicenceTier::Pro: return QStringLiteral("GlideMix Pro");
+    case LicenceTier::Pro: return QStringLiteral("GlideMix");
     case LicenceTier::Standard: return QStringLiteral("GlideMix");
     case LicenceTier::Demo: break;
     }

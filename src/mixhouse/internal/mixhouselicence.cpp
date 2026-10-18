@@ -149,8 +149,7 @@ void MixHouseLicence::activate(const QString& rawKey, Done done)
         save();
         muse::settings()->setSharedValue(LICENCE_CHECKED, muse::Val(QDateTime::currentDateTimeUtc().toString(Qt::ISODate).toStdString()));
         LOGI() << "GlideMix licence: activated (" << (tier == LicenceTier::Pro ? "Pro" : "GlideMix") << ")";
-        done(true, tier == LicenceTier::Pro ? QObject::tr("Thank you! GlideMix Pro is active on this computer.")
-             : QObject::tr("Thank you! GlideMix is active on this computer."));
+        done(true, QObject::tr("Thank you! GlideMix is active on this computer."));
     });
 }
 

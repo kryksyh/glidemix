@@ -44,7 +44,7 @@ StyledDialogView {
             visible: licenceModel.isDemo
             text: qsTrc("appshell", "Everything works, with three limits: every 2 minutes the sound goes quiet for a few seconds, "
                                    + "exports get a short noise in those gaps, and an export stops after 20 minutes. "
-                                   + "A licence removes them for good: one-time payment, 3 computers, all 1.x updates.")
+                                   + "A licence removes them for good.")
         }
 
         RowLayout {
@@ -54,26 +54,7 @@ StyledDialogView {
 
             FlatButton {
                 Layout.preferredWidth: 200
-                text: qsTrc("appshell", "Buy GlideMix – €29")
-                accentButton: true
-                onClicked: licenceModel.buy(false)
-            }
-            StyledTextLabel {
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignLeft
-                wrapMode: Text.WordWrap
-                text: qsTrc("appshell", "The full app, without the demo limits.")
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            visible: licenceModel.isDemo
-            spacing: 12
-
-            FlatButton {
-                Layout.preferredWidth: 200
-                text: qsTrc("appshell", "Buy GlideMix Pro – €49")
+                text: qsTrc("appshell", "Buy GlideMix – €49")
                 accentButton: true
                 onClicked: licenceModel.buy(true)
             }
@@ -81,7 +62,7 @@ StyledDialogView {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
-                text: qsTrc("appshell", "Everything in GlideMix, plus the Pro add-ons as they come out (stems, AI analysis).")
+                text: qsTrc("appshell", "Everything unlocked, stems included. One-time payment, 3 computers, all 1.x updates.")
             }
         }
 
