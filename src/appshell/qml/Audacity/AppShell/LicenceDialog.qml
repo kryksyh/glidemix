@@ -42,8 +42,8 @@ StyledDialogView {
             horizontalAlignment: Text.AlignLeft
             wrapMode: Text.WordWrap
             visible: licenceModel.isDemo
-            text: qsTrc("appshell", "Everything works, with three limits: every 2 minutes the sound goes quiet for a few seconds, "
-                                   + "exports get a short noise in those gaps, and an export stops after 20 minutes. "
+            text: qsTrc("appshell", "Everything works, with three limits: every 2 minutes a voice says \"Glide Mix demo\" "
+                                   + "over the music, exports are MP3 at 96 kbps, and an export stops after 20 minutes. "
                                    + "A licence removes them for good.")
         }
 

@@ -4,6 +4,8 @@
 
 #include "exportpreferencesmodel.h"
 
+#include <QFileInfo>
+
 #include "framework/global/io/fileinfo.h"
 #include "framework/global/translation.h"
 #include "framework/global/defer.h"
@@ -605,6 +607,11 @@ QStringList ExportPreferencesModel::fileFilter()
     return filter;
 }
 
+bool ExportPreferencesModel::isDemo() const
+{
+    return ExportPluginHelpers::IsDemo();
+}
+
 namespace {
 std::string loudnessReportText(const ExportPluginHelpers::Loudness& loudness)
 {
@@ -624,6 +631,11 @@ std::string loudnessReportText(const ExportPluginHelpers::Loudness& loudness)
                                     "and not all of them turn a quiet mix up.");
     } else {
         text += muse::trc("export", "Right where Spotify, YouTube and Apple Music play music (-14 to -16 LUFS).");
+    }
+    if (ExportPluginHelpers::IsDemo()) {
+        text += "\n\n";
+        text += muse::trc("export", "Demo version: saved as MP3 at 96 kbps, with the \"Glide Mix demo\" voice, "
+                                    "and at most the first 20 minutes. A licence (Help > Licence...) exports full quality.");
     }
     if (loudness.truePeakDb > -1.0) {
         text += "\n\n";
@@ -678,6 +690,7 @@ void ExportPreferencesModel::exportData()
     }
 
     ExportPluginHelpers::TakeLastExportLoudness();   // forget an earlier export's
+    ExportPluginHelpers::TakeLastTracklist();
     muse::Ret result = exporter()->exportData(filePath);
     if (!result.success() && !result.text().empty()) {
         interactive()->error(muse::trc("export", "Export error"), result.text());
@@ -686,9 +699,17 @@ void ExportPreferencesModel::exportData()
 
     emit exportCompleted();
 
-    // GlideMix: how loud the mix came out, as streaming sites measure it.
+    // GlideMix: how loud the mix came out, as streaming sites measure it,
+    // and where its tracklist is.
+    const std::string tracklist = ExportPluginHelpers::TakeLastTracklist();
     if (const auto loudness = ExportPluginHelpers::TakeLastExportLoudness(); loudness && result.success()) {
-        interactive()->info(muse::trc("export", "Export finished"), loudnessReportText(*loudness));
+        std::string text = loudnessReportText(*loudness);
+        if (!tracklist.empty()) {
+            const QFileInfo info(QString::fromStdString(tracklist));
+            text += "\n\n" + muse::qtrc("export", "Tracklist saved beside the mix: %1 (for Mixcloud and show notes) and %2.cue")
+                    .arg(info.fileName(), info.completeBaseName()).toStdString();
+        }
+        interactive()->info(muse::trc("export", "Export finished"), text);
     }
 }
 

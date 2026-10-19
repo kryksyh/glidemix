@@ -47,6 +47,40 @@ void ExportPluginHelpers::SetLastExportLoudness(std::optional<Loudness> loudness
     s_lastLoudness = loudness;
 }
 
+namespace {
+std::function<bool()>& DemoQueryRef()
+{
+    static std::function<bool()> query;
+    return query;
+}
+}
+
+void ExportPluginHelpers::SetDemoQuery(std::function<bool()> isDemo)
+{
+    DemoQueryRef() = std::move(isDemo);
+}
+
+namespace {
+std::string s_lastTracklist;
+}
+
+void ExportPluginHelpers::SetLastTracklist(std::string path)
+{
+    std::lock_guard<std::mutex> lock(s_loudnessMutex);
+    s_lastTracklist = std::move(path);
+}
+
+std::string ExportPluginHelpers::TakeLastTracklist()
+{
+    std::lock_guard<std::mutex> lock(s_loudnessMutex);
+    return std::exchange(s_lastTracklist, std::string());
+}
+
+bool ExportPluginHelpers::IsDemo()
+{
+    return DemoQueryRef() && DemoQueryRef()();
+}
+
 std::optional<ExportPluginHelpers::Loudness> ExportPluginHelpers::TakeLastExportLoudness()
 {
     std::lock_guard<std::mutex> lock(s_loudnessMutex);

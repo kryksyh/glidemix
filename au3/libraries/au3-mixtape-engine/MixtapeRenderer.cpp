@@ -371,10 +371,10 @@ std::pair<double, double> Renderer::Render(float* const* out, size_t frames)
         }
     }
     Limit(out, frames);
-    // The demo version's gaps: last, so Play, Perform, broadcast and export
+    // The demo version's voice tag: last, so Play, Perform, broadcast and export
     // all carry them.
     if (DemoMode()) {
-        ApplyDemoGaps(out, mOutputChannels, frames, mDemoFrame, mOutputRate, mOffline, mDemoNoise);
+        ApplyDemoVoice(out, mOutputChannels, frames, mDemoFrame, mOutputRate);
     }
     mDemoFrame += static_cast<int64_t>(frames);
     // What the listener hears is what goes out, level and all.

@@ -14,13 +14,17 @@ bool DemoMode();
 //! Seconds of mix a demo export may contain.
 constexpr double kDemoExportLimitSec = 20.0 * 60.0;
 
-//! Every kDemoGapPeriodSec of output, kDemoGapSec go silent (an export also
-//! gets a soft noise in the gap). Faded, so it never clicks.
-constexpr double kDemoGapPeriodSec = 120.0;
-constexpr double kDemoGapSec = 3.0;
+//! A female voice says "Glide Mix demo" over the music, first after
+//! kDemoVoiceFirstSec and then every kDemoVoicePeriodSec, on every output
+//! (play, perform, broadcast, export): a clean output could be recorded.
+//! The music ducks under it, so it is always heard and never clips.
+constexpr double kDemoVoiceFirstSec = 30.0;
+constexpr double kDemoVoicePeriodSec = 120.0;
 
-//! Applies the gaps to one block. `outputFrame` counts this renderer's
-//! frames since it started, so seeking does not skip a gap.
-void ApplyDemoGaps(float* const* out, size_t channels, size_t frames, int64_t outputFrame, double rate,
-                   bool addNoise, uint32_t& noiseState);
+//! Seconds the voice lasts.
+double DemoVoiceSeconds();
+
+//! Mixes the voice into one block. `outputFrame` counts this renderer's
+//! frames since it started, so seeking does not skip a tag.
+void ApplyDemoVoice(float* const* out, size_t channels, size_t frames, int64_t outputFrame, double rate);
 }

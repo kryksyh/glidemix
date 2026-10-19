@@ -77,6 +77,17 @@
   ]
  },
  {
+  "id": "kokoro",
+  "group": "DJ analysis",
+  "name": "Kokoro-82M (demo voice)",
+  "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+  "copyright": "Copyright © hexgrad",
+  "license": "Apache-2.0",
+  "licenseFiles": [
+   "kokoro.txt"
+  ]
+ },
+ {
   "id": "onnxruntime",
   "group": "DJ analysis",
   "name": "ONNX Runtime",

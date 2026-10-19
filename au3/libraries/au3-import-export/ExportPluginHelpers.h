@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "ExportPlugin.h"
 #include "ExportTypes.h"
@@ -55,6 +56,16 @@ public:
         double seconds = 0.0;
     };
     static void SetLastExportLoudness(std::optional<Loudness> loudness);
+
+    //! GlideMix: whether this is the demo version (no licence). Demo
+    //! exports are MP3 at 96 kbps, whatever format was chosen.
+    static void SetDemoQuery(std::function<bool()> isDemo);
+
+    //! GlideMix: the tracklist (.txt, with a .cue beside it) written for the
+    //! last export; Take returns it and forgets it.
+    static void SetLastTracklist(std::string path);
+    static std::string TakeLastTracklist();
+    static bool IsDemo();
     //! Returns the last measurement and forgets it.
     static std::optional<Loudness> TakeLastExportLoudness();
 

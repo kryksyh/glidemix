@@ -4,9 +4,12 @@
 
 #include "au3exporter.h"
 
+#include <ctime>
+
 #include "framework/global/async/asyncable.h"
 
 #include "au3-basic-ui/BasicUI.h"
+#include "au3-import-export/ExportPluginHelpers.h"
 #include "au3-import-export/ExportPluginRegistry.h"
 #include "au3-import-export/ExportUtils.h"
 #include "au3-mixer/MixerOptions.h"
@@ -154,7 +157,10 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
         return muse::make_ret(muse::Ret::Code::InternalError);
     }
 
-    const std::string formatName = options.count(OptionKey::Format)
+    // GlideMix: the demo version exports MP3 at 96 kbps, whatever was chosen.
+    const bool demo = ExportPluginHelpers::IsDemo();
+    const std::string formatName = demo ? std::string("MP3 Files")
+                                   : options.count(OptionKey::Format)
                                    ? options.at(OptionKey::Format).toString()
                                    : exportConfiguration()->currentFormat();
 
@@ -179,7 +185,10 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
                                  : exportConfiguration()->exportSampleRate();
 
     ExportParameters parameters;
-    if (options.count(OptionKey::Parameters)) {
+    if (demo) {
+        parameters.emplace_back(0, std::string("CBR"));   // MP3: bit rate mode
+        parameters.emplace_back(4, 96);                  // MP3: constant bit rate, kbps
+    } else if (options.count(OptionKey::Parameters)) {
         for (const auto& entryVal : options.at(OptionKey::Parameters).toList()) {
             const auto& m = entryVal.toMap();
             const int id = m.at("id").toInt();
@@ -215,6 +224,9 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
     }
 
     wxFileName wxfilename = wxFromPath(path);
+    if (demo) {
+        wxfilename.SetExt(wxT("mp3"));
+    }
 
     Au3Project* au3Project = reinterpret_cast<Au3Project*>(exportProject->au3ProjectPtr());
     IF_ASSERT_FAILED(au3Project) {
@@ -370,6 +382,19 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
 
         if (result != ExportResult::Success) {
             return muse::make_ret(muse::Ret::Code::InternalError);
+        }
+        // GlideMix: a tracklist (.txt and .cue) beside the exported mix,
+        // written by the mixhouse module (it knows the songs).
+        if (dispatcher()) {
+            wxFileName txt = wxfilename;
+            txt.SetExt(wxT("txt"));
+            const time_t started = std::time(nullptr);
+            dispatcher()->dispatch("mixhouse-write-tracklist", muse::actions::ActionData::make_arg3<std::string, double, double>(
+                                       wxfilename.GetFullPath().ToStdString(wxConvUTF8), m_t0, m_t1));
+            // Written just now (not left over from an earlier export).
+            if (txt.FileExists() && txt.GetModificationTime().GetTicks() >= started - 1) {
+                ExportPluginHelpers::SetLastTracklist(txt.GetFullPath().ToStdString(wxConvUTF8));
+            }
         }
     } catch (const ExportException& e) {
         return muse::make_ret(muse::Ret::Code::InternalError, e.What().ToStdString());

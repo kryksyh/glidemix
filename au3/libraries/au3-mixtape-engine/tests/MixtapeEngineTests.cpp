@@ -14,6 +14,7 @@
 #include "au3-mixtape-engine/MixtapeArrangement.h"
 #include "au3-mixtape-engine/MixtapeClipVoice.h"
 #include "au3-mixtape-engine/MixtapeDeck.h"
+#include "au3-mixtape-engine/MixtapeDemo.h"
 #include "au3-mixtape-engine/MixtapeLoudness.h"
 #include "au3-mixtape-engine/MixtapeRenderer.h"
 #include "au3-mixtape-engine/MixtapeTransport.h"
@@ -770,6 +771,44 @@ void LimiterHoldsTruePeakUnderCeiling()
     Require(report.truePeakDb >= -1.6, "limited far more than needed");
 }
 
+void DemoVoiceTagsEveryOutput()
+{
+    // A loud tone through the renderer in demo mode: the voice is mixed in at
+    // 30 s with the music ducked under it, nothing clips, and away from the
+    // tag the output is untouched.
+    auto clip = SineClip(40.0, 440.0, 0.0);
+    auto arrangement = std::make_shared<Arrangement>();
+    for (int t = 0; t < 2; ++t) {   // two 0.5 tones: the limiter keeps it at the ceiling
+        TrackSnapshot track;
+        track.trackId = t + 1;
+        track.clips.push_back(SnapshotClip(*clip));
+        arrangement->tracks.push_back(track);
+    }
+    Renderer plain(kRate, 2);
+    plain.SetArrangement(arrangement);
+    const auto clean = RenderLeft(plain, 34.0);
+    SetDemoMode(true);
+    Renderer demo(kRate, 2);
+    demo.SetArrangement(arrangement);
+    const auto tagged = RenderLeft(demo, 34.0);
+    SetDemoMode(false);
+    const auto window = [&](double t0, double t1) {
+        double diff = 0.0, peak = 0.0;
+        for (size_t i = static_cast<size_t>(t0 * kRate); i < static_cast<size_t>(t1 * kRate); ++i) {
+            diff = std::max(diff, double(std::abs(tagged[i] - clean[i])));
+            peak = std::max(peak, double(std::abs(tagged[i])));
+        }
+        return std::make_pair(diff, peak);
+    };
+    const auto before = window(5.0, 29.0);
+    const auto during = window(30.2, 30.0 + DemoVoiceSeconds());
+    std::cout << "  before the tag: max change " << before.first << "; during: change " << during.first
+              << ", peak " << during.second << " (voice " << DemoVoiceSeconds() << " s)\n";
+    Require(before.first < 1e-6, "demo changed the sound away from the tag");
+    Require(during.first > 0.3, "no voice tag at 30 s");
+    Require(during.second < 1.0, "the tag clips");
+}
+
 void ResamplerKeepsHighsClean()
 {
     constexpr double outRate = 48000.0;
@@ -915,6 +954,7 @@ int main(int argc, char** argv)
         { "the small-machine resampler keeps the highs clean", ResamplerKeepsHighsClean },
         { "loudness meter: LUFS, true peak, sample peak", LoudnessMeterMeasuresSineAndPeaks },
         { "limiter holds the true peak at -1 dBTP", LimiterHoldsTruePeakUnderCeiling },
+        { "demo: voice tag at 30 s, ducked, no clipping", DemoVoiceTagsEveryOutput },
         { "CPU: 8 stretched stereo clips", StretchedVoicesCpu },
         { "CPU: 4 clips at their own tempo, 48 kHz output", OwnTempoVoicesCpu },
         { "loop wraps at the loop end", LoopWrapsAtTheLoopEnd },

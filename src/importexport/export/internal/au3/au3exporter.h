@@ -3,6 +3,7 @@
 */
 #pragma once
 
+#include "actions/iactionsdispatcher.h"
 #include "modularity/ioc.h"
 #include "context/iglobalcontext.h"
 #include "au3cloud/iau3cloudconfiguration.h"
@@ -25,6 +26,7 @@ class Au3Exporter : public IExporter, public muse::Contextable
     muse::ContextInject<au::context::IGlobalContext> globalContext{ this };
     muse::ContextInject<au::trackedit::ISelectionController> selectionController{ this };
     muse::ContextInject<au::playback::IPlaybackController> playbackController{ this };
+    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher{ this };
 
 public:
     Au3Exporter(const muse::modularity::ContextPtr& ctx)

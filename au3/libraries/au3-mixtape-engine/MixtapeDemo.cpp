@@ -6,12 +6,17 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <iterator>
+
+#include "MixtapeDemoVoice.h"
 
 namespace mixtape {
 namespace {
 std::atomic<bool> sDemo { false };
-constexpr double kFadeSec = 0.03;
-constexpr float kNoiseLevel = 0.05f;   // about -26 dBFS: clearly there, never loud
+constexpr double kDuckSec = 0.08;        // the music dips this fast, and comes back
+constexpr float kDuckGain = 0.35f;       // about -9 dB under the voice
+constexpr float kVoiceGain = 0.6f;       // voice peak about -4.4 dBFS: room for the ducked music
+constexpr size_t kVoiceLength = std::size(kDemoVoice);
 }
 
 void SetDemoMode(bool demo)
@@ -24,34 +29,52 @@ bool DemoMode()
     return sDemo.load(std::memory_order_relaxed);
 }
 
-void ApplyDemoGaps(float* const* out, size_t channels, size_t frames, int64_t outputFrame, double rate,
-                   bool addNoise, uint32_t& noiseState)
+double DemoVoiceSeconds()
 {
-    const int64_t period = static_cast<int64_t>(kDemoGapPeriodSec * rate);
-    const int64_t gap = static_cast<int64_t>(kDemoGapSec * rate);
-    const int64_t fade = std::max<int64_t>(1, static_cast<int64_t>(kFadeSec * rate));
-    const int64_t gapStart = period - gap;   // the last seconds of each period
+    return static_cast<double>(kVoiceLength) / kDemoVoiceRate;
+}
+
+void ApplyDemoVoice(float* const* out, size_t channels, size_t frames, int64_t outputFrame, double rate)
+{
+    if (rate <= 0.0) {
+        return;
+    }
+    const int64_t first = static_cast<int64_t>(kDemoVoiceFirstSec * rate);
+    const int64_t period = static_cast<int64_t>(kDemoVoicePeriodSec * rate);
+    const int64_t duck = std::max<int64_t>(1, static_cast<int64_t>(kDuckSec * rate));
+    const int64_t voice = static_cast<int64_t>(DemoVoiceSeconds() * rate);
+    const double step = kDemoVoiceRate / rate;   // voice samples per output frame
     for (size_t i = 0; i < frames; ++i) {
-        const int64_t p = (outputFrame + static_cast<int64_t>(i)) % period;
-        if (p < gapStart - fade) {
+        const int64_t f = outputFrame + static_cast<int64_t>(i);
+        // Position in the current tag window: it starts `duck` before the voice.
+        const int64_t since = f - (first - duck);
+        if (since < 0) {
             continue;
         }
-        float gain;
-        if (p < gapStart) {
-            gain = static_cast<float>(gapStart - p) / static_cast<float>(fade);        // fading out
-        } else if (p >= period - fade) {
-            gain = static_cast<float>(p - (period - fade)) / static_cast<float>(fade); // fading back in
-        } else {
-            gain = 0.0f;
+        const int64_t p = since % period;
+        if (p >= voice + 2 * duck) {
+            continue;
         }
-        const float inGap = p >= gapStart ? 1.0f - gain : 0.0f;
-        for (size_t c = 0; c < channels; ++c) {
-            float v = out[c][i] * gain;
-            if (addNoise && inGap > 0.0f) {
-                noiseState = noiseState * 1664525u + 1013904223u;
-                v += inGap * kNoiseLevel * (static_cast<float>(noiseState >> 8) / 8388608.0f - 1.0f);
+        // The music dips before the voice and comes back after it.
+        float gain = kDuckGain;
+        if (p < duck) {
+            gain = 1.0f - (1.0f - kDuckGain) * static_cast<float>(p) / static_cast<float>(duck);
+        } else if (p >= voice + duck) {
+            gain = kDuckGain + (1.0f - kDuckGain) * static_cast<float>(p - voice - duck) / static_cast<float>(duck);
+        }
+        // The voice, resampled with linear interpolation (speech, 24 kHz).
+        float v = 0.0f;
+        const int64_t vp = p - duck;
+        if (vp >= 0 && vp < voice) {
+            const double pos = static_cast<double>(vp) * step;
+            const size_t k = static_cast<size_t>(pos);
+            if (k + 1 < kVoiceLength) {
+                const double frac = pos - static_cast<double>(k);
+                v = static_cast<float>((kDemoVoice[k] * (1.0 - frac) + kDemoVoice[k + 1] * frac) / 32768.0) * kVoiceGain;
             }
-            out[c][i] = v;
+        }
+        for (size_t c = 0; c < channels; ++c) {
+            out[c][i] = out[c][i] * gain + v;
         }
     }
 }

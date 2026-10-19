@@ -58,6 +58,8 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetempomap.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibraryconfiguration.cpp
     ${CMAKE_CURRENT_LIST_DIR}/imixhouselicence.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetracklist.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetracklist.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselicence.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselicence.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibraryconfiguration.h

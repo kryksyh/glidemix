@@ -19,6 +19,7 @@ set( SOURCES
    MixtapeRenderedSequence.cpp
    MixtapeDemo.h
    MixtapeDemo.cpp
+   MixtapeDemoVoice.h
    MixtapeRenderedSequence.h
    MixtapeRenderer.cpp
    MixtapeRenderer.h

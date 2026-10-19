@@ -48,6 +48,10 @@ void MixHouseLicence::init()
     const int stored = muse::settings()->value(LICENCE_TIER).toInt();
     m_tier = (!m_key.isEmpty() && !m_activationId.isEmpty() && stored >= 1 && stored <= 2)
              ? static_cast<LicenceTier>(stored) : LicenceTier::Demo;
+    // For testing the demo on a licensed computer; it can only take away.
+    if (qEnvironmentVariableIntValue("GLIDEMIX_FORCE_DEMO") == 1) {
+        m_tier = LicenceTier::Demo;
+    }
     mixtape::SetDemoMode(m_tier == LicenceTier::Demo);
     LOGI() << "GlideMix licence: " << (m_tier == LicenceTier::Demo ? "demo" : m_tier == LicenceTier::Pro ? "Pro" : "GlideMix");
     if (m_tier != LicenceTier::Demo) {

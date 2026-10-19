@@ -47,6 +47,8 @@ class ExportPreferencesModel : public QObject, public muse::async::Asyncable, pu
     Q_PROPERTY(QString directoryPath READ directoryPath NOTIFY directoryPathChanged)
 
     Q_PROPERTY(QString currentFormat READ currentFormat NOTIFY currentFormatChanged)
+    //! GlideMix: the demo version exports MP3 at 96 kbps, whatever is chosen.
+    Q_PROPERTY(bool isDemo READ isDemo CONSTANT)
     Q_PROPERTY(QStringList formatsList READ formatsList NOTIFY formatsListChanged)
 
     Q_PROPERTY(importexport::ExportChannelsPref::ExportChannels exportChannelsType READ exportChannelsType NOTIFY exportChannelsTypeChanged)
@@ -84,6 +86,7 @@ public:
     Q_INVOKABLE void setDirectoryPath(const QString& path);
 
     QString currentFormat() const;
+    bool isDemo() const;
     Q_INVOKABLE void setCurrentFormat(const QString& format);
     QStringList formatsList() const;
 

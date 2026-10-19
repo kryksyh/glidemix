@@ -1,6 +1,7 @@
 /*
  * MixHouse DJ 2
  */
+#include "mixhousetracklist.h"
 #include "mixhouseactionscontroller.h"
 
 #include <QDir>
@@ -108,6 +109,14 @@ void MixHouseActionsController::init()
         if (!what.empty()) {
             LOGI() << what;
         }
+    });
+    // GlideMix: after an export, the tracklist beside the file (sent by the exporter).
+    dispatcher()->reg(this, "mixhouse-write-tracklist", [this](const muse::actions::ActionData& args) {
+        if (args.count() < 3) {
+            return;
+        }
+        const MixHouseTracklist tracklist(iocContext());
+        tracklist.write(args.arg<std::string>(0), args.arg<double>(1), args.arg<double>(2));
     });
     dispatcher()->reg(this, "mixhouse-keylock", [this]() {
         libraryConfiguration()->setKeylockEnabled(!libraryConfiguration()->keylockEnabled());

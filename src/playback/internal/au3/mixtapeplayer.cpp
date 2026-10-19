@@ -60,6 +60,7 @@ MixtapePlayer::MixtapePlayer(const muse::modularity::ContextPtr& ctx)
     });
     // GlideMix: exports render the mix the way playback does (master limiter,
     // tempo line, plugin automation), not with Audacity's own mixer.
+    ExportPluginHelpers::SetDemoQuery([]() { return mixtape::DemoMode(); });
     ExportPluginHelpers::SetMixRenderHook([this](const AudacityProject& constProject, double t0, double t1, double rate,
                                                  bool tracksAsked) -> std::shared_ptr<const WideSampleSequence> {
         // The demo version always exports through the engine (its limits
@@ -102,6 +103,7 @@ MixtapePlayer::MixtapePlayer(const muse::modularity::ContextPtr& ctx)
 MixtapePlayer::~MixtapePlayer()
 {
     ExportPluginHelpers::SetMixRenderHook(nullptr);
+    ExportPluginHelpers::SetDemoQuery(nullptr);
     stopPerformance();
     // Runs while the app's services are being torn down on quit: stopTransport
     // must not reach any of them.

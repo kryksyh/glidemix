@@ -142,8 +142,7 @@ private:
     std::shared_ptr<const Arrangement> mPending;   // guarded by atomic_load/store
     std::shared_ptr<const Arrangement> mCurrent;   // render thread only
     double mTime = 0.0;
-    int64_t mDemoFrame = 0;     // output frames so far, for the demo gaps
-    uint32_t mDemoNoise = 22222u;
+    int64_t mDemoFrame = 0;     // output frames so far, for the demo voice
     std::atomic<bool> mLoopActive{ false };
     std::atomic<double> mLoopStart{ 0.0 };
     std::atomic<double> mLoopEnd{ 0.0 };

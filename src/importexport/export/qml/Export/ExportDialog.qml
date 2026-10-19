@@ -248,9 +248,18 @@ StyledDialogView {
                         }
                     }
 
+                    // GlideMix: the demo version always exports MP3 at 96 kbps.
+                    StyledTextLabel {
+                        visible: exportPreferencesModel.isDemo
+                        Layout.preferredWidth: root.smallDropdownWidth
+                        horizontalAlignment: Text.AlignLeft
+                        text: qsTrc("export", "MP3, 96 kbps (demo version)")
+                    }
+
                     StyledDropdown {
                         id: formatDropdown
 
+                        visible: !exportPreferencesModel.isDemo
                         Layout.preferredWidth: root.smallDropdownWidth
 
                         textRole: "name"
@@ -511,6 +520,7 @@ StyledDialogView {
 
                 ColumnLayout {
                     id: dynamicSection
+                    enabled: !exportPreferencesModel.isDemo   // the demo's MP3 settings are fixed
 
                     spacing: 10
 
