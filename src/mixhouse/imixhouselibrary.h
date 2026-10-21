@@ -15,6 +15,7 @@
 #include "async/channel.h"
 #include "modularity/imoduleinterface.h"
 #include "mixhousetypes.h"
+#include "mixhousesmartplaylist.h"
 #include "imixhouserekordboxphrases.h"
 
 #include <optional>
@@ -341,6 +342,13 @@ public:
     /// remembers them for Lexicon / rekordbox rows (tagEditsByLocation).
     virtual bool setTrackTags(int trackId, const QVariantMap& fields, bool writeFile, bool keepAsEdit) = 0;
     virtual QHash<QString, QVariantMap> tagEditsByLocation() const = 0;
+
+    /// GlideMix: smart playlists (rules, see mixhousesmartplaylist.h), in
+    /// sidebar order. Saving one with id < 0 creates it; returns its id
+    /// (-1 on failure). Both notify libraryChanged.
+    virtual std::vector<MixHouseSmartPlaylist> smartPlaylists() const = 0;
+    virtual int saveSmartPlaylist(const MixHouseSmartPlaylist& playlist) = 0;
+    virtual bool deleteSmartPlaylist(int id) = 0;
 
     /// The library table's "Waveform Overview" column data -- resolves the
     /// track's real `track_analysis` row (type 2, WAVESUMMARY -- the small,

@@ -29,11 +29,13 @@ qt_add_qml_module(mixhouse_qml
     QML_FILES
         MixHouseLibraryPanel.qml
         MixHouseGridEditorPanel.qml
+        SmartPlaylistEditor.qml
     RESOURCES
         icons/ic_broadcast.svg
         icons/ic_library_tracks.svg
         icons/ic_library_autodj.svg
         icons/ic_library_playlist.svg
+        icons/ic_library_smart.svg
         icons/ic_library_crates.svg
         icons/ic_library_computer.svg
         icons/ic_library_recordings.svg

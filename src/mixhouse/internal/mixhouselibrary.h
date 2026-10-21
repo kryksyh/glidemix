@@ -78,6 +78,9 @@ public:
     QHash<QString, std::pair<int, int> > ratingsAndColorsByLocation() const override;
     bool setTrackTags(int trackId, const QVariantMap& fields, bool writeFile, bool keepAsEdit) override;
     QHash<QString, QVariantMap> tagEditsByLocation() const override;
+    std::vector<MixHouseSmartPlaylist> smartPlaylists() const override;
+    int saveSmartPlaylist(const MixHouseSmartPlaylist& playlist) override;
+    bool deleteSmartPlaylist(int id) override;
     bool addTrackToPlaylist(int trackId, int playlistId) override;
     bool addTrackToCrate(int trackId, int crateId) override;
     bool setTrackColor(int trackId, int color) override;

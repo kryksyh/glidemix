@@ -63,6 +63,10 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselicence.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselicence.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibraryconfiguration.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhouserekordboxxmlwriter.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhouserekordboxxmlwriter.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousesmartplaylist.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousesmartplaylist.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesearchquery.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesearchquery.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousewaveform.cpp

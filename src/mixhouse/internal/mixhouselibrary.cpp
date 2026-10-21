@@ -118,6 +118,14 @@ constexpr const char* kCreateTagEditTableSql =
     " location TEXT PRIMARY KEY,"
     " fields TEXT NOT NULL)";
 
+//! Smart playlists (GlideMix): name and rules as JSON (MixHouseSmartPlaylist).
+constexpr const char* kCreateSmartPlaylistTableSql =
+    "CREATE TABLE IF NOT EXISTS mixhouse_smart_playlists ("
+    " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " name TEXT NOT NULL,"
+    " definition TEXT NOT NULL,"
+    " position INTEGER NOT NULL DEFAULT 0)";
+
 //! Edit Tags field -> library column and file tag (TagLib property name).
 struct TagField {
     const char* key;
@@ -1322,6 +1330,10 @@ bool MixHouseLibrary::ensureWritable()
     QSqlQuery tagEditTable(m_writeDb);
     if (!tagEditTable.exec(QString::fromLatin1(kCreateTagEditTableSql))) {
         LOGW() << "could not create mixhouse_tag_edits: " << tagEditTable.lastError().text();
+    }
+    QSqlQuery smartTable(m_writeDb);
+    if (!smartTable.exec(QString::fromLatin1(kCreateSmartPlaylistTableSql))) {
+        LOGW() << "could not create mixhouse_smart_playlists: " << smartTable.lastError().text();
     }
 
     QSqlQuery indexQuery(m_writeDb);
@@ -3406,6 +3418,65 @@ QHash<QString, QVariantMap> MixHouseLibrary::tagEditsByLocation() const
         out.insert(q.value(0).toString(), QJsonDocument::fromJson(q.value(1).toString().toUtf8()).object().toVariantMap());
     }
     return out;
+}
+
+std::vector<MixHouseSmartPlaylist> MixHouseLibrary::smartPlaylists() const
+{
+    std::vector<MixHouseSmartPlaylist> out;
+    if (!ensureOpen()) {
+        return out;
+    }
+    QSqlQuery q(m_writeDb.isValid() && m_writeDb.isOpen() ? m_writeDb : m_db);
+    q.setForwardOnly(true);
+    if (!q.exec(QStringLiteral("SELECT id, name, definition FROM mixhouse_smart_playlists ORDER BY position, id"))) {
+        return out;   // no table yet
+    }
+    while (q.next()) {
+        MixHouseSmartPlaylist p = MixHouseSmartPlaylist::fromJson(q.value(2).toString());
+        p.id = q.value(0).toInt();
+        p.name = q.value(1).toString();
+        out.push_back(std::move(p));
+    }
+    return out;
+}
+
+int MixHouseLibrary::saveSmartPlaylist(const MixHouseSmartPlaylist& playlist)
+{
+    if (!ensureWritable()) {
+        return -1;
+    }
+    QSqlQuery q(m_writeDb);
+    if (playlist.id < 0) {
+        q.prepare(QStringLiteral("INSERT INTO mixhouse_smart_playlists (name, definition, position) "
+                                 "VALUES (:name, :def, (SELECT COALESCE(MAX(position), 0) + 1 FROM mixhouse_smart_playlists))"));
+    } else {
+        q.prepare(QStringLiteral("UPDATE mixhouse_smart_playlists SET name = :name, definition = :def WHERE id = :id"));
+        q.bindValue(QStringLiteral(":id"), playlist.id);
+    }
+    q.bindValue(QStringLiteral(":name"), playlist.name);
+    q.bindValue(QStringLiteral(":def"), playlist.toJson());
+    if (!q.exec()) {
+        LOGW() << "could not save smart playlist: " << q.lastError().text();
+        return -1;
+    }
+    const int id = playlist.id < 0 ? q.lastInsertId().toInt() : playlist.id;
+    m_libraryChanged.notify();
+    return id;
+}
+
+bool MixHouseLibrary::deleteSmartPlaylist(int id)
+{
+    if (!ensureWritable()) {
+        return false;
+    }
+    QSqlQuery q(m_writeDb);
+    q.prepare(QStringLiteral("DELETE FROM mixhouse_smart_playlists WHERE id = :id"));
+    q.bindValue(QStringLiteral(":id"), id);
+    if (!q.exec()) {
+        return false;
+    }
+    m_libraryChanged.notify();
+    return true;
 }
 
 bool MixHouseLibrary::setTrackTextField(int trackId, const QString& column, const QString& text,

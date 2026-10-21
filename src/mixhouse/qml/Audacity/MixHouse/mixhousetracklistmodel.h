@@ -185,6 +185,34 @@ public:
     //! "rekordbox", `playlistId` -1 = all -- read-only, see
     //! IMixHouseExternalLibrary.
     Q_INVOKABLE void setExternalPlaylist(const QString& source, int playlistId);
+
+    //! GlideMix: smart playlists (rekordbox's Intelligent Playlists,
+    //! Lexicon's Smartlists). Definitions travel as QVariantMaps:
+    //! {id, name, match: "all"|"any", source, groups: [[{field, op, value,
+    //! value2}]], sort, ascending, limit}.
+    Q_INVOKABLE void setSmartPlaylist(int id);
+    Q_INVOKABLE QVariantList smartFieldList() const;
+    Q_INVOKABLE QVariantList smartOperatorList(const QString& fieldType) const;
+    Q_INVOKABLE QVariantMap smartPlaylistDefinition(int id) const;
+    Q_INVOKABLE int saveSmartPlaylist(const QVariantMap& definition);
+    Q_INVOKABLE void deleteSmartPlaylistWithConfirm(int id, const QString& name);
+    //! How many tracks a definition picks right now (the editor's live count).
+    Q_INVOKABLE int smartPlaylistPreviewCount(const QVariantMap& definition) const;
+    //! Playlists a rule can name, for a source: [{value: "collection:5", text}].
+    Q_INVOKABLE QVariantList smartPlaylistChoices(const QString& source) const;
+    //! A plain playlist with the smart playlist's current tracks.
+    Q_INVOKABLE int duplicateSmartPlaylistAsPlaylist(int id);
+
+    //! GlideMix: copies a playlist's songs, in order, into a new folder under
+    //! `destination` (named after the playlist), with a tracklist .txt and an
+    //! .m3u8. `kind`: "playlist", "smart-playlist", "lexicon-playlist",
+    //! "rekordbox-playlist". Runs in the background; the status line reports.
+    Q_INVOKABLE void exportPlaylistToFolder(const QString& kind, int id, const QString& name, const QString& destination);
+
+    //! GlideMix: the Music Collection, its playlists, the smart playlists and
+    //! the Lexicon / rekordbox songs changed in GlideMix, as a rekordbox XML
+    //! (asks where to save it).
+    Q_INVOKABLE void exportRekordboxXml();
     /// GlideMix: Computer > Quick Links / Devices -- the audio files in one
     /// folder, without importing them (tracks already in the library show as
     /// themselves). Dragging them to a playlist or the collection imports them.
@@ -749,6 +777,12 @@ private:
     bool m_subscribedToExternal = false;
     void leaveExternal();
     const IMixHouseExternalLibrary* externalLibrary(const QString& source) const;
+    void applyOwnOverrides(MixHouseTrackList& tracks) const;
+    //! GlideMix: the tracks a smart playlist picks, filtered by the search box.
+    MixHouseTrackList smartPlaylistTracks(int id) const;
+    MixHouseTrackList smartCandidates(const QString& source, const IMixHouseLibrary::TrackQuery& query) const;
+    QSet<QString> smartPlaylistFiles(const QString& playlistRef) const;
+    MixHouseTrackList playlistTracksForExport(const QString& kind, int id) const;
     //! A track from another DJ app's library: not in this library, so
     //! nothing writes to it.
     static bool isExternalTrack(const MixHouseTrack& t) { return isExternalLibraryTrack(t.id); }

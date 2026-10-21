@@ -32,7 +32,14 @@
 #include <QUrl>
 #include <QDir>
 #include <QStandardPaths>
+#include <QCoreApplication>
+#include <QTextStream>
+#include <QRegularExpression>
+#include <QDesktopServices>
+#include <QPointer>
+#include <thread>
 #include "mixhouse/mixhousefiletags.h"
+#include "mixhouse/mixhouserekordboxxmlwriter.h"
 #include <QStorageInfo>
 #include <QSettings>
 #include <QTimer>
@@ -410,28 +417,12 @@ void MixHouseTrackListModel::load()
         m_query.limit = 2000;
         if (m_externalSource == u"folder") {
             fresh = browseFolderTracks();
+        } else if (m_externalSource == u"smart") {
+            fresh = smartPlaylistTracks(m_externalPlaylist);
         } else if (!m_externalSource.isEmpty()) {
             const IMixHouseExternalLibrary* external = externalLibrary(m_externalSource);
             fresh = external ? external->tracks(m_externalPlaylist, m_query) : MixHouseTrackList();
-            // Ratings and colors given in GlideMix to these songs live in its own
-            // library (Lexicon's and rekordbox's databases are read-only here).
-            const auto own = library()->ratingsAndColorsByLocation();
-            const auto edits = library()->tagEditsByLocation();
-            for (MixHouseTrack& t : fresh) {
-                const auto e = edits.constFind(t.filePath);
-                if (e != edits.constEnd()) {
-                    applyTagFields(t, *e);
-                }
-                const auto it = own.constFind(t.filePath);
-                if (it != own.constEnd()) {
-                    if (it->first > 0) {
-                        t.rating = it->first;
-                    }
-                    if (it->second >= 0) {
-                        t.color = it->second;
-                    }
-                }
-            }
+            applyOwnOverrides(fresh);
         } else {
             fresh = library()->tracks(m_query);
         }
@@ -629,6 +620,29 @@ void MixHouseTrackListModel::leaveExternal()
     }
 }
 
+void MixHouseTrackListModel::applyOwnOverrides(MixHouseTrackList& tracks) const
+{
+    // Ratings, colors and tags given in GlideMix to Lexicon / rekordbox songs
+    // live in its own library (their databases are read-only here).
+    const auto own = library()->ratingsAndColorsByLocation();
+    const auto edits = library()->tagEditsByLocation();
+    for (MixHouseTrack& t : tracks) {
+        const auto e = edits.constFind(t.filePath);
+        if (e != edits.constEnd()) {
+            applyTagFields(t, *e);
+        }
+        const auto it = own.constFind(t.filePath);
+        if (it != own.constEnd()) {
+            if (it->first > 0) {
+                t.rating = it->first;
+            }
+            if (it->second >= 0) {
+                t.color = it->second;
+            }
+        }
+    }
+}
+
 const IMixHouseExternalLibrary* MixHouseTrackListModel::externalLibrary(const QString& source) const
 {
     if (source == u"lexicon") {
@@ -672,6 +686,585 @@ void MixHouseTrackListModel::setExternalPlaylist(const QString& source, int play
         m_query.ascending = false;
     }
     load();
+}
+
+namespace {
+MixHouseSmartPlaylist smartFromVariant(const QVariantMap& m)
+{
+    MixHouseSmartPlaylist p;
+    p.id = m.value("id", -1).toInt();
+    p.name = m.value("name").toString().trimmed();
+    p.matchAll = m.value("match").toString() != u"any";
+    p.source = m.value("source", QStringLiteral("collection")).toString();
+    for (const QVariant& gv : m.value("groups").toList()) {
+        std::vector<MixHouseSmartRule> group;
+        for (const QVariant& rv : gv.toList()) {
+            const QVariantMap r = rv.toMap();
+            group.push_back({ r.value("field").toString(), r.value("op").toString(), r.value("value").toString(),
+                              r.value("value2").toString() });
+        }
+        if (!group.empty()) {
+            p.groups.push_back(std::move(group));
+        }
+    }
+    p.sort = m.value("sort", QStringLiteral("dateAdded")).toString();
+    p.ascending = m.value("ascending", false).toBool();
+    p.limit = std::max(0, m.value("limit", 0).toInt());
+    return p;
+}
+
+QVariantMap smartToVariant(const MixHouseSmartPlaylist& p)
+{
+    QVariantList groups;
+    for (const auto& group : p.groups) {
+        QVariantList rules;
+        for (const MixHouseSmartRule& r : group) {
+            rules << QVariantMap { { "field", r.field }, { "op", r.op }, { "value", r.value }, { "value2", r.value2 } };
+        }
+        groups << QVariant(rules);
+    }
+    return QVariantMap { { "id", p.id }, { "name", p.name }, { "match", p.matchAll ? "all" : "any" },
+                         { "source", p.source }, { "groups", groups }, { "sort", p.sort },
+                         { "ascending", p.ascending }, { "limit", p.limit } };
+}
+
+IMixHouseLibrary::SortKey sortKeyForSmartField(const QString& field)
+{
+    using K = IMixHouseLibrary::SortKey;
+    static const QHash<QString, K> keys = {
+        { "title", K::Title }, { "artist", K::Artist }, { "album", K::Album }, { "albumArtist", K::AlbumArtist },
+        { "genre", K::Genre }, { "composer", K::Composer }, { "grouping", K::Grouping }, { "comment", K::Comment },
+        { "bpm", K::Bpm }, { "key", K::Key }, { "rating", K::Rating }, { "year", K::Year },
+        { "duration", K::Duration }, { "dateAdded", K::DateAdded }, { "lastPlayed", K::LastPlayedAt },
+        { "timesPlayed", K::TimesPlayed }, { "bitrate", K::Bitrate }, { "fileType", K::FileType },
+    };
+    return keys.value(field, K::DateAdded);
+}
+}
+
+void MixHouseTrackListModel::setSmartPlaylist(int id)
+{
+    m_externalSource = QStringLiteral("smart");
+    m_externalPlaylist = id;
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    m_query.filter.clear();
+    // The table starts in the playlist's own order ("the newest 50").
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        if (p.id == id) {
+            m_query.sort = sortKeyForSmartField(p.sort);
+            m_query.ascending = p.ascending;
+        }
+    }
+    load();
+}
+
+MixHouseTrackList MixHouseTrackListModel::smartCandidates(const QString& source, const IMixHouseLibrary::TrackQuery& base) const
+{
+    IMixHouseLibrary::TrackQuery q = base;
+    q.playlistId = -1;
+    q.crateId = -1;
+    q.missingOnly = false;
+    q.hiddenOnly = false;
+    q.unanalyzedOnly = false;
+    q.playedOnly = false;
+    q.limit = 0;
+    MixHouseTrackList out;
+    QSet<QString> seen;
+    const auto add = [&](MixHouseTrackList list) {
+        for (MixHouseTrack& t : list) {
+            if (t.filePath.isEmpty() || !seen.contains(t.filePath)) {
+                seen.insert(t.filePath);
+                out.push_back(std::move(t));
+            }
+        }
+    };
+    if (source == u"collection" || source == u"all") {
+        add(library()->tracks(q));
+    }
+    for (const QString& ext : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+        if (source != ext && source != u"all") {
+            continue;
+        }
+        const IMixHouseExternalLibrary* external = externalLibrary(ext);
+        if (external && external->available()) {
+            MixHouseTrackList list = external->tracks(-1, q);
+            applyOwnOverrides(list);
+            add(std::move(list));
+        }
+    }
+    return out;
+}
+
+QSet<QString> MixHouseTrackListModel::smartPlaylistFiles(const QString& ref) const
+{
+    // "collection:5", "lexicon:12", "rekordbox:3"
+    QSet<QString> files;
+    const qsizetype colon = ref.indexOf(QLatin1Char(':'));
+    if (colon < 0) {
+        return files;
+    }
+    const QString source = ref.left(colon);
+    const int id = ref.mid(colon + 1).toInt();
+    IMixHouseLibrary::TrackQuery q;
+    q.limit = 0;
+    MixHouseTrackList list;
+    if (source == u"collection") {
+        q.playlistId = id;
+        list = library()->tracks(q);
+    } else if (const IMixHouseExternalLibrary* external = externalLibrary(source); external && external->available()) {
+        list = external->tracks(id, q);
+    }
+    for (const MixHouseTrack& t : list) {
+        files.insert(t.filePath);
+    }
+    return files;
+}
+
+MixHouseTrackList MixHouseTrackListModel::smartPlaylistTracks(int id) const
+{
+    MixHouseSmartPlaylist playlist;
+    bool found = false;
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        if (p.id == id) {
+            playlist = p;
+            found = true;
+        }
+    }
+    if (!found) {
+        return {};
+    }
+    MixHouseSmartContext context;
+    for (const auto& group : playlist.groups) {
+        for (const MixHouseSmartRule& r : group) {
+            if (r.field == u"inPlaylist" && !context.playlistFiles.contains(r.value)) {
+                context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
+            }
+        }
+    }
+    // The search box and key wheel narrow the candidates; the rules pick.
+    MixHouseTrackList tracks = applySmartPlaylist(playlist, smartCandidates(playlist.source, m_query), context);
+    IMixHouseLibrary::TrackQuery sortOnly;
+    sortOnly.sort = m_query.sort;
+    sortOnly.ascending = m_query.ascending;
+    sortOnly.limit = m_query.limit;
+    sortAndLimitTracks(tracks, sortOnly, false);
+    return tracks;
+}
+
+QVariantList MixHouseTrackListModel::smartFieldList() const
+{
+    QVariantList out;
+    for (const MixHouseSmartField& f : smartFields()) {
+        out << QVariantMap { { "value", f.id }, { "text", muse::qtrc("mixhouse", f.title.toUtf8().constData()) },
+                             { "type", f.type } };
+    }
+    return out;
+}
+
+QVariantList MixHouseTrackListModel::smartOperatorList(const QString& fieldType) const
+{
+    QVariantList out;
+    for (const auto& [id, title] : smartOperators(fieldType)) {
+        out << QVariantMap { { "value", id }, { "text", muse::qtrc("mixhouse", title.toUtf8().constData()) } };
+    }
+    return out;
+}
+
+QVariantMap MixHouseTrackListModel::smartPlaylistDefinition(int id) const
+{
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        if (p.id == id) {
+            return smartToVariant(p);
+        }
+    }
+    MixHouseSmartPlaylist fresh;   // a new one: one empty rule to start from
+    fresh.name = muse::qtrc("mixhouse", "New Smart Playlist");
+    fresh.groups.push_back({ MixHouseSmartRule { QStringLiteral("genre"), QStringLiteral("contains"), {}, {} } });
+    return smartToVariant(fresh);
+}
+
+int MixHouseTrackListModel::saveSmartPlaylist(const QVariantMap& definition)
+{
+    MixHouseSmartPlaylist p = smartFromVariant(definition);
+    if (p.name.isEmpty()) {
+        p.name = muse::qtrc("mixhouse", "Smart Playlist");
+    }
+    const int id = library()->saveSmartPlaylist(p);
+    if (id >= 0 && m_externalSource == u"smart" && m_externalPlaylist == id) {
+        const_cast<MixHouseTrackListModel*>(this)->load();
+    }
+    return id;
+}
+
+void MixHouseTrackListModel::deleteSmartPlaylistWithConfirm(int id, const QString& name)
+{
+    const auto result = interactive()->questionSync(
+        muse::trc("mixhouse", "Delete smart playlist"),
+        muse::qtrc("mixhouse", "Delete the smart playlist \"%1\"? Its tracks stay in your library.").arg(name).toStdString(),
+        { muse::IInteractive::Button::Cancel, muse::IInteractive::Button::Ok });
+    if (result.standardButton() != muse::IInteractive::Button::Ok) {
+        return;
+    }
+    if (library()->deleteSmartPlaylist(id) && m_externalSource == u"smart" && m_externalPlaylist == id) {
+        setPlaylist(-1);
+    }
+}
+
+int MixHouseTrackListModel::smartPlaylistPreviewCount(const QVariantMap& definition) const
+{
+    const MixHouseSmartPlaylist p = smartFromVariant(definition);
+    MixHouseSmartContext context;
+    for (const auto& group : p.groups) {
+        for (const MixHouseSmartRule& r : group) {
+            if (r.field == u"inPlaylist" && !context.playlistFiles.contains(r.value)) {
+                context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
+            }
+        }
+    }
+    return static_cast<int>(applySmartPlaylist(p, smartCandidates(p.source, IMixHouseLibrary::TrackQuery()), context).size());
+}
+
+QVariantList MixHouseTrackListModel::smartPlaylistChoices(const QString& source) const
+{
+    QVariantList out;
+    if (source == u"collection" || source == u"all") {
+        for (const MixHouseNamedItem& p : library()->playlists()) {
+            if (!p.isFolder) {
+                out << QVariantMap { { "value", QStringLiteral("collection:%1").arg(p.id) }, { "text", p.name } };
+            }
+        }
+    }
+    for (const QString& ext : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+        if (source != ext && source != u"all") {
+            continue;
+        }
+        const IMixHouseExternalLibrary* external = externalLibrary(ext);
+        if (!external || !external->available()) {
+            continue;
+        }
+        const QString prefix = ext == u"lexicon" ? QStringLiteral("Lexicon: ") : QStringLiteral("rekordbox: ");
+        for (const IMixHouseExternalLibrary::Node& n : external->nodes()) {
+            if (n.type != IMixHouseExternalLibrary::NodeType::Folder) {
+                out << QVariantMap { { "value", QStringLiteral("%1:%2").arg(ext).arg(n.id) },
+                                     { "text", source == u"all" ? prefix + n.name : n.name } };
+            }
+        }
+    }
+    return out;
+}
+
+int MixHouseTrackListModel::duplicateSmartPlaylistAsPlaylist(int id)
+{
+    QString name;
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        if (p.id == id) {
+            name = p.name;
+        }
+    }
+    const MixHouseTrackList tracks = smartPlaylistTracks(id);
+    if (name.isEmpty()) {
+        return -1;
+    }
+    const int playlistId = library()->createPlaylist(name, -1);
+    if (playlistId < 0) {
+        return -1;
+    }
+    // Lexicon / rekordbox songs join the Music Collection first, in one go.
+    QStringList missing;
+    for (const MixHouseTrack& t : tracks) {
+        if (isExternalTrack(t) && !t.filePath.isEmpty() && libraryIdForFile(t.filePath) < 0) {
+            missing << t.filePath;
+        }
+    }
+    if (!missing.isEmpty()) {
+        library()->addTracksFromFiles(missing);
+    }
+    for (const MixHouseTrack& t : tracks) {
+        const int libraryId = isExternalTrack(t) ? libraryIdForFile(t.filePath) : t.id;
+        if (libraryId >= 0) {
+            library()->addTrackToPlaylist(libraryId, playlistId);
+        }
+    }
+    return playlistId;
+}
+
+MixHouseTrackList MixHouseTrackListModel::playlistTracksForExport(const QString& kind, int id) const
+{
+    IMixHouseLibrary::TrackQuery q;
+    q.limit = 0;
+    q.sort = IMixHouseLibrary::SortKey::Position;
+    q.ascending = true;
+    if (kind == u"playlist") {
+        q.playlistId = id;
+        return library()->tracks(q);
+    }
+    if (kind == u"smart-playlist") {
+        MixHouseSmartPlaylist playlist;
+        for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+            if (p.id == id) {
+                playlist = p;
+            }
+        }
+        MixHouseSmartContext context;
+        for (const auto& group : playlist.groups) {
+            for (const MixHouseSmartRule& r : group) {
+                if (r.field == u"inPlaylist") {
+                    context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
+                }
+            }
+        }
+        MixHouseTrackList tracks = applySmartPlaylist(playlist, smartCandidates(playlist.source, IMixHouseLibrary::TrackQuery()), context);
+        IMixHouseLibrary::TrackQuery order;
+        order.sort = sortKeyForSmartField(playlist.sort);
+        order.ascending = playlist.ascending;
+        sortAndLimitTracks(tracks, order, false);
+        return tracks;
+    }
+    const QString source = kind.section(QLatin1Char('-'), 0, 0);   // "lexicon", "rekordbox"
+    if (const IMixHouseExternalLibrary* external = externalLibrary(source); external && external->available()) {
+        MixHouseTrackList tracks = external->tracks(id, q);
+        applyOwnOverrides(tracks);
+        return tracks;
+    }
+    return {};
+}
+
+void MixHouseTrackListModel::exportPlaylistToFolder(const QString& kind, int id, const QString& name, const QString& destination)
+{
+    const MixHouseTrackList tracks = playlistTracksForExport(kind, id);
+    if (tracks.empty() || destination.isEmpty()) {
+        setAnalysisMessage(muse::qtrc("mixhouse", "Nothing to export: the playlist is empty."));
+        return;
+    }
+    // A folder of its own, named after the playlist (never over an old one).
+    static const QRegularExpression kUnsafe(QStringLiteral("[\\\\/:*?\"<>|]"));
+    QString base = name.trimmed();
+    base.replace(kUnsafe, QStringLiteral("-"));
+    if (base.isEmpty()) {
+        base = QStringLiteral("Playlist");
+    }
+    QString folder = QDir(destination).filePath(base);
+    for (int n = 2; QFileInfo::exists(folder); ++n) {
+        folder = QDir(destination).filePath(QStringLiteral("%1 (%2)").arg(base).arg(n));
+    }
+    if (!QDir().mkpath(folder)) {
+        interactive()->error(muse::trc("mixhouse", "Export to Folder"),
+                             muse::qtrc("mixhouse", "Could not create the folder %1.").arg(folder).toStdString());
+        return;
+    }
+    struct Item {
+        QString source;
+        QString line;
+    };
+    std::vector<Item> items;
+    const int digits = tracks.size() >= 100 ? 3 : 2;
+    for (const MixHouseTrack& t : tracks) {
+        QString line = t.artist.isEmpty() ? t.title : t.artist + QStringLiteral(" - ") + t.title;
+        QStringList details;
+        if (t.bpm > 0) {
+            details << QString::number(t.bpm, 'f', t.bpm == std::floor(t.bpm) ? 0 : 1) + QStringLiteral(" BPM");
+        }
+        if (!t.key.isEmpty()) {
+            details << t.key;
+        }
+        if (t.durationSec > 0) {
+            const int s = static_cast<int>(t.durationSec);
+            details << QString::asprintf("%d:%02d", s / 60, s % 60);
+        }
+        if (!details.isEmpty()) {
+            line += QStringLiteral("  (") + details.join(QStringLiteral(", ")) + QStringLiteral(")");
+        }
+        items.push_back({ t.filePath, line });
+    }
+    setAnalysisMessage(muse::qtrc("mixhouse", "Exporting %1 songs…").arg(tracks.size()));
+    QPointer<MixHouseTrackListModel> self(this);
+    std::thread([self, items, folder, base, digits]() {
+        QStringList txt { base, QString() };
+        QStringList m3u { QStringLiteral("#EXTM3U") };
+        int copied = 0;
+        int number = 0;
+        QStringList missing;
+        for (const Item& item : items) {
+            ++number;
+            const QString prefix = QStringLiteral("%1").arg(number, digits, 10, QLatin1Char('0'));
+            const QFileInfo src(item.source);
+            const QString fileName = prefix + QStringLiteral(" - ") + src.fileName();
+            if (!src.exists() || !QFile::copy(item.source, QDir(folder).filePath(fileName))) {
+                missing << item.line;
+                txt << prefix + QStringLiteral(". ") + item.line + QStringLiteral("   [file missing]");
+                continue;
+            }
+            ++copied;
+            txt << prefix + QStringLiteral(". ") + item.line;
+            m3u << fileName;
+            if (copied % 5 == 0) {
+                QMetaObject::invokeMethod(qApp, [self, copied, total = items.size()]() {
+                    if (self) {
+                        self->setAnalysisMessage(muse::qtrc("mixhouse", "Exporting… %1 of %2").arg(copied).arg(total));
+                    }
+                }, Qt::QueuedConnection);
+            }
+        }
+        txt << QString() << QStringLiteral("Exported with GlideMix");
+        const auto write = [&](const QString& path, const QStringList& lines) {
+            QFile f(path);
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                QTextStream(&f) << lines.join(QLatin1Char('\n')) << "\n";
+            }
+        };
+        write(QDir(folder).filePath(base + QStringLiteral(".txt")), txt);
+        write(QDir(folder).filePath(base + QStringLiteral(".m3u8")), m3u);
+        QMetaObject::invokeMethod(qApp, [self, folder, copied, missing]() {
+            if (!self) {
+                return;
+            }
+            QString text = muse::qtrc("mixhouse", "Exported %1 songs to %2").arg(copied).arg(QDir::toNativeSeparators(folder));
+            if (!missing.isEmpty()) {
+                text += QStringLiteral(" ") + muse::qtrc("mixhouse", "(%1 files not found)").arg(missing.size());
+            }
+            self->setAnalysisMessage(text);
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+            QTimer::singleShot(10000, self, [self, text]() {
+                if (self && self->m_analysisMessage == text) {
+                    self->setAnalysisMessage(QString());
+                }
+            });
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
+void MixHouseTrackListModel::exportRekordboxXml()
+{
+    const QString path = interactive()->selectSavingFileSync(
+        muse::trc("mixhouse", "Export rekordbox XML"),
+        muse::io::path_t(QDir(musicFolder()).filePath(QStringLiteral("GlideMix rekordbox.xml"))),
+        { muse::trc("mixhouse", "rekordbox XML") + " (*.xml)" }).toQString();
+    if (path.isEmpty()) {
+        return;
+    }
+    MixHouseXmlExport data;
+    data.productVersion = QCoreApplication::applicationVersion();
+    QHash<QString, int> index;   // file path -> position in data.tracks
+    const auto addTrack = [&](const MixHouseTrack& t) {
+        if (!t.filePath.isEmpty() && !index.contains(t.filePath)) {
+            index.insert(t.filePath, static_cast<int>(data.tracks.size()));
+            data.tracks.push_back(t);
+        }
+    };
+
+    IMixHouseLibrary::TrackQuery all;
+    all.limit = 0;
+    for (const MixHouseTrack& t : library()->tracks(all)) {
+        addTrack(t);
+    }
+
+    // The playlist tree, folders included.
+    const MixHouseNamedList pls = library()->playlists();
+    std::function<std::vector<MixHouseXmlPlaylist>(int)> children = [&](int parentId) {
+        std::vector<MixHouseXmlPlaylist> out;
+        for (const MixHouseNamedItem& p : pls) {
+            if (p.parentId != parentId) {
+                continue;
+            }
+            MixHouseXmlPlaylist node;
+            node.name = p.name;
+            node.folder = p.isFolder;
+            if (p.isFolder) {
+                node.children = children(p.id);
+            } else {
+                for (const MixHouseTrack& t : playlistTracksForExport(QStringLiteral("playlist"), p.id)) {
+                    addTrack(t);
+                    node.files << t.filePath;
+                }
+            }
+            out.push_back(std::move(node));
+        }
+        return out;
+    };
+    data.playlists = children(-1);
+
+    // Smart playlists, as they are right now (rekordbox's XML has no rules).
+    const std::vector<MixHouseSmartPlaylist> smart = library()->smartPlaylists();
+    if (!smart.empty()) {
+        MixHouseXmlPlaylist folder;
+        folder.name = muse::qtrc("mixhouse", "GlideMix Smart Playlists");
+        folder.folder = true;
+        for (const MixHouseSmartPlaylist& p : smart) {
+            MixHouseXmlPlaylist node;
+            node.name = p.name;
+            for (const MixHouseTrack& t : playlistTracksForExport(QStringLiteral("smart-playlist"), p.id)) {
+                addTrack(t);
+                node.files << t.filePath;
+            }
+            folder.children.push_back(std::move(node));
+        }
+        data.playlists.push_back(std::move(folder));
+    }
+
+    // Lexicon / rekordbox songs given a rating, color or tags in GlideMix:
+    // their own playlist, so they are easy to find and import.
+    QSet<QString> changed;
+    const auto rated = library()->ratingsAndColorsByLocation();
+    for (auto it = rated.cbegin(); it != rated.cend(); ++it) {
+        changed.insert(it.key());
+    }
+    const auto edits = library()->tagEditsByLocation();
+    for (auto it = edits.cbegin(); it != edits.cend(); ++it) {
+        changed.insert(it.key());
+    }
+    MixHouseXmlPlaylist changedList;
+    changedList.name = muse::qtrc("mixhouse", "Changed in GlideMix");
+    for (const QString& source : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+        const IMixHouseExternalLibrary* external = externalLibrary(source);
+        if (changed.isEmpty() || !external || !external->available()) {
+            continue;
+        }
+        MixHouseTrackList list = external->tracks(-1, all);
+        applyOwnOverrides(list);
+        for (MixHouseTrack& t : list) {
+            if (changed.contains(t.filePath) && !changedList.files.contains(t.filePath)) {
+                // The GlideMix copy wins where the song is in both.
+                const auto own = index.constFind(t.filePath);
+                if (own == index.constEnd()) {
+                    addTrack(t);
+                }
+                changedList.files << t.filePath;
+            }
+        }
+    }
+    if (!changedList.files.isEmpty()) {
+        data.playlists.push_back(std::move(changedList));
+    }
+
+    // Cue points: Lexicon / rekordbox songs have them.
+    data.cues = [this](const MixHouseTrack& t) {
+        for (const QString& source : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+            const IMixHouseExternalLibrary* external = externalLibrary(source);
+            if (external && external->ownsTrack(t.id)) {
+                return external->cues(t.id);
+            }
+        }
+        return std::vector<MixHouseCue>();
+    };
+
+    const QString error = writeRekordboxXml(path, data);
+    if (!error.isEmpty()) {
+        interactive()->error(muse::trc("mixhouse", "Export rekordbox XML"), error.toStdString());
+        return;
+    }
+    LOGI() << "rekordbox XML: " << data.tracks.size() << " tracks written to " << path;
+    interactive()->info(muse::trc("mixhouse", "rekordbox XML saved"),
+                        muse::qtrc("mixhouse", "%1 tracks and their playlists are in %2.\n\n"
+                                   "rekordbox: Preferences > Advanced > Database > rekordbox xml, choose this file, then "
+                                   "import the tracks or playlists from \"rekordbox xml\" in the tree.\n"
+                                   "Lexicon: Import > rekordbox XML.")
+                        .arg(data.tracks.size()).arg(QDir::toNativeSeparators(path)).toStdString());
 }
 
 void MixHouseTrackListModel::setAnalyzeView()
@@ -1028,6 +1621,15 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     out << node("playlists", QObject::tr("Playlists"), 0, "none", -1, topLevelPlaylistCount, true);
     if (isOpen("playlists")) {
         appendPlaylistTree(out, pls, -1, 1, expandedIds);
+    }
+
+    // GlideMix: smart playlists (rules), right below the playlists.
+    const std::vector<MixHouseSmartPlaylist> smart = library()->smartPlaylists();
+    out << node("smart", QObject::tr("Smart Playlists"), 0, "none", -1, static_cast<int>(smart.size()), true);
+    if (isOpen("smart")) {
+        for (const MixHouseSmartPlaylist& p : smart) {
+            out << node("sp-" + QString::number(p.id), p.name, 1, "smart-playlist", p.id, 0, false);
+        }
     }
 
     out << node("computer", QObject::tr("Computer"), 0, "placeholder", -1, 0, true);

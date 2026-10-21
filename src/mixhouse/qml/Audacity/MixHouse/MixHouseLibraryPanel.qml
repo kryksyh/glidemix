@@ -90,6 +90,8 @@ Item {
     MixHouseTrackListModel {
         id: tracksModel
     }
+    // For children with a property of the same name (SmartPlaylistEditor).
+    readonly property var tracksModelRef: tracksModel
 
     // The FULL real Mixxx column list -- every entry its own right-click column
     // picker offers (library/columncache.cpp's kColumnPropertiesByEnum), in the
@@ -606,11 +608,20 @@ Item {
     // (res/images/library in the Mixxx source). The same source assets live in
     // this module and are color-overlaid at render time, so the silhouettes
     // stay identical while the active MixHouse theme supplies the color.
+    // GlideMix: Export to Folder -- the songs in order, a tracklist and an .m3u8.
+    function exportToFolder(kind, id, name) {
+        var dest = exportFolderPicker.selectDirectory()
+        if (dest) {
+            tracksModel.exportPlaylistToFolder(kind, id, name, dest)
+        }
+    }
+
     function sidebarFeatureIcon(nodeId, isFolder) {
         if ((isFolder && nodeId.indexOf("pl-") === 0) || nodeId.indexOf("dir:") === 0) return "ic_library_folder.svg"
         if (nodeId === "tracks") return "ic_library_tracks.svg"
         if (nodeId === "autodj") return "ic_library_autodj.svg"
         if (nodeId === "playlists") return "ic_library_playlist.svg"
+        if (nodeId === "smart" || nodeId.indexOf("sp-") === 0) return "ic_library_smart.svg"
         if (nodeId === "crates" || nodeId.indexOf("cr-") === 0) return "ic_library_crates.svg"
         if (nodeId === "computer") return "ic_library_computer.svg"
         if (nodeId === "recordings") return "ic_library_recordings.svg"
@@ -1093,13 +1104,40 @@ Item {
                                 ])
                             } else if (nodeId === "computer" || nodeId === "tracks") {
                                 // Music Collection: right-click offers what its + does.
-                                computerMenu.show(pos, [
+                                computerMenu.show(pos, nodeId === "tracks" ? [
+                                    { id: "add-folder", title: qsTrc("mixhouse", "Add Folder to Library…") },
+                                    {},
+                                    { id: "export-rekordbox-xml", title: qsTrc("mixhouse", "Export to rekordbox XML…") }
+                                ] : [
                                     { id: "add-folder", title: qsTrc("mixhouse", "Add Folder to Library…") }
+                                ])
+                            } else if (nodeId === "smart") {
+                                smartRootMenu.show(pos, [
+                                    { id: "new-smart", title: qsTrc("mixhouse", "New Smart Playlist…") }
+                                ])
+                            } else if ((kind === "lexicon-playlist" || kind === "rekordbox-playlist") && refId >= 0) {
+                                externalPlaylistMenu.kind = kind
+                                externalPlaylistMenu.playlistId = refId
+                                externalPlaylistMenu.playlistName = name
+                                externalPlaylistMenu.show(pos, [
+                                    { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") }
+                                ])
+                            } else if (kind === "smart-playlist") {
+                                smartItemMenu.playlistId = refId
+                                smartItemMenu.playlistName = name
+                                smartItemMenu.show(pos, [
+                                    { id: "edit-smart", title: qsTrc("mixhouse", "Edit Smart Playlist…") },
+                                    { id: "duplicate-smart", title: qsTrc("mixhouse", "Duplicate as Playlist") },
+                                    { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") },
+                                    {},
+                                    { id: "delete-smart", title: qsTrc("mixhouse", "Delete") }
                                 ])
                             } else if (nodeId === "rekordbox") {
                                 rekordboxMenu.show(pos, [
                                     { id: "choose-rekordbox-xml", title: qsTrc("mixhouse", "Show Rekordbox XML File…") },
-                                    { id: "import-rekordbox", title: qsTrc("mixhouse", "Import from Rekordbox XML…") }
+                                    { id: "import-rekordbox", title: qsTrc("mixhouse", "Import from Rekordbox XML…") },
+                                    {},
+                                    { id: "export-rekordbox-xml", title: qsTrc("mixhouse", "Export GlideMix to rekordbox XML…") }
                                 ])
                             }
                             return
@@ -1124,7 +1162,7 @@ Item {
                         // clears its OWN copy of the filter in each of
                         // these calls -- this just keeps the visible box in
                         // sync with that.)
-                        if (["all", "playlist", "crate", "missing", "hidden", "placeholder", "lexicon-all", "lexicon-playlist", "rekordbox-all", "rekordbox-playlist", "folder-browse", "recordings-view", "history-view", "analyze-view"].indexOf(kind) >= 0) {
+                        if (["all", "playlist", "crate", "missing", "hidden", "placeholder", "lexicon-all", "lexicon-playlist", "rekordbox-all", "rekordbox-playlist", "folder-browse", "recordings-view", "history-view", "analyze-view", "smart-playlist"].indexOf(kind) >= 0) {
                             search.clear()
                         }
                         if (kind === "recordings-view") {
@@ -1138,6 +1176,8 @@ Item {
                             // sidebar at once, which would drop this row before
                             // it opens (see the comment at the end of this handler).
                             root.browseFolderLater(folderPath)
+                        } else if (kind === "smart-playlist" && refId >= 0) {
+                            tracksModel.setSmartPlaylist(refId)
                         } else if (kind === "lexicon-all" || kind === "rekordbox-all") {
                             // GlideMix: another DJ app's library (read-only).
                             tracksModel.setExternalPlaylist(kind.split("-")[0], -1)
@@ -1449,7 +1489,7 @@ Item {
                             id: sidebarAddButton
                             readonly property bool isPlaylistFolder: modelData.nodeId.indexOf("pl-") === 0
                                 && modelData.expandable
-                            visible: ["tracks", "playlists", "crates", "computer", "computer-quick-links", "rekordbox"].indexOf(modelData.nodeId) >= 0
+                            visible: ["tracks", "playlists", "smart", "crates", "computer", "computer-quick-links", "rekordbox"].indexOf(modelData.nodeId) >= 0
                                 || isPlaylistFolder
                             enabled: !modelData.locked
                             Layout.preferredWidth: 22
@@ -1479,6 +1519,7 @@ Item {
                             toolTipTitle: modelData.nodeId === "crates" ? qsTrc("mixhouse", "Create New Crate…")
                                 : modelData.nodeId === "computer-quick-links" ? qsTrc("mixhouse", "Add a folder to Quick Links…")
                                 : modelData.nodeId === "rekordbox" ? qsTrc("mixhouse", "Import from Rekordbox XML…")
+                                : modelData.nodeId === "smart" ? qsTrc("mixhouse", "New Smart Playlist…")
                                 : modelData.nodeId === "playlists" || isPlaylistFolder ? qsTrc("mixhouse", "Create playlist or folder…")
                                 : qsTrc("mixhouse", "Add Folder to Library…")
                             navigation.panel: navPanel
@@ -1496,6 +1537,8 @@ Item {
                                     if (chosenLink) {
                                         tracksModel.addQuickLink(chosenLink)
                                     }
+                                } else if (nodeId === "smart") {
+                                    smartPlaylistEditor.openFor(-1)
                                 } else if (nodeId === "playlists" || isPlaylistFolder) {
                                     newPlaylistRootMenu.openFor(pos, parentId)
                                 } else if (nodeId === "crates") {
@@ -1737,6 +1780,8 @@ Item {
                         if (chosen) {
                             tracksModel.addFolderToLibrary(chosen)
                         }
+                    } else if (itemId === "export-rekordbox-xml") {
+                        tracksModel.exportRekordboxXml()
                     }
                 }
             }
@@ -1757,6 +1802,61 @@ Item {
             }
 
             ContextMenuLoader {
+                id: externalPlaylistMenu
+                property string kind: ""
+                property int playlistId: -1
+                property string playlistName: ""
+                onHandleMenuItem: function(itemId) {
+                    if (itemId === "export-folder") {
+                        root.exportToFolder(kind, playlistId, playlistName)
+                    }
+                }
+            }
+            FilePickerModel {
+                id: exportFolderPicker
+                title: qsTrc("mixhouse", "Export the playlist into…")
+                dir: tracksModel.musicFolder()
+            }
+
+            // GlideMix: smart playlists.
+            ContextMenuLoader {
+                id: smartRootMenu
+                onHandleMenuItem: function(itemId) {
+                    if (itemId === "new-smart") {
+                        smartPlaylistEditor.openFor(-1)
+                    }
+                }
+            }
+            ContextMenuLoader {
+                id: smartItemMenu
+                property int playlistId: -1
+                property string playlistName: ""
+                onHandleMenuItem: function(itemId) {
+                    if (itemId === "edit-smart") {
+                        smartPlaylistEditor.openFor(playlistId)
+                    } else if (itemId === "duplicate-smart") {
+                        tracksModel.duplicateSmartPlaylistAsPlaylist(playlistId)
+                    } else if (itemId === "export-folder") {
+                        root.exportToFolder("smart-playlist", playlistId, playlistName)
+                    } else if (itemId === "delete-smart") {
+                        tracksModel.deleteSmartPlaylistWithConfirm(playlistId, playlistName)
+                    }
+                }
+            }
+            SmartPlaylistEditor {
+                id: smartPlaylistEditor
+                tracksModel: root.tracksModelRef
+                colorPalette: root.trackColorPalette
+                onSaved: function(playlistId) {
+                    if (sidebarColumn.expandedIds.indexOf("smart") < 0) {
+                        sidebarColumn.expandedIds = sidebarColumn.expandedIds.concat(["smart"])
+                    }
+                    sidebarColumn.sidebarRefreshToken++
+                    tracksModel.setSmartPlaylist(playlistId)
+                }
+            }
+
+            ContextMenuLoader {
                 id: rekordboxMenu
 
                 onHandleMenuItem: function(itemId) {
@@ -1766,6 +1866,8 @@ Item {
                         if (xmlFile) {
                             tracksModel.setRekordboxXmlPath(xmlFile)
                         }
+                    } else if (itemId === "export-rekordbox-xml") {
+                        tracksModel.exportRekordboxXml()
                     } else if (itemId === "import-rekordbox") {
                         var chosen = rekordboxXmlPicker.selectFile()
                         if (chosen) {
@@ -1823,6 +1925,12 @@ Item {
                         { id: "new-folder-in", title: qsTrc("mixhouse", "Create New Folder…") },
                         {}
                     ] : []
+                    if (!crate && !sidebarItemMenu.itemIsFolder) {
+                        items = items.concat([
+                            { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") },
+                            {}
+                        ])
+                    }
                     items = items.concat([
                         { id: "rename", title: qsTrc("mixhouse", "Rename"), enabled: !sidebarItemMenu.itemLocked },
                         { id: "delete", title: qsTrc("mixhouse", "Delete"), enabled: !sidebarItemMenu.itemLocked },
@@ -1888,6 +1996,8 @@ Item {
                         } else {
                             tracksModel.setPlaylistLocked(sidebarItemMenu.itemId, newLocked)
                         }
+                    } else if (itemId === "export-folder") {
+                        root.exportToFolder("playlist", sidebarItemMenu.itemId, sidebarItemMenu.itemName)
                     } else if (itemId === "move-up") {
                         tracksModel.movePlaylistOrder(sidebarItemMenu.itemId, true)
                     } else if (itemId === "move-down") {
