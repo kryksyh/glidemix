@@ -6,6 +6,7 @@
 #include <QColor>
 #include <QQmlParserStatus>
 #include <QQuickPaintedItem>
+#include <QTimer>
 #include <QtQmlIntegration>
 
 #include "async/asyncable.h"
@@ -13,6 +14,7 @@
 
 #include "mixhouse/imixhouselibraryconfiguration.h"
 #include "mixhouse/imixhousetempomap.h"
+#include "mixhouse/imixhousebeatgrids.h"
 
 namespace au::mixhouse {
 /// The TEMPO lane under the ruler: the master tempo line, drawn and edited the
@@ -23,6 +25,10 @@ namespace au::mixhouse {
 /// 50..300 BPM range over 600 px of mouse travel, Shift for quarter speed);
 /// Option-drag bends a segment; double-click, or right-click > Delete point,
 /// removes a point.
+///
+/// GlideMix: the same field also shows the mix's energy (1-10) behind the
+/// tempo line -- each playing song's energy rating, lower in its quiet parts
+/// and fades (IMixHouseBeatGrids::energyCurve); blue calm .. red peak.
 class MixHouseTempoLane : public QQuickPaintedItem, public muse::Contextable, public muse::async::Asyncable
 {
     Q_OBJECT
@@ -33,8 +39,12 @@ class MixHouseTempoLane : public QQuickPaintedItem, public muse::Contextable, pu
     Q_PROPERTY(QColor lineColor MEMBER m_lineColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor labelColor MEMBER m_labelColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor backgroundColor MEMBER m_backgroundColor NOTIFY colorsChanged)
+    //! TEMPO: the tempo line and its points (editable); ENERGY: the energy fill.
+    Q_PROPERTY(bool showTempo READ showTempo WRITE setShowTempo NOTIFY layersChanged)
+    Q_PROPERTY(bool showEnergy READ showEnergy WRITE setShowEnergy NOTIFY layersChanged)
 
     muse::ContextInject<IMixHouseTempoMap> tempoMap { this };
+    muse::ContextInject<IMixHouseBeatGrids> beatGrids { this };
 
 public:
     explicit MixHouseTempoLane(QQuickItem* parent = nullptr);
@@ -43,6 +53,13 @@ public:
     void setFrameStartTime(double time);
     double zoom() const { return m_zoom; }
     void setZoom(double zoom);
+    bool showTempo() const { return m_showTempo; }
+    void setShowTempo(bool show);
+    bool showEnergy() const { return m_showEnergy; }
+    void setShowEnergy(bool show);
+
+    //! The colour of an energy level (1 blue .. 10 red).
+    static QColor energyColor(double energy);
 
     void paint(QPainter* painter) override;
 
@@ -59,6 +76,7 @@ signals:
     void pointMenuRequested(int index, double x, double y);
     void viewChanged();
     void colorsChanged();
+    void layersChanged();
 
 protected:
     void componentComplete() override;
@@ -78,6 +96,16 @@ private:
     double bpmToY(double bpm) const;
     double yToBpm(double y) const;
     int hitPoint(const QPointF& pos, const IMixHouseTempoMap::Points& points) const;
+    //! Recomputes the energy curve; repaints only when it changed (clip
+    //! moves and fades have no notification of their own here).
+    void refreshEnergy();
+    void paintEnergy(QPainter* p);
+
+    static constexpr double kEnergyColumnPx = 3.0;
+    bool m_showTempo = true;
+    bool m_showEnergy = false;
+    std::vector<double> m_energy;
+    QTimer m_energyPoll;
 
     double m_frameStartTime = 0.0;
     double m_zoom = 1.0;

@@ -25,6 +25,8 @@ static const muse::Settings::Key SEARCH_DEBOUNCE_MS(module_name, "mixhouse/libra
 static const muse::Settings::Key FUZZY_BPM_RELATIVE_RANGE(module_name, "mixhouse/library/fuzzyBpmRelativeRange");
 static const muse::Settings::Key MUSIC_DIRECTORIES(module_name, "mixhouse/library/musicDirectories");
 static const muse::Settings::Key RESCAN_ON_STARTUP(module_name, "mixhouse/library/rescanOnStartup");
+static const muse::Settings::Key WATCH_MUSIC_DIRECTORIES(module_name, "mixhouse/library/watchMusicDirectories");
+static const muse::Settings::Key ANALYZE_NEW_TRACKS(module_name, "mixhouse/library/analyzeNewTracks");
 static const muse::Settings::Key ACCURATE_BEAT_ANALYSIS(module_name, "mixhouse/library/accurateBeatAnalysis");
 static const muse::Settings::Key SHOW_SCAN_SUMMARY_DIALOG(module_name, "mixhouse/library/showScanSummaryDialog");
 static const muse::Settings::Key EDIT_METADATA_AFTER_CLICK(module_name, "mixhouse/library/editMetadataAfterClick");
@@ -49,6 +51,7 @@ static const muse::Settings::Key USE_LEXICON_LIBRARY(module_name, "mixhouse/libr
 static const muse::Settings::Key QUANTIZE_ENABLED(module_name, "mixhouse/deck/quantize");
 static const muse::Settings::Key KEYLOCK_ENABLED(module_name, "mixhouse/deck/keylock");
 static const muse::Settings::Key TEMPO_LANE_VISIBLE(module_name, "mixhouse/arrangement/tempoLaneVisible");
+static const muse::Settings::Key ENERGY_LANE_VISIBLE(module_name, "mixhouse/arrangement/energyLaneVisible");
 static const muse::Settings::Key TEMPO_LANE_HEIGHT(module_name, "mixhouse/arrangement/tempoLaneHeight");
 static constexpr int kMaxSearchHistoryEntries = 50;
 
@@ -90,11 +93,14 @@ void MixHouseLibraryConfiguration::init()
     muse::settings()->setDefaultValue(SYNC_ENABLED, muse::Val(true));
     muse::settings()->setDefaultValue(TEMPO_LANE_VISIBLE, muse::Val(false));
     muse::settings()->setDefaultValue(TEMPO_LANE_HEIGHT, muse::Val(96));
+    muse::settings()->setDefaultValue(ENERGY_LANE_VISIBLE, muse::Val(false));
     muse::settings()->setDefaultValue(SEARCH_DEBOUNCE_MS, muse::Val(kDefaultSearchDebounceMs));
     muse::settings()->setDefaultValue(FUZZY_BPM_RELATIVE_RANGE, muse::Val(kDefaultFuzzyBpmRelativeRange));
     muse::settings()->setDefaultValue(MUSIC_DIRECTORIES, muse::Val(muse::ValList {}));
     // Real mixxx's own .ui defaults for these three checkboxes.
     muse::settings()->setDefaultValue(RESCAN_ON_STARTUP, muse::Val(true));
+    muse::settings()->setDefaultValue(WATCH_MUSIC_DIRECTORIES, muse::Val(true));
+    muse::settings()->setDefaultValue(ANALYZE_NEW_TRACKS, muse::Val(true));
     muse::settings()->setDefaultValue(ACCURATE_BEAT_ANALYSIS, muse::Val(false));
     muse::settings()->setDefaultValue(SHOW_SCAN_SUMMARY_DIALOG, muse::Val(true));
     muse::settings()->setDefaultValue(EDIT_METADATA_AFTER_CLICK, muse::Val(false));
@@ -114,10 +120,10 @@ void MixHouseLibraryConfiguration::init()
     for (const muse::Settings::Key& key : { LIBRARY_ROW_HEIGHT, TRACK_DOUBLE_CLICK_ACTION, GREY_OUT_PLAYED_TRACKS,
                                             LIBRARY_FONT_FAMILY, LIBRARY_FONT_POINT_SIZE, BPM_PRECISION, KEY_NOTATION,
                                             STEMS_DEVICE, STEMS_HIGH_QUALITY, STEMS_CACHE_LIMIT_GB,
-                                            SYNC_ENABLED, TEMPO_LANE_VISIBLE, TEMPO_LANE_HEIGHT,
+                                            SYNC_ENABLED, TEMPO_LANE_VISIBLE, TEMPO_LANE_HEIGHT, ENERGY_LANE_VISIBLE,
                                             QUANTIZE_ENABLED, KEYLOCK_ENABLED,
                                             SEARCH_DEBOUNCE_MS, FUZZY_BPM_RELATIVE_RANGE, MUSIC_DIRECTORIES,
-                                            RESCAN_ON_STARTUP, ACCURATE_BEAT_ANALYSIS, SHOW_SCAN_SUMMARY_DIALOG, EDIT_METADATA_AFTER_CLICK,
+                                            RESCAN_ON_STARTUP, WATCH_MUSIC_DIRECTORIES, ANALYZE_NEW_TRACKS, ACCURATE_BEAT_ANALYSIS, SHOW_SCAN_SUMMARY_DIALOG, EDIT_METADATA_AFTER_CLICK,
                                             SEARCH_COMPLETIONS_ENABLED, SEARCH_HISTORY_SHORTCUTS_ENABLED,
                                             SYNC_METADATA_TO_FILE_TAGS, WAVEFORM_OVERVIEW_TYPE,
                                             SHOW_WAVEFORM_MINUTE_MARKERS }) {
@@ -249,6 +255,28 @@ bool MixHouseLibraryConfiguration::rescanOnStartup() const
 void MixHouseLibraryConfiguration::setRescanOnStartup(bool rescan)
 {
     muse::settings()->setSharedValue(RESCAN_ON_STARTUP, muse::Val(rescan));
+    m_settingsChanged.notify();
+}
+
+bool MixHouseLibraryConfiguration::watchMusicDirectories() const
+{
+    return muse::settings()->value(WATCH_MUSIC_DIRECTORIES).toBool();
+}
+
+void MixHouseLibraryConfiguration::setWatchMusicDirectories(bool watch)
+{
+    muse::settings()->setSharedValue(WATCH_MUSIC_DIRECTORIES, muse::Val(watch));
+    m_settingsChanged.notify();
+}
+
+bool MixHouseLibraryConfiguration::analyzeNewTracks() const
+{
+    return muse::settings()->value(ANALYZE_NEW_TRACKS).toBool();
+}
+
+void MixHouseLibraryConfiguration::setAnalyzeNewTracks(bool analyze)
+{
+    muse::settings()->setSharedValue(ANALYZE_NEW_TRACKS, muse::Val(analyze));
     m_settingsChanged.notify();
 }
 
@@ -519,6 +547,17 @@ void MixHouseLibraryConfiguration::setKeylockEnabled(bool enabled)
 {
     muse::settings()->setSharedValue(KEYLOCK_ENABLED, muse::Val(enabled));
     mixtape::SetKeylock(enabled);
+    m_settingsChanged.notify();
+}
+
+bool MixHouseLibraryConfiguration::energyLaneVisible() const
+{
+    return muse::settings()->value(ENERGY_LANE_VISIBLE).toBool();
+}
+
+void MixHouseLibraryConfiguration::setEnergyLaneVisible(bool visible)
+{
+    muse::settings()->setSharedValue(ENERGY_LANE_VISIBLE, muse::Val(visible));
     m_settingsChanged.notify();
 }
 

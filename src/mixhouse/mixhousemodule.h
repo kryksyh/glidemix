@@ -59,5 +59,6 @@ private:
     std::shared_ptr<MixHouseTransitions> m_transitions;
     std::shared_ptr<MixHouseRekordboxXml> m_rekordboxXml;
     std::shared_ptr<MixHouseRekordboxPhrases> m_rekordboxPhrases;
+    std::shared_ptr<class MixHouseFolderWatcher> m_folderWatcher;
 };
 }

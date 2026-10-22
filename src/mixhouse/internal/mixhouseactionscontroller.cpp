@@ -127,6 +127,9 @@ void MixHouseActionsController::init()
     dispatcher()->reg(this, "mixhouse-tempo-lane", [this]() {
         libraryConfiguration()->setTempoLaneVisible(!libraryConfiguration()->tempoLaneVisible());
     });
+    dispatcher()->reg(this, "mixhouse-energy-lane", [this]() {
+        libraryConfiguration()->setEnergyLaneVisible(!libraryConfiguration()->energyLaneVisible());
+    });
 }
 
 void MixHouseActionsController::addFilesToLibrary()

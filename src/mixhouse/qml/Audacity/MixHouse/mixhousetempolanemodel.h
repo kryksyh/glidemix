@@ -25,6 +25,7 @@ class MixHouseTempoLaneModel : public QObject, public QQmlParserStatus, public m
     QML_ELEMENT
 
     Q_PROPERTY(bool laneVisible READ laneVisible NOTIFY laneChanged)
+    Q_PROPERTY(bool energyLaneVisible READ energyLaneVisible NOTIFY laneChanged)
     Q_PROPERTY(int laneHeight READ laneHeight WRITE setLaneHeight NOTIFY laneChanged)
     Q_PROPERTY(int defaultLaneHeight READ defaultLaneHeight CONSTANT)
     Q_PROPERTY(bool followsTracks READ followsTracks WRITE setFollowsTracks NOTIFY tempoChanged)
@@ -37,6 +38,7 @@ public:
     explicit MixHouseTempoLaneModel(QObject* parent = nullptr);
 
     bool laneVisible() const;
+    bool energyLaneVisible() const;
     int laneHeight() const;
     void setLaneHeight(int height);
     int defaultLaneHeight() const { return 96; }

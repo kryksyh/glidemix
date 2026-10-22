@@ -89,6 +89,12 @@ constexpr const char* kCreateDownbeatTableSql =
     " confidence REAL NOT NULL,"
     " detector TEXT NOT NULL)";
 
+//! GlideMix's energy rating (1-10) of a track, from its analysis.
+constexpr const char* kCreateEnergyTableSql =
+    "CREATE TABLE IF NOT EXISTS mixhouse_energy ("
+    " track_id INTEGER PRIMARY KEY,"
+    " energy REAL NOT NULL)";
+
 //! MixMeister Intro/Outro anchors moved by hand, per file.
 constexpr const char* kCreateAnchorTableSql =
     "CREATE TABLE IF NOT EXISTS mixhouse_anchors ("
@@ -173,6 +179,13 @@ std::vector<MixHousePhrase> phrasesFromJson(const QByteArray& json)
         }
     }
     return phrases;
+}
+
+bool hasEnergyTable(QSqlDatabase& db)
+{
+    QSqlQuery q(db);
+    return q.exec(QStringLiteral(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mixhouse_energy'")) && q.next();
 }
 
 bool hasDownbeatTable(QSqlDatabase& db)
@@ -627,8 +640,13 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
 
     // Sorting is done in SQL, not on an already-truncated page: sorting a 2000-row
     // slice of a 1372-track library would sort the wrong rows.
+    const bool withEnergy = hasEnergyTable(m_db);
+    const QString energyColumn = withEnergy
+        ? QStringLiteral("(SELECT en.energy FROM mixhouse_energy en WHERE en.track_id = l.id)")
+        : QStringLiteral("NULL");
     QString orderBy;
     switch (query.sort) {
+    case SortKey::Energy:    orderBy = energyColumn; break;
     case SortKey::Title:     orderBy = QStringLiteral("l.title COLLATE NOCASE"); break;
     case SortKey::Artist:    orderBy = QStringLiteral("l.artist COLLATE NOCASE"); break;
     case SortKey::Album:     orderBy = QStringLiteral("l.album COLLATE NOCASE"); break;
@@ -730,9 +748,10 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
         "       l.coverart_type, l.coverart_source, l.coverart_location, l.coverart_hash, "
         "       %1, "
         "       EXISTS(SELECT 1 FROM track_analysis ta WHERE ta.track_id = l.id AND ta.type = 2), "
-        "       %2 "
+        "       %2, %3 "
         "FROM library l "
         "LEFT JOIN track_locations t ON t.id = l.location ");
+    sql = sql.arg(QStringLiteral("%1"), QStringLiteral("%2"), energyColumn);
     // The table only exists once something has opened the library for
     // writing (see ensureWritable); until then there are no downbeats to read.
     const bool withDownbeats = hasDownbeatTable(m_db);
@@ -888,6 +907,7 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
         t.downbeatSec  = q.value(34).isNull() ? -1.0 : q.value(34).toDouble();
         t.downbeatConfidence = q.value(35).isNull() ? 0.0 : q.value(35).toDouble();
         t.downbeatDetector = q.value(36).toString();
+        t.energy       = q.value(37).isNull() ? 0.0 : q.value(37).toDouble();
         if (t.sampleRate <= 0 && !t.beatsBlob.isEmpty() && !t.filePath.isEmpty()) {
             // Tracks added by this app's own scanner never had samplerate
             // filled in, and a beatgrid stores its beats as frame positions:
@@ -1315,6 +1335,10 @@ bool MixHouseLibrary::ensureWritable()
     if (!downbeatTable.exec(QString::fromLatin1(kCreateDownbeatTableSql))) {
         LOGW() << "could not create mixhouse_downbeats: " << downbeatTable.lastError().text();
     }
+    QSqlQuery energyTable(m_writeDb);
+    if (!energyTable.exec(QString::fromLatin1(kCreateEnergyTableSql))) {
+        LOGW() << "could not create mixhouse_energy: " << energyTable.lastError().text();
+    }
     QSqlQuery anchorTable(m_writeDb);
     if (!anchorTable.exec(QString::fromLatin1(kCreateAnchorTableSql))) {
         LOGW() << "could not create mixhouse_anchors: " << anchorTable.lastError().text();
@@ -1703,7 +1727,7 @@ au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFiles(c
 // interface comment for the real freeze this exists to fix and what it
 // deliberately does and doesn't port from real mixxx's own LibraryScanner.
 
-void MixHouseLibrary::startBackgroundScan(const QStringList& directories)
+void MixHouseLibrary::startBackgroundScan(const QStringList& directories, bool watch)
 {
     if (m_scanning || directories.isEmpty()) {
         return;
@@ -1716,6 +1740,7 @@ void MixHouseLibrary::startBackgroundScan(const QStringList& directories)
     if (!ensureWritable()) {
         ScanResult result;
         result.error = QStringLiteral("Could not open the library for writing.");
+        result.watch = watch;
         m_scanFinished.send(result);
         return;
     }
@@ -1732,7 +1757,8 @@ void MixHouseLibrary::startBackgroundScan(const QStringList& directories)
     const QString connectionName = QStringLiteral("mixhouse_scanner_%1").arg(++scannerInstanceCounter);
 
     m_scanThread = std::make_unique<QThread>();
-    auto* worker = new MixHouseLibraryScanner(m_path, directories, connectionName);
+    // A file written in the last few seconds may still be arriving.
+    auto* worker = new MixHouseLibraryScanner(m_path, directories, connectionName, watch ? 5 : 0);
     m_scanWorker = worker;
     worker->moveToThread(m_scanThread.get());
 
@@ -1751,12 +1777,16 @@ void MixHouseLibrary::startBackgroundScan(const QStringList& directories)
         m_scanProgress.send(scanned, added);
     });
     QObject::connect(worker, &MixHouseLibraryScanner::scanFinished, m_scanThread.get(),
-                      [this, worker](int scanned, int added, int skipped, int unreadable, const QString& error) {
+                      [this, worker, watch](int scanned, int added, int skipped, int unreadable, int pending,
+                                            const QList<int>& addedIds, const QString& error) {
         ScanResult result;
         result.scanned = scanned;
         result.added = added;
         result.skipped = skipped;
         result.unreadable = unreadable;
+        result.pending = pending;
+        result.addedIds = addedIds;
+        result.watch = watch;
         result.error = error;
         m_scanning = false;
         m_scanWorker = nullptr;
@@ -1764,7 +1794,8 @@ void MixHouseLibrary::startBackgroundScan(const QStringList& directories)
         m_scanThread->wait();
         worker->deleteLater();
         LOGI() << "GlideMix background scan: " << result.scanned << " files, "
-               << result.added << " added, " << result.skipped << " already known";
+               << result.added << " added, " << result.skipped << " already known, " << result.pending
+               << " still being written";
         if (result.added > 0) {
             m_libraryChanged.notify();
         }
@@ -4329,6 +4360,19 @@ MixHouseAnalyzeResult au::mixhouse::writeAnalysisResult(const QString& libraryPa
         if (!downbeat.exec()) {
             LOGW() << "writeAnalysisResult: could not save downbeat for track " << trackId
                    << ": " << downbeat.lastError().text();
+        }
+    }
+
+    if (analysis.energy > 0.0) {
+        QSqlQuery createTable(db);
+        createTable.exec(QString::fromLatin1(kCreateEnergyTableSql));
+        QSqlQuery energy(db);
+        energy.prepare(QStringLiteral("INSERT OR REPLACE INTO mixhouse_energy (track_id, energy) VALUES (:id, :energy)"));
+        energy.bindValue(QStringLiteral(":id"), trackId);
+        energy.bindValue(QStringLiteral(":energy"), analysis.energy);
+        if (!energy.exec()) {
+            LOGW() << "writeAnalysisResult: could not save energy for track " << trackId << ": "
+                   << energy.lastError().text();
         }
     }
 

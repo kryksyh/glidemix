@@ -9,6 +9,7 @@
 #include "mixhousewaveform.h"
 #include "mixhousephrasedetector.h"
 #include "mixhousephrasemodel.h"
+#include "mixhouseenergy.h"
 
 #include <algorithm>
 #include <atomic>
@@ -957,6 +958,72 @@ public:
         return out;
     }
 
+    //! Whole-track features for the energy rating (mixhouseenergy.h), from
+    //! the same 10 ms blocks, in absolute dB.
+    std::vector<float> energyFeatures(double bpm) const
+    {
+        const size_t blocks = m_blocks.size() / 3;
+        if (blocks < 500) {
+            return {};   // under 5 s
+        }
+        const auto db = [](double v) { return 10.0 * std::log10(v + 1e-12); };
+        std::vector<double> total(blocks), sub(blocks), mid(blocks), high(blocks);
+        for (size_t k = 0; k < blocks; ++k) {
+            sub[k] = db(m_blocks[k * 3]);
+            mid[k] = db(m_blocks[k * 3 + 1]);
+            high[k] = db(m_blocks[k * 3 + 2]);
+            total[k] = db(double(m_blocks[k * 3]) + m_blocks[k * 3 + 1] + m_blocks[k * 3 + 2]);
+        }
+        const auto pct = [](std::vector<double> v, double p) {
+            const size_t i = std::min(v.size() - 1, static_cast<size_t>(p * (v.size() - 1) + 0.5));
+            std::nth_element(v.begin(), v.begin() + i, v.end());
+            return v[i];
+        };
+        const double top = pct(total, 0.95);
+        // The part of the song that is playing (not the silence around it).
+        double power = 0.0, subP = 0.0, midP = 0.0, highP = 0.0;
+        size_t active = 0, full = 0;
+        double subFlux = 0.0, highFlux = 0.0;
+        size_t subHits = 0, highHits = 0;
+        for (size_t k = 0; k < blocks; ++k) {
+            if (total[k] < top - 30.0) {
+                continue;
+            }
+            ++active;
+            power += m_blocks[k * 3] + m_blocks[k * 3 + 1] + m_blocks[k * 3 + 2];
+            subP += m_blocks[k * 3];
+            midP += m_blocks[k * 3 + 1];
+            highP += m_blocks[k * 3 + 2];
+            full += total[k] >= top - 6.0 ? 1 : 0;
+            if (k > 0) {
+                const double ds = sub[k] - sub[k - 1];
+                const double dh = high[k] - high[k - 1];
+                subFlux += std::abs(ds);
+                highFlux += std::abs(dh);
+                subHits += ds > 6.0 ? 1 : 0;   // a kick, about
+                highHits += dh > 6.0 ? 1 : 0;  // a hat or snare, about
+            }
+        }
+        if (active < 100) {
+            return {};
+        }
+        const double seconds = active * kBlockSec;
+        return {
+            static_cast<float>(db(power / active)),               // 0 loudness
+            static_cast<float>(db(subP / power)),                 // 1 sub share
+            static_cast<float>(db(midP / power)),                 // 2 mid share
+            static_cast<float>(db(highP / power)),                // 3 high share
+            static_cast<float>(double(full) / active),            // 4 time at full power
+            static_cast<float>(top - pct(total, 0.10)),           // 5 dynamic range
+            static_cast<float>(subFlux / active),                 // 6 kick pumping
+            static_cast<float>(highFlux / active),                // 7 hat activity
+            static_cast<float>(subHits / seconds),                // 8 kicks per second
+            static_cast<float>(highHits / seconds),               // 9 hits per second
+            static_cast<float>(bpm),                              // 10 tempo
+            static_cast<float>(top),                              // 11 peak loudness
+        };
+    }
+
 private:
     int m_channels = 1;
     int m_sampleRate = 0;
@@ -1678,6 +1745,8 @@ MixHouseAnalysisResult au::mixhouse::analyzeTrackFile(const QString& filePath,
     }
     ANALYZER_TIMING_MARK("downbeat");
     result.beatBandEnergy = phraseEnergy.perBeat(result.bpm, result.firstBeatSec);
+    result.energyFeatures = phraseEnergy.energyFeatures(result.bpm);
+    result.energy = rateEnergy(result.energyFeatures);
     if (!result.beatBandEnergy.empty()) {
         // The loudness detector's phrases are one of the model's inputs.
         const double downbeat = result.downbeatSec >= 0.0 ? result.downbeatSec : result.firstBeatSec;

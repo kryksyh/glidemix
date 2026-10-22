@@ -48,6 +48,11 @@ bool MixHouseTempoLaneModel::laneVisible() const
     return configuration() && configuration()->tempoLaneVisible();
 }
 
+bool MixHouseTempoLaneModel::energyLaneVisible() const
+{
+    return configuration() && configuration()->energyLaneVisible();
+}
+
 int MixHouseTempoLaneModel::laneHeight() const
 {
     return configuration() ? configuration()->tempoLaneHeight() : defaultLaneHeight();

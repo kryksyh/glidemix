@@ -257,7 +257,9 @@ Rectangle {
         id: timelineHeader
 
         // GlideMix: the TEMPO lane sits under the ruler when shown.
-        readonly property int tempoLaneHeight: tempoLaneModel.laneVisible ? tempoLaneModel.laneHeight : 0
+        // GlideMix: the same field shows the mix's energy (ENERGY button).
+        readonly property bool tempoFieldVisible: tempoLaneModel.laneVisible || tempoLaneModel.energyLaneVisible
+        readonly property int tempoLaneHeight: tempoFieldVisible ? tempoLaneModel.laneHeight : 0
 
         anchors.top: parent.top
         anchors.left: parent.left
@@ -488,7 +490,7 @@ Rectangle {
             anchors.left: parent.left
             width: content.anchors.leftMargin
             height: timelineHeader.tempoLaneHeight
-            visible: tempoLaneModel.laneVisible
+            visible: timelineHeader.tempoFieldVisible
             color: tempoLane.backgroundColor
         }
 
@@ -499,7 +501,9 @@ Rectangle {
             anchors.left: timelineIndent.right
             anchors.right: verticalRulerPanelHeader.left
             height: timelineHeader.tempoLaneHeight
-            visible: tempoLaneModel.laneVisible
+            visible: timelineHeader.tempoFieldVisible
+            showTempo: tempoLaneModel.laneVisible
+            showEnergy: tempoLaneModel.energyLaneVisible
 
             frameStartTime: timeline.context.frameStartTime
             zoom: timeline.context.zoom

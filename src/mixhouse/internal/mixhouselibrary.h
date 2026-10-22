@@ -68,7 +68,7 @@ public:
     int verifyTrackLocations() override;
     ScanResult addTracksFromFolder(const QString& folder) override;
     ScanResult addTracksFromFiles(const QStringList& filePaths) override;
-    void startBackgroundScan(const QStringList& directories) override;
+    void startBackgroundScan(const QStringList& directories, bool watch = false) override;
     bool isScanning() const override;
     muse::async::Channel<int, int> scanProgress() const override;
     muse::async::Channel<ScanResult> scanFinished() const override;

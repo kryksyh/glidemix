@@ -62,6 +62,7 @@ QString orderColumn(IMixHouseLibrary::SortKey key)
     case K::TimesPlayed: return QStringLiteral("t.playCount");
     case K::LastPlayedAt: return QStringLiteral("t.lastPlayed");
     case K::SampleRate: return QStringLiteral("t.sampleRate");
+    case K::Energy: return QStringLiteral("t.energy");
     default: return QString();
     }
 }
@@ -167,7 +168,7 @@ MixHouseTrackList MixHouseLexicon::tracks(int playlistId, const IMixHouseLibrary
         "  t.lastPlayed, t.sampleRate, %1, "
         "  (SELECT m.startTime FROM Tempomarker m WHERE m.trackId = t.id ORDER BY m.startTime LIMIT 1), "
         "  (SELECT m.bpm FROM Tempomarker m WHERE m.trackId = t.id ORDER BY m.startTime LIMIT 1), "
-        "  (SELECT COUNT(*) FROM Tempomarker m WHERE m.trackId = t.id) "
+        "  (SELECT COUNT(*) FROM Tempomarker m WHERE m.trackId = t.id), t.energy "
         "FROM %2 WHERE t.archived = 0")
                   .arg(inPlaylist ? QStringLiteral("l.position") : QStringLiteral("-1"),
                        inPlaylist ? QStringLiteral("LinkTrackPlaylist l JOIN Track t ON t.id = l.trackId")
@@ -258,6 +259,7 @@ MixHouseTrackList MixHouseLexicon::tracks(int playlistId, const IMixHouseLibrary
             t.beats.constantTempo = q.value(23).toInt() <= 1;
         }
         t.analyzed = t.beats.valid;
+        t.energy = q.value(24).toDouble();   // Lexicon's own 1-10, 0 = not rated
         result.push_back(std::move(t));
     }
     return result;

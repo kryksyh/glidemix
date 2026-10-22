@@ -24,6 +24,7 @@ struct MixHouseTrack {
     QString filePath;       // track_locations.location
     double durationSec = 0.0;   // -1 = NULL in the DB (header not parsed yet); see tracks()
     double bpm = 0.0;
+    double energy = 0.0;    ///< 1-10 (GlideMix's analysis, or Lexicon's); 0 = not rated
     QString key;            // library.key, e.g. "8A" in the user's notation
     int keyId = 0;          // library.key_id, Mixxx's ChromaticKey enum value
     int rating = 0;

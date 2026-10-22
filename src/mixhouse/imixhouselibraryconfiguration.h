@@ -163,6 +163,17 @@ public:
     virtual bool rescanOnStartup() const = 0;
     virtual void setRescanOnStartup(bool rescan) = 0;
 
+    /// GlideMix: watch the music directories while the app runs -- a song
+    /// copied or downloaded into one shows up in the Music Collection a few
+    /// seconds later, no rescan needed (MixHouseFolderWatcher). Default on.
+    virtual bool watchMusicDirectories() const = 0;
+    virtual void setWatchMusicDirectories(bool watch) = 0;
+
+    /// GlideMix: songs a scan adds (watch folders, Add Folder, the startup
+    /// rescan) are analysed right away -- BPM, key, grid, phrases. Default on.
+    virtual bool analyzeNewTracks() const = 0;
+    virtual void setAnalyzeNewTracks(bool analyze) = 0;
+
     /// GlideMix: the full Beat This! model instead of the small one -- about
     /// 1.7x slower, beat grids about 2% more exact. Default off (Fast).
     virtual bool accurateBeatAnalysis() const = 0;
@@ -271,6 +282,10 @@ public:
 
     virtual bool tempoLaneVisible() const = 0;
     virtual void setTempoLaneVisible(bool visible) = 0;
+    /// GlideMix: the mix's energy (1-10) over time, drawn in the TEMPO lane's
+    /// field behind the tempo line (MixHouseTempoLane).
+    virtual bool energyLaneVisible() const = 0;
+    virtual void setEnergyLaneVisible(bool visible) = 0;
     virtual int tempoLaneHeight() const = 0;
     virtual void setTempoLaneHeight(int height) = 0;
 };

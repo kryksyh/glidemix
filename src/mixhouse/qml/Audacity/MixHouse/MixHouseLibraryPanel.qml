@@ -145,6 +145,8 @@ Item {
         { key: "genre",        label: qsTrc("mixhouse", "Genre"),       sort: MixHouseTrackListModel.SortGenre,            width: 150, align: Qt.AlignLeft,    visible: true },
         { key: "musicalKey",   label: qsTrc("mixhouse", "Key"),         sort: MixHouseTrackListModel.SortKey,              width: 90,  align: Qt.AlignRight,   visible: true },
         { key: "bpm",          label: qsTrc("mixhouse", "BPM"),         sort: MixHouseTrackListModel.SortBpm,              width: 80,  align: Qt.AlignRight,   visible: true },
+        // GlideMix: 1-10, from the analysis (Lexicon's own for its songs).
+        { key: "energy",       label: qsTrc("mixhouse", "Energy"),      sort: MixHouseTrackListModel.SortEnergy,           width: 90,  align: Qt.AlignLeft,    visible: true },
         { key: "durationSec",  label: qsTrc("mixhouse", "Duration"),    sort: MixHouseTrackListModel.SortDuration,         width: 90,  align: Qt.AlignRight,   visible: true },
         { key: "rating",       label: qsTrc("mixhouse", "Rating"),      sort: MixHouseTrackListModel.SortRating,           width: 100, align: Qt.AlignRight,   visible: true },
         { key: "comment",      label: qsTrc("mixhouse", "Comment"),     sort: MixHouseTrackListModel.SortComment,          width: 220, align: Qt.AlignLeft,    visible: true },
@@ -493,9 +495,17 @@ Item {
                 restored.push(col)
                 delete byKey[item.key]
             }
+            // A column added in a newer version goes next to the column it
+            // follows by default (Energy after BPM), not to the far right.
             for (var k = 0; k < root.columns.length; ++k) {
                 var extra = byKey[root.columns[k].key]
-                if (extra) restored.push(extra)
+                if (!extra) continue
+                var at = restored.length
+                if (k > 0) {
+                    var before = restored.indexOf(root.columns[k - 1])
+                    if (before >= 0) at = before + 1
+                }
+                restored.splice(at, 0, extra)
             }
             if (restored.length > 0) root.columns = restored
         } catch (e) {
@@ -565,6 +575,7 @@ Item {
     function cellText(model, key) {
         switch (key) {
         case "bpm":         return model.bpm > 0 ? model.bpm.toFixed(tracksModel.bpmPrecision) : "—"
+        case "energy":      return model.energy > 0 ? qsTrc("mixhouse", "Energy %1").arg(Math.round(model.energy)) : "—"
         case "musicalKey":  return model.musicalKey.length > 0 ? model.musicalKey : "—"
         case "rating":      return model.rating > 0 ? "★".repeat(model.rating) : "—"
         case "durationSec":
@@ -3149,6 +3160,7 @@ Item {
                         anchors.leftMargin: root.previewStopZoneWidth
 
                         property var buckets: null
+                        property var cues: []
                         // One bucket per PHYSICAL pixel (measured 2026-09-13:
                         // one per logical point drew every column 2px wide on
                         // Retina); remembered so onPaint uses the ratio the
@@ -3185,6 +3197,7 @@ Item {
                             }
                             overview.bucketDpr = Math.max(1, Screen.devicePixelRatio)
                             overview.buckets = tracksModel.overviewBuckets(cell.row, Math.floor(overview.width * overview.bucketDpr))
+                            overview.cues = tracksModel.overviewCues(cell.row)
                             overview.requestPaint()
                         }
 
@@ -3446,6 +3459,40 @@ Item {
                                 for (var m = 60; m < cell.model.durationSec; m += 60) {
                                     ctx.fillRect(Math.round(m * pxPerSec), 0, 1, height)
                                 }
+                            }
+
+                            // GlideMix: cue points, as rekordbox's overview
+                            // shows them -- memory cues a red mark along the
+                            // bottom, hot cues a line in their colour with
+                            // the letter on top.
+                            var cues = overview.cues || []
+                            for (var c = 0; c < cues.length; ++c) {
+                                var cx = Math.round(cues[c].pos * (width - 1))
+                                if (!cues[c].hot) {
+                                    ctx.fillStyle = cues[c].color
+                                    ctx.beginPath()
+                                    ctx.moveTo(cx - 3, height)
+                                    ctx.lineTo(cx + 3, height)
+                                    ctx.lineTo(cx, height - 4)
+                                    ctx.closePath()
+                                    ctx.fill()
+                                }
+                            }
+                            var tag = Math.max(8, Math.min(11, Math.round(height * 0.4)))
+                            ctx.font = "bold " + (tag - 2) + "px sans-serif"
+                            ctx.textAlign = "center"
+                            ctx.textBaseline = "middle"
+                            for (var h = 0; h < cues.length; ++h) {
+                                if (!cues[h].hot) {
+                                    continue
+                                }
+                                var hx = Math.round(cues[h].pos * (width - 1))
+                                ctx.fillStyle = cues[h].color
+                                ctx.fillRect(hx, 0, 1, height)
+                                var left = Math.min(Math.max(0, hx), width - tag)
+                                ctx.fillRect(left, 0, tag, tag)
+                                ctx.fillStyle = "black"
+                                ctx.fillText(cues[h].letter, left + tag / 2, tag / 2 + 0.5)
                             }
                         }
 
@@ -4046,6 +4093,7 @@ Item {
                             { label: qsTrc("mixhouse", "Year"), key: "year" },
                             { label: qsTrc("mixhouse", "Track #"), key: "trackNumber" },
                             { label: qsTrc("mixhouse", "BPM"), key: "bpm" },
+                            { label: qsTrc("mixhouse", "Energy"), key: "energy" },
                             { label: qsTrc("mixhouse", "Key"), key: "musicalKey" },
                             { label: qsTrc("mixhouse", "Duration"), key: "durationSec" },
                             { label: qsTrc("mixhouse", "Bitrate"), key: "bitrate" },

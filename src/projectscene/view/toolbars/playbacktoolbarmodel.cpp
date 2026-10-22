@@ -80,6 +80,7 @@ static PlaybackToolBarModel::ItemType itemType(const ActionCode& actionCode)
         { "metronome", PlaybackToolBarModel::METRONOME },
         { "mixhouse-sync", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-tempo-lane", PlaybackToolBarModel::TEXT_TOGGLE },
+        { "mixhouse-energy-lane", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-keylock", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-mix-now", PlaybackToolBarModel::TEXT_TOGGLE },
         { "mixhouse-automation-arm", PlaybackToolBarModel::TEXT_TOGGLE },

@@ -395,8 +395,12 @@ DockPage {
                     id: tempoLaneHeader
 
                     width: parent.width
-                    height: tempoLaneModel.laneVisible ? tempoLaneModel.laneHeight : 0
-                    visible: tempoLaneModel.laneVisible
+                    // GlideMix: the field shows the tempo line, the mix's
+                    // energy, or both.
+                    readonly property bool tempoOn: tempoLaneModel.laneVisible
+                    readonly property bool energyOn: tempoLaneModel.energyLaneVisible
+                    height: (tempoOn || energyOn) ? tempoLaneModel.laneHeight : 0
+                    visible: tempoOn || energyOn
                     color: ui.theme.backgroundPrimaryColor
 
                     MixHouseTempoLaneModel {
@@ -407,7 +411,9 @@ DockPage {
                         anchors.left: parent.left
                         anchors.leftMargin: 10
                         anchors.verticalCenter: resetTempoButton.verticalCenter
-                        text: qsTrc("mixhouse", "TEMPO · MASTER")
+                        text: !tempoLaneHeader.tempoOn ? qsTrc("mixhouse", "ENERGY · 1-10")
+                              : tempoLaneHeader.energyOn ? qsTrc("mixhouse", "TEMPO · ENERGY")
+                              : qsTrc("mixhouse", "TEMPO · MASTER")
                         font: ui.theme.bodyBoldFont
                     }
 
@@ -419,6 +425,7 @@ DockPage {
                         anchors.right: parent.right
                         anchors.rightMargin: 8
                         height: 22
+                        visible: tempoLaneHeader.tempoOn
                         text: qsTrc("mixhouse", "Reset")
                         toolTipTitle: qsTrc("mixhouse", "Reset the tempo line to the project tempo")
                         onClicked: tempoLaneModel.reset()
@@ -432,7 +439,7 @@ DockPage {
                         anchors.right: parent.right
                         anchors.rightMargin: 8
                         spacing: 4
-                        visible: tempoLaneHeader.height >= 62
+                        visible: tempoLaneHeader.tempoOn && tempoLaneHeader.height >= 62
 
                         FlatButton {
                             height: 22

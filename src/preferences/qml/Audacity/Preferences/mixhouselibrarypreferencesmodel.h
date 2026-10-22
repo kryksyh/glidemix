@@ -47,6 +47,8 @@ class MixHouseLibraryPreferencesModel : public QObject
         int fuzzyBpmRangePercent READ fuzzyBpmRangePercent WRITE setFuzzyBpmRangePercent NOTIFY fuzzyBpmRangePercentChanged)
     Q_PROPERTY(QStringList musicDirectories READ musicDirectories NOTIFY musicDirectoriesChanged)
     Q_PROPERTY(bool rescanOnStartup READ rescanOnStartup WRITE setRescanOnStartup NOTIFY rescanOnStartupChanged)
+    Q_PROPERTY(bool watchMusicDirectories READ watchMusicDirectories WRITE setWatchMusicDirectories NOTIFY watchMusicDirectoriesChanged)
+    Q_PROPERTY(bool analyzeNewTracks READ analyzeNewTracks WRITE setAnalyzeNewTracks NOTIFY analyzeNewTracksChanged)
     Q_PROPERTY(bool accurateBeatAnalysis READ accurateBeatAnalysis WRITE setAccurateBeatAnalysis NOTIFY accurateBeatAnalysisChanged)
     Q_PROPERTY(
         bool showScanSummaryDialog READ showScanSummaryDialog WRITE setShowScanSummaryDialog NOTIFY showScanSummaryDialogChanged)
@@ -109,6 +111,10 @@ public:
 
     bool rescanOnStartup() const;
     void setRescanOnStartup(bool rescan);
+    bool watchMusicDirectories() const;
+    void setWatchMusicDirectories(bool watch);
+    bool analyzeNewTracks() const;
+    void setAnalyzeNewTracks(bool analyze);
     bool accurateBeatAnalysis() const;
     void setAccurateBeatAnalysis(bool accurate);
 
@@ -152,6 +158,8 @@ signals:
     void fuzzyBpmRangePercentChanged();
     void musicDirectoriesChanged();
     void rescanOnStartupChanged();
+    void watchMusicDirectoriesChanged();
+    void analyzeNewTracksChanged();
     void accurateBeatAnalysisChanged();
     void showScanSummaryDialogChanged();
     void editMetadataAfterClickChanged();

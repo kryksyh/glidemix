@@ -522,6 +522,7 @@ const ToolConfig& ProjectSceneUiActions::defaultPlaybackToolBarConfig()
             { "metronome", true },
             { "mixhouse-sync", true },
             { "mixhouse-tempo-lane", true },
+            { "mixhouse-energy-lane", true },
             { "mixhouse-keylock", true },
             { "mixhouse-perform", true },
             { "mixhouse-reset-performance", true },

@@ -18,6 +18,7 @@ const muse::actions::ActionCode IMPORT_REKORDBOX_ACTION_CODE("mixhouse-import-re
 const muse::actions::ActionCode IMPORT_ITUNES_ACTION_CODE("mixhouse-import-itunes");
 const muse::actions::ActionCode SYNC_ACTION_CODE("mixhouse-sync");
 const muse::actions::ActionCode TEMPO_LANE_ACTION_CODE("mixhouse-tempo-lane");
+const muse::actions::ActionCode ENERGY_LANE_ACTION_CODE("mixhouse-energy-lane");
 }
 
 const UiActionList MixHouseUiActions::m_actions = {
@@ -213,13 +214,22 @@ const UiActionList MixHouseUiActions::m_actions = {
              TranslatableString("action_description", "Show or hide the master tempo lane"),
              Checkable::Yes
              ),
+    UiAction(ENERGY_LANE_ACTION_CODE,
+             au::context::UiCtxAny,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Energy"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Show or hide the energy of the mix (1-10) over time: how the set builds"),
+             Checkable::Yes
+             ),
 };
 
 void MixHouseUiActions::init()
 {
     if (libraryConfiguration()) {
         libraryConfiguration()->settingsChanged().onNotify(this, [this]() {
-            m_actionCheckedChanged.send({ SYNC_ACTION_CODE, TEMPO_LANE_ACTION_CODE, "mixhouse-keylock" });
+            m_actionCheckedChanged.send({ SYNC_ACTION_CODE, TEMPO_LANE_ACTION_CODE, ENERGY_LANE_ACTION_CODE, "mixhouse-keylock" });
         });
     }
 }
@@ -296,6 +306,9 @@ bool MixHouseUiActions::actionChecked(const UiAction& act) const
     }
     if (act.code == TEMPO_LANE_ACTION_CODE) {
         return libraryConfiguration() && libraryConfiguration()->tempoLaneVisible();
+    }
+    if (act.code == ENERGY_LANE_ACTION_CODE) {
+        return libraryConfiguration() && libraryConfiguration()->energyLaneVisible();
     }
     return false;
 }

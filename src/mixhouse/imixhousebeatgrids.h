@@ -128,6 +128,12 @@ public:
     /// The library track of the first selected clip (or of a clip on a selected track); -1 = none.
     virtual int selectedLibraryTrackId() const = 0;
 
+    /// GlideMix: the mix's energy (1-10) at `count` project times from `t0`,
+    /// `step` apart -- each playing song's energy rating, lower in its quiet
+    /// parts (breakdowns) and under its clip's volume line (fades); where
+    /// songs overlap, the stronger one. 0 where no rated song plays.
+    virtual std::vector<double> energyCurve(double t0, double step, size_t count) const = 0;
+
     /// Fires when a grid changes (so clips repaint their ticks).
     virtual muse::async::Notification beatGridsChanged() const = 0;
 

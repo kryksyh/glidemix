@@ -57,6 +57,7 @@ public:
                                 const trackedit::ClipKeyList& ignore = {},
                                 const trackedit::TrackIdList& taken = {}) override;
     std::vector<Phrase> clipPhrases(const trackedit::ClipKey& clip, double fromTime, double toTime) const override;
+    std::vector<double> energyCurve(double t0, double step, size_t count) const override;
     muse::async::Notification beatGridsChanged() const override;
     int clipLibraryTrackId(const trackedit::ClipKey& clip) const override;
     std::vector<WaveColumn> clipWaveColumns(const trackedit::ClipKey& clip, double fromTime, double toTime,
@@ -93,6 +94,18 @@ private:
     //! The library grid of the track a clip was imported from, found by the
     //! clip's name (Audacity names an imported clip after its file).
     Grid gridForClipName(const QString& clipName, bool fresh) const;
+    //! A song's energy rating and its loudness over time (from the library
+    //! analysis' waveform overview), for the ENERGY lane.
+    struct SongEnergy {
+        double energy = 0.0;        ///< 1-10, 0 = not rated
+        double durationSec = 0.0;
+        double refDb = 0.0;         ///< the song's loud parts (90th percentile)
+        std::vector<float> power;   ///< overview columns, linear power
+        //! Mean level in dB of file seconds [a, b); refDb when unknown.
+        double levelDb(double a, double b) const;
+    };
+    const SongEnergy& songEnergy(const QString& clipName) const;
+    mutable QHash<QString, SongEnergy> m_songEnergy;
     QString clipName(const trackedit::ClipKey& clip) const;
     void reseatClipsOf(const Grid& grid);
     double barLockedClipStart(const trackedit::ClipKey& clip, double proposedStart) const;

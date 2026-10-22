@@ -105,6 +105,12 @@ int main(int argc, char** argv)
                     energy.append(std::round(e * 100.0) / 100.0);
                 }
                 o.insert("energy", energy);
+                QJsonArray features;
+                for (float f : r.energyFeatures) {
+                    features.append(std::round(f * 1000.0) / 1000.0);
+                }
+                o.insert("energy_features", features);
+                o.insert("energy_rating", r.energy);
                 QJsonArray model;
                 for (const MixHousePhrase& p : r.modelPhrases) {
                     model.append(QJsonArray { p.startSec, p.endSec, p.label });

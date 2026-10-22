@@ -52,10 +52,8 @@ PreferencesPage {
             }
 
             // Real mixxx: watched directories, each rescanned for new files
-            // on demand or at startup. This port has no live filesystem
-            // watcher, so "watched" means "remembered here, and (re)scanned
-            // when you press Add or at startup" -- see
-            // MixHouseLibraryPreferencesModel's own header comment.
+            // on demand or at startup. GlideMix also watches them while it
+            // runs (MixHouseFolderWatcher): new songs are added by themselves.
             // FilePickerModel is the exact same real native-folder-picker
             // component MixHouseLibraryPanel.qml's own "Add Folder to
             // Library" already uses, not a new mechanism.
@@ -159,6 +157,36 @@ PreferencesPage {
 
                 onClicked: {
                     mixHouseLibraryModel.rescanOnStartup = !checked
+                }
+            }
+
+            CheckBox {
+                width: parent.width
+
+                text: qsTrc("preferences", "Watch these folders: add new songs automatically")
+                checked: mixHouseLibraryModel.watchMusicDirectories
+
+                navigation.name: "LibraryCheckWatch"
+                navigation.panel: section0.navigation
+                navigation.row: 3
+
+                onClicked: {
+                    mixHouseLibraryModel.watchMusicDirectories = !checked
+                }
+            }
+
+            CheckBox {
+                width: parent.width
+
+                text: qsTrc("preferences", "Analyze new songs automatically (BPM, key, beat grid, phrases)")
+                checked: mixHouseLibraryModel.analyzeNewTracks
+
+                navigation.name: "LibraryCheckAnalyzeNew"
+                navigation.panel: section0.navigation
+                navigation.row: 3
+
+                onClicked: {
+                    mixHouseLibraryModel.analyzeNewTracks = !checked
                 }
             }
 

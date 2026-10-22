@@ -49,7 +49,9 @@ class MixHouseLibraryScanner : public QObject
 {
     Q_OBJECT
 public:
-    MixHouseLibraryScanner(QString libraryPath, QStringList directories, QString connectionName);
+    /// settleSecs > 0: files modified that recently are skipped and counted
+    /// as pending (still being copied or downloaded).
+    MixHouseLibraryScanner(QString libraryPath, QStringList directories, QString connectionName, int settleSecs = 0);
 
 signals:
     void scanProgress(int scanned, int added);
@@ -59,7 +61,8 @@ signals:
     // own ScanResult has never needed that anywhere else, so passing its
     // three ints and one QString as separate plain arguments (types Qt
     // already knows) avoids adding that registration for one call site.
-    void scanFinished(int scanned, int added, int skipped, int unreadable, const QString& error);
+    void scanFinished(int scanned, int added, int skipped, int unreadable, int pending, const QList<int>& addedIds,
+                      const QString& error);
 
 public slots:
     void run();
@@ -75,6 +78,7 @@ private:
     QString m_libraryPath;
     QStringList m_directories;
     QString m_connectionName;
+    int m_settleSecs = 0;
     std::atomic<bool> m_canceled{ false };
 };
 }

@@ -63,8 +63,12 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselicence.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselicence.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibraryconfiguration.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousefolderwatcher.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousefolderwatcher.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhouserekordboxxmlwriter.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouserekordboxxmlwriter.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasecues.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasecues.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesmartplaylist.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesmartplaylist.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesearchquery.cpp
@@ -77,6 +81,8 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mixhousewaveform.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseanalyzer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhouseenergy.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhouseenergy.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseanalyzer.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/openkeyscanclient.cpp

@@ -122,7 +122,7 @@ public:
         FileTypeRole, CommentRole, BitrateRole, ReplayGainRole,
         DateAddedRole, TimesPlayedRole, LastPlayedAtRole, BpmLockedRole,
         TrackIdRole, CoverArtTypeRole, SampleRateRole,
-        AnalysisProgressRole, AnalyzedRole
+        AnalysisProgressRole, AnalyzedRole, EnergyRole
     };
 
     /// PlaylistDAO::AutoDJSendLoc, named for QML as MixHouseTrackListModel.AutoDjTop etc.
@@ -149,7 +149,7 @@ public:
                 SortAlbumArtist, SortComposer, SortGrouping, SortTrackNumber,
                 SortFileType, SortComment, SortBitrate, SortReplayGain,
                 SortTimesPlayed, SortLastPlayedAt, SortPosition,
-                SortSampleRate, SortChannels, SortAnalyzed };
+                SortSampleRate, SortChannels, SortAnalyzed, SortEnergy };
     Q_ENUM(Sort)
 
     Q_INVOKABLE void load();
@@ -550,6 +550,12 @@ public:
     /// ordinary, expected state for anything not yet analyzed -- never
     /// fabricated as a flat line).
     Q_INVOKABLE QVariantList overviewBuckets(int row, int bucketCount);
+    /// GlideMix: the cue points over a row's waveform overview -- the song's
+    /// own (Lexicon / rekordbox), else the phrase cues the rekordbox XML
+    /// export gives it. [{ pos (0-1), color, letter, hot }]
+    Q_INVOKABLE QVariantList overviewCues(int row);
+    //! A song's cue points: its own, else hot cues at its phrases.
+    std::vector<MixHouseCue> cuesFor(const MixHouseTrack& track, bool* generated = nullptr) const;
 
     /// Roadmap Phase 7 -- the real analysis engine (mixhouseanalyzer.h, a
     /// port of real mixxx's own default Queen Mary BPM/key detectors).
@@ -757,6 +763,7 @@ private:
     /// lifetime; resampling to a given width stays cheap enough to redo
     /// every call.
     QHash<int, MixHouseWaveformOverview> m_overviewCache;
+    QHash<int, QVariantList> m_overviewCueCache;
     /// Guards the one-time library()->libraryChanged().onNotify() subscribe
     /// in load() -- see that function's own comment for why this can't
     /// happen in the constructor.
@@ -788,6 +795,8 @@ private:
     static bool isExternalTrack(const MixHouseTrack& t) { return isExternalLibraryTrack(t.id); }
     static void applyTagFields(MixHouseTrack& t, const QVariantMap& fields);
     //! The library id of the same file as an external track, or -1.
+    //! The song's phrases for its cue points (rekordbox XML export).
+    std::vector<MixHousePhrase> phrasesForExport(const MixHouseTrack& track) const;
     int libraryIdForFile(const QString& filePath) const;
     //! Library ids and external files of `rows`, for analysis.
     void collectAnalysisTargets(const QVariantList& rows, QList<int>& ids, QStringList& externalFiles) const;

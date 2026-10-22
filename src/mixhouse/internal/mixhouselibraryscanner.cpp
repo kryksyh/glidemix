@@ -3,6 +3,7 @@
  */
 #include "mixhouselibraryscanner.h"
 
+#include <QDateTime>
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QSqlDatabase>
@@ -29,9 +30,10 @@ static const QStringList kScannerAudioExtensions = {
     QStringLiteral("wv")
 };
 
-MixHouseLibraryScanner::MixHouseLibraryScanner(QString libraryPath, QStringList directories, QString connectionName)
+MixHouseLibraryScanner::MixHouseLibraryScanner(QString libraryPath, QStringList directories, QString connectionName,
+                                               int settleSecs)
     : m_libraryPath(std::move(libraryPath)), m_directories(std::move(directories)),
-    m_connectionName(std::move(connectionName))
+    m_connectionName(std::move(connectionName)), m_settleSecs(settleSecs)
 {
 }
 
@@ -50,7 +52,7 @@ void MixHouseLibraryScanner::run()
         const QString error = db.lastError().text();
         db = QSqlDatabase();
         QSqlDatabase::removeDatabase(m_connectionName);
-        emit scanFinished(0, 0, 0, 0, error);
+        emit scanFinished(0, 0, 0, 0, 0, {}, error);
         return;
     }
     // Same reasoning as mixhouselibrary.cpp's own ensureWritable() index
@@ -62,7 +64,9 @@ void MixHouseLibraryScanner::run()
     // the two connections take turns instead of one of them just failing.
     QSqlQuery(db).exec(QStringLiteral("PRAGMA busy_timeout=5000"));
 
-    int scanned = 0, added = 0, skipped = 0, unreadable = 0;
+    int scanned = 0, added = 0, skipped = 0, unreadable = 0, pending = 0;
+    QList<int> addedIds;
+    const QDateTime settledBefore = QDateTime::currentDateTime().addSecs(-m_settleSecs);
     QString error;
 
     // Same INSERT-only scan addTracksFromFolder() runs, deliberately
@@ -133,6 +137,14 @@ void MixHouseLibraryScanner::run()
                 continue;
             }
 
+            // GlideMix: a watch scan leaves a file that is still being
+            // written for the next scan -- half a song would probe as a
+            // short, valid one and be analysed wrong.
+            if (m_settleSecs > 0 && fi.lastModified() > settledBefore) {
+                ++pending;
+                continue;
+            }
+
             // GlideMix: not readable audio (damaged, empty...) -- not added.
             const AudioInfo info = probeAudioFile(path);
             if (!info.valid) {
@@ -175,6 +187,7 @@ void MixHouseLibraryScanner::run()
                        << insLib.lastError().text();
                 continue;
             }
+            addedIds << insLib.lastInsertId().toInt();
             ++added;
         }
     }
@@ -182,6 +195,7 @@ void MixHouseLibraryScanner::run()
     if (!db.commit()) {
         db.rollback();
         error = db.lastError().text();
+        addedIds.clear();
     }
 
     // Must happen on this same thread, before the QThread this object lives
@@ -192,6 +206,6 @@ void MixHouseLibraryScanner::run()
     // already be fully torn down by then.
     db = QSqlDatabase();
     QSqlDatabase::removeDatabase(m_connectionName);
-    emit scanFinished(scanned, added, skipped, unreadable, error);
+    emit scanFinished(scanned, added, skipped, unreadable, pending, addedIds, error);
 }
 }

@@ -40,6 +40,7 @@
 #include <thread>
 #include "mixhouse/mixhousefiletags.h"
 #include "mixhouse/mixhouserekordboxxmlwriter.h"
+#include "mixhouse/mixhousephrasecues.h"
 #include <QStorageInfo>
 #include <QSettings>
 #include <QTimer>
@@ -230,6 +231,7 @@ void MixHouseTrackListModel::stopPreview()
 
 void MixHouseTrackListModel::load()
 {
+    m_overviewCueCache.clear();   // phrases may have changed (analysis, edits)
     // Subscribed here, NOT in the constructor: resolving an injected
     // dependency (library()) that early crashed this app on every single
     // startup -- confirmed directly from real .ips crash reports, all three
@@ -298,6 +300,20 @@ void MixHouseTrackListModel::load()
                                       result.error.toStdString());
                 return;
             }
+            if (result.watch) {
+                // Watch folders: a line beside Analyze, not a dialog.
+                if (result.added > 0) {
+                    const QString text = muse::qtrc("mixhouse", "%n new song(s) added from your music folders.",
+                                                    nullptr, result.added);
+                    setAnalysisMessage(text);
+                    QTimer::singleShot(8000, this, [this, text]() {
+                        if (m_analysisMessage == text) {
+                            setAnalysisMessage(QString());
+                        }
+                    });
+                }
+                return;
+            }
             if (libraryConfiguration()->showScanSummaryDialog() && result.scanned > 0) {
                 const std::string title = muse::trc("mixhouse", "Library scan finished");
                 std::string text = muse::qtrc("mixhouse",
@@ -334,6 +350,7 @@ void MixHouseTrackListModel::load()
         m_subscribedToRekordbox = true;
         rekordboxAnalysis()->ready().onNotify(this, [this]() {
             m_overviewCache.clear();
+            m_overviewCueCache.clear();
             emit overviewDataChanged();
         });
     }
@@ -350,6 +367,7 @@ void MixHouseTrackListModel::load()
                     return;
                 }
                 m_overviewCache.remove(trackId);   // the fresh waveform was just written
+                m_overviewCueCache.remove(trackId);
                 if (percent == -1) {
                     // Succeeded: re-read this one row now (BPM, key, grid,
                     // downbeat, "Analyzed") instead of leaving "--" until the
@@ -374,6 +392,11 @@ void MixHouseTrackListModel::load()
                     }
                 }
             } else {
+                // A batch this model didn't start (new songs from watch
+                // folders): the Analyze button turns into Stop.
+                if (m_analysisProgressByTrack.isEmpty()) {
+                    emit analyzingChanged();
+                }
                 m_analysisProgressByTrack.insert(trackId, percent);
             }
             emitAnalysisProgressChanged(trackId, percent < 0);
@@ -734,7 +757,7 @@ IMixHouseLibrary::SortKey sortKeyForSmartField(const QString& field)
     static const QHash<QString, K> keys = {
         { "title", K::Title }, { "artist", K::Artist }, { "album", K::Album }, { "albumArtist", K::AlbumArtist },
         { "genre", K::Genre }, { "composer", K::Composer }, { "grouping", K::Grouping }, { "comment", K::Comment },
-        { "bpm", K::Bpm }, { "key", K::Key }, { "rating", K::Rating }, { "year", K::Year },
+        { "bpm", K::Bpm }, { "energy", K::Energy }, { "key", K::Key }, { "rating", K::Rating }, { "year", K::Year },
         { "duration", K::Duration }, { "dateAdded", K::DateAdded }, { "lastPlayed", K::LastPlayedAt },
         { "timesPlayed", K::TimesPlayed }, { "bitrate", K::Bitrate }, { "fileType", K::FileType },
     };
@@ -1242,15 +1265,14 @@ void MixHouseTrackListModel::exportRekordboxXml()
         data.playlists.push_back(std::move(changedList));
     }
 
-    // Cue points: Lexicon / rekordbox songs have them.
-    data.cues = [this](const MixHouseTrack& t) {
-        for (const QString& source : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
-            const IMixHouseExternalLibrary* external = externalLibrary(source);
-            if (external && external->ownsTrack(t.id)) {
-                return external->cues(t.id);
-            }
-        }
-        return std::vector<MixHouseCue>();
+    // Cue points: Lexicon / rekordbox songs have them. A song without any
+    // gets hot cues where its sections start (Intro, Chorus, Outro...).
+    int generated = 0;
+    data.cues = [this, &generated](const MixHouseTrack& t) {
+        bool fromPhrases = false;
+        std::vector<MixHouseCue> cues = cuesFor(t, &fromPhrases);
+        generated += fromPhrases && !cues.empty() ? 1 : 0;
+        return cues;
     };
 
     const QString error = writeRekordboxXml(path, data);
@@ -1258,13 +1280,19 @@ void MixHouseTrackListModel::exportRekordboxXml()
         interactive()->error(muse::trc("mixhouse", "Export rekordbox XML"), error.toStdString());
         return;
     }
-    LOGI() << "rekordbox XML: " << data.tracks.size() << " tracks written to " << path;
-    interactive()->info(muse::trc("mixhouse", "rekordbox XML saved"),
-                        muse::qtrc("mixhouse", "%1 tracks and their playlists are in %2.\n\n"
-                                   "rekordbox: Preferences > Advanced > Database > rekordbox xml, choose this file, then "
-                                   "import the tracks or playlists from \"rekordbox xml\" in the tree.\n"
-                                   "Lexicon: Import > rekordbox XML.")
-                        .arg(data.tracks.size()).arg(QDir::toNativeSeparators(path)).toStdString());
+    LOGI() << "rekordbox XML: " << data.tracks.size() << " tracks written to " << path << ", phrase cues for "
+           << generated;
+    std::string text = muse::qtrc("mixhouse", "%1 tracks and their playlists are in %2.")
+                       .arg(data.tracks.size()).arg(QDir::toNativeSeparators(path)).toStdString();
+    if (generated > 0) {
+        text += "\n\n" + muse::qtrc("mixhouse", "%n song(s) without cue points got hot cues where their phrases start "
+                                                 "(Intro, Chorus, Outro...), and memory cues at the same places.",
+                                      nullptr, generated).toStdString();
+    }
+    text += "\n\n" + muse::qtrc("mixhouse", "rekordbox: Preferences > Advanced > Database > rekordbox xml, choose this file, "
+                                           "then import the tracks or playlists from \"rekordbox xml\" in the tree.\n"
+                                           "Lexicon: Import > rekordbox XML.").toStdString();
+    interactive()->info(muse::trc("mixhouse", "rekordbox XML saved"), text);
 }
 
 void MixHouseTrackListModel::setAnalyzeView()
@@ -2796,6 +2824,73 @@ void MixHouseTrackListModel::moveTrackFileToTrashWithConfirm(int row, const QStr
     });
 }
 
+std::vector<MixHouseCue> MixHouseTrackListModel::cuesFor(const MixHouseTrack& t, bool* generated) const
+{
+    for (const QString& source : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+        const IMixHouseExternalLibrary* external = externalLibrary(source);
+        if (external && external->ownsTrack(t.id)) {
+            std::vector<MixHouseCue> own = external->cues(t.id);
+            if (!own.empty()) {
+                return own;
+            }
+            break;
+        }
+    }
+    if (generated) {
+        *generated = true;
+    }
+    const bool grid = t.beats.valid && t.beats.beatLengthSec > 0.0;
+    return phraseCues(phrasesForExport(t), grid ? t.beats.firstBeatSec : 0.0, grid ? t.beats.beatLengthSec : 0.0);
+}
+
+QVariantList MixHouseTrackListModel::overviewCues(int row)
+{
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return {};
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    const auto cached = m_overviewCueCache.constFind(t.id);
+    if (cached != m_overviewCueCache.constEnd()) {
+        return *cached;
+    }
+    QVariantList out;
+    if (t.durationSec > 0.0) {
+        for (const MixHouseCue& c : cuesFor(t)) {
+            if (c.startSec < 0.0 || c.startSec > t.durationSec) {
+                continue;
+            }
+            const bool hot = c.hotCueIndex >= 0;
+            QVariantMap m;
+            m["pos"] = c.startSec / t.durationSec;
+            m["hot"] = hot;
+            m["letter"] = hot ? QString(QChar(u'A' + std::min(c.hotCueIndex, 25))) : QString();
+            m["color"] = hot && c.color.isValid() ? c.color.name() : QStringLiteral("#e8303a");
+            out.push_back(m);
+        }
+    }
+    m_overviewCueCache.insert(t.id, out);
+    return out;
+}
+
+std::vector<MixHousePhrase> MixHouseTrackListModel::phrasesForExport(const MixHouseTrack& track) const
+{
+    // The phrase ribbon's own order: edited in the Beatgrid editor, then
+    // rekordbox's, then GlideMix's analysis.
+    const int libraryId = isExternalTrack(track) ? libraryIdForFile(track.filePath) : track.id;
+    if (libraryId >= 0) {
+        if (auto edited = library()->trackPhraseEdits(libraryId)) {
+            return *edited;
+        }
+    }
+    if (rekordboxAnalysis() && !track.filePath.isEmpty()) {
+        std::vector<MixHousePhrase> phrases = rekordboxAnalysis()->phrases(track.filePath, track.bpm);
+        if (!phrases.empty()) {
+            return phrases;
+        }
+    }
+    return libraryId >= 0 ? library()->detectedPhrases(libraryId) : std::vector<MixHousePhrase>();
+}
+
 int MixHouseTrackListModel::libraryIdForFile(const QString& filePath) const
 {
     if (filePath.isEmpty() || !library()) {
@@ -3695,6 +3790,7 @@ QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
     case GenreRole:       return t.genre;
     case YearRole:        return t.year;
     case BpmRole:         return t.bpm;
+    case EnergyRole:      return t.energy;
     case KeyRole:         return t.key;
     case KeyIdRole:       return t.keyId;
     case DurationRole:    return t.durationSec;
@@ -3730,7 +3826,7 @@ QHash<int, QByteArray> MixHouseTrackListModel::roleNames() const
 {
     return {
         { TitleRole, "title" }, { ArtistRole, "artist" }, { AlbumRole, "album" },
-        { GenreRole, "genre" }, { YearRole, "year" }, { BpmRole, "bpm" },
+        { GenreRole, "genre" }, { YearRole, "year" }, { BpmRole, "bpm" }, { EnergyRole, "energy" },
         { KeyRole, "musicalKey" }, { KeyIdRole, "keyId" }, { DurationRole, "durationSec" },
         { RatingRole, "rating" }, { HasBeatgridRole, "hasBeatgrid" },
         { FilePathRole, "filePath" }, { ColorRole, "color" },

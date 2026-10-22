@@ -195,6 +195,34 @@ void MixHouseLibraryPreferencesModel::setRescanOnStartup(bool rescan)
     emit rescanOnStartupChanged();
 }
 
+bool MixHouseLibraryPreferencesModel::watchMusicDirectories() const
+{
+    return configuration()->watchMusicDirectories();
+}
+
+void MixHouseLibraryPreferencesModel::setWatchMusicDirectories(bool watch)
+{
+    if (watchMusicDirectories() == watch) {
+        return;
+    }
+    configuration()->setWatchMusicDirectories(watch);
+    emit watchMusicDirectoriesChanged();
+}
+
+bool MixHouseLibraryPreferencesModel::analyzeNewTracks() const
+{
+    return configuration()->analyzeNewTracks();
+}
+
+void MixHouseLibraryPreferencesModel::setAnalyzeNewTracks(bool analyze)
+{
+    if (analyzeNewTracks() == analyze) {
+        return;
+    }
+    configuration()->setAnalyzeNewTracks(analyze);
+    emit analyzeNewTracksChanged();
+}
+
 bool MixHouseLibraryPreferencesModel::showScanSummaryDialog() const
 {
     return configuration()->showScanSummaryDialog();

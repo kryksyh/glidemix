@@ -89,7 +89,9 @@ public:
         /// is always blank there too, so this isn't a regression).
         SampleRate, Channels,
         /// Whether the track has been analysed (GlideMix: the status column).
-        Analyzed
+        Analyzed,
+        /// GlideMix: the energy rating (1-10).
+        Energy
     };
 
     struct TrackQuery {
@@ -192,6 +194,9 @@ public:
         int added = 0;      ///< rows actually inserted
         int skipped = 0;    ///< already in the library
         int unreadable = 0; ///< not audio GlideMix can read (damaged, empty...): not added
+        int pending = 0;    ///< watch scans: files still being written, left for the next scan
+        QList<int> addedIds; ///< library ids of the rows inserted (background scans)
+        bool watch = false; ///< started by the folder watcher: no summary dialog
         QString error;      ///< empty on success
     };
 
@@ -229,7 +234,10 @@ public:
     /// implementation), so QML/model code can connect normally with no
     /// extra Qt::QueuedConnection plumbing. scanFinished() fires once, with
     /// the same ScanResult shape addTracksFromFolder() returns directly.
-    virtual void startBackgroundScan(const QStringList& directories) = 0;
+    /// `watch`: a watch-folder scan (MixHouseFolderWatcher) -- files changed
+    /// in the last few seconds are still being copied or downloaded, so they
+    /// are counted as `pending` and left for the next scan.
+    virtual void startBackgroundScan(const QStringList& directories, bool watch = false) = 0;
     virtual bool isScanning() const = 0;
     virtual muse::async::Channel<int, int> scanProgress() const = 0;   ///< (scanned, added)
     virtual muse::async::Channel<ScanResult> scanFinished() const = 0;

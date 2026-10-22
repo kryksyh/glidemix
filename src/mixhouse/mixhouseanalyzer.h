@@ -93,6 +93,12 @@ struct MixHouseAnalysisResult {
     /// percentile, 3 values per beat. Empty with no grid.
     std::vector<float> beatBandEnergy;
 
+    /// GlideMix energy (1-10): absolute loudness, band balance, kick and
+    /// hi-hat activity of the whole track (mixhouseenergy.h), and the energy
+    /// rated from them; 0 = not measured.
+    std::vector<float> energyFeatures;
+    double energy = 0.0;
+
     /// The phrase model's phrases for this grid (mixhousephrasemodel.h);
     /// empty without the model.
     std::vector<MixHousePhrase> modelPhrases;

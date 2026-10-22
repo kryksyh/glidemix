@@ -124,6 +124,7 @@ void MixHouseBeatGrids::init()
     if (library()) {
         library()->libraryChanged().onNotify(this, [this]() {
             m_gridByClipName.clear();
+            m_songEnergy.clear();
             m_anchorCache.clear();
             m_waveCache.clear();
             m_beatGridsChanged.notify();
@@ -134,6 +135,7 @@ void MixHouseBeatGrids::init()
     if (rekordboxXml()) {
         rekordboxXml()->changed().onNotify(this, [this]() {
             m_gridByClipName.clear();
+            m_songEnergy.clear();
             m_beatGridsChanged.notify();
         });
     }
@@ -457,6 +459,132 @@ QString MixHouseBeatGrids::clipName(const trackedit::ClipKey& clip) const
 {
     const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
     return project ? project->clip(clip).title.toQString() : QString();
+}
+
+double MixHouseBeatGrids::SongEnergy::levelDb(double a, double b) const
+{
+    if (power.empty() || durationSec <= 0.0) {
+        return refDb;
+    }
+    const double perSec = power.size() / durationSec;
+    const long n = static_cast<long>(power.size());
+    long i0 = std::clamp(static_cast<long>(std::floor(a * perSec)), 0L, n - 1);
+    long i1 = std::clamp(static_cast<long>(std::ceil(b * perSec)), i0 + 1, n);
+    double sum = 0.0;
+    for (long i = i0; i < i1; ++i) {
+        sum += power[static_cast<size_t>(i)];
+    }
+    return 10.0 * std::log10(sum / (i1 - i0) + 1e-9);
+}
+
+const MixHouseBeatGrids::SongEnergy& MixHouseBeatGrids::songEnergy(const QString& name) const
+{
+    const auto cached = m_songEnergy.constFind(name);
+    if (cached != m_songEnergy.constEnd()) {
+        return *cached;
+    }
+    SongEnergy song;
+    if (!name.isEmpty() && library() && library()->isAvailable()) {
+        IMixHouseLibrary::TrackQuery query;
+        query.fileBaseName = name;
+        query.limit = 2;
+        MixHouseTrackList found = library()->tracks(query);
+        if (found.empty()) {
+            found = externalLibraryTracks(lexicon().get(), rekordboxXml().get(), query);
+        }
+        if (!found.empty()) {
+            const MixHouseTrack& t = found.front();
+            song.energy = t.energy;
+            song.durationSec = t.durationSec;
+            // The loudness over time comes from GlideMix's own analysis of
+            // the file (a Lexicon song too, once it has been analysed here).
+            int libraryId = isExternalLibraryTrack(t.id) ? -1 : t.id;
+            if (libraryId < 0 && !t.filePath.isEmpty()) {
+                IMixHouseLibrary::TrackQuery byFile;
+                byFile.location = t.filePath;
+                byFile.limit = 1;
+                const MixHouseTrackList own = library()->tracks(byFile);
+                if (!own.empty()) {
+                    libraryId = own.front().id;
+                    if (song.energy <= 0.0) {
+                        song.energy = own.front().energy;
+                    }
+                }
+            }
+            if (libraryId >= 0 && song.durationSec > 0.0) {
+                const MixHouseWaveformOverview overview = decodeWaveformOverview(library()->overviewAnalysisBlob(libraryId));
+                if (overview.valid && !overview.all.empty()) {
+                    song.power.reserve(overview.all.size());
+                    for (const uint8_t v : overview.all) {
+                        const float amp = v / 255.0f;
+                        song.power.push_back(amp * amp);
+                    }
+                    std::vector<float> sorted = song.power;
+                    const size_t p90 = static_cast<size_t>(0.9 * (sorted.size() - 1));
+                    std::nth_element(sorted.begin(), sorted.begin() + p90, sorted.end());
+                    song.refDb = 10.0 * std::log10(sorted[p90] + 1e-9);
+                }
+            }
+        }
+    }
+    return *m_songEnergy.insert(name, song);
+}
+
+std::vector<double> MixHouseBeatGrids::energyCurve(double t0, double step, size_t count) const
+{
+    std::vector<double> out(count, 0.0);
+    const auto project = globalContext() ? globalContext()->currentProject() : nullptr;
+    const auto trackeditProject = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project || !trackeditProject || count == 0 || step <= 0.0) {
+        return out;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    const double tEnd = t0 + step * count;
+    std::vector<double> gains;
+    for (const trackedit::TrackId trackId : trackeditProject->trackIdList()) {
+        WaveTrack* track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(trackId));
+        if (!track) {
+            continue;
+        }
+        for (const trackedit::Clip& c : trackeditProject->clipList(trackId)) {
+            if (c.endTime <= t0 || c.startTime >= tEnd) {
+                continue;
+            }
+            const SongEnergy& song = songEnergy(c.title.toQString());
+            if (song.energy <= 0.0) {
+                continue;
+            }
+            const auto clip = au::au3::DomAccessor::findWaveClip(track, c.key.itemId);
+            if (!clip || clip->GetStretchRatio() <= 0.0) {
+                continue;
+            }
+            const double ratio = clip->GetStretchRatio();
+            const double sequenceStart = clip->GetPlayStartTime() - clip->GetTrimLeft();
+            const size_t i0 = static_cast<size_t>(std::max(0.0, std::ceil((c.startTime - t0) / step)));
+            const size_t i1 = std::min(count, static_cast<size_t>(std::max(0.0, std::ceil((c.endTime - t0) / step))));
+            if (i1 <= i0) {
+                continue;
+            }
+            gains.assign(i1 - i0, 1.0);
+            clip->GetEnvelope().GetValues(gains.data(), static_cast<int>(gains.size()), t0 + i0 * step, step);
+            // Average over at least two seconds of the song: the energy of
+            // a passage, not of single kicks.
+            const double half = std::max(step, 2.0) / ratio / 2.0;
+            for (size_t i = i0; i < i1; ++i) {
+                const double gain = gains[i - i0];
+                if (gain < 0.03) {
+                    continue;   // faded out
+                }
+                const double src = (t0 + i * step - sequenceStart) / ratio;
+                // A breakdown 12 dB under the song's loud parts is 3 points
+                // lower; a fade lowers it the same way.
+                const double quieter = std::min(1.0, (song.levelDb(src - half, src + half) - song.refDb) / 4.0);
+                const double faded = 20.0 * std::log10(std::min(1.0, gain)) / 4.0;
+                out[i] = std::max(out[i], std::clamp(song.energy + quieter + faded, 1.0, 10.0));
+            }
+        }
+    }
+    return out;
 }
 
 MixHouseBeatGrids::Grid MixHouseBeatGrids::gridForClipName(const QString& name, bool fresh) const

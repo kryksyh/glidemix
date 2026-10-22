@@ -14,6 +14,7 @@
 #include "framework/ui/iuiactionsregister.h"
 #include "internal/mixhousegrideditor.h"
 #include "internal/mixhouselibrary.h"
+#include "internal/mixhousefolderwatcher.h"
 #include "internal/mixhousehdwaveforms.h"
 #include "internal/mixhouseuiactions.h"
 #include "internal/mixhouseactionscontroller.h"
@@ -133,6 +134,9 @@ void MixHouseModuleContext::registerExports()
     // contribution uses (au::project::ProjectUiActions/
     // ProjectActionsController for "project-import"). See
     // MixHouseUiActions/MixHouseActionsController for the real work.
+    // Watch folders: new songs in the music directories, added and analysed.
+    m_folderWatcher = std::make_shared<MixHouseFolderWatcher>(iocContext());
+
     m_actionsController = std::make_shared<MixHouseActionsController>(iocContext());
     m_uiActions = std::make_shared<MixHouseUiActions>();
 }
@@ -148,6 +152,7 @@ void MixHouseModuleContext::onInit(const muse::IApplication::RunMode& mode)
     m_transitions->init();
     m_rekordboxXml->init();
     m_rekordboxPhrases->init();
+    m_folderWatcher->init();
 
     m_actionsController->init();
     m_uiActions->init();

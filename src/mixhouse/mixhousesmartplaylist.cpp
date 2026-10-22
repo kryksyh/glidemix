@@ -83,6 +83,7 @@ QString textOf(const QString& field, const MixHouseTrack& t)
 double numberOf(const QString& field, const MixHouseTrack& t)
 {
     if (field == u"bpm") return t.bpm;
+    if (field == u"energy") return std::round(t.energy);
     if (field == u"rating") return t.rating;
     if (field == u"year") return t.year.left(4).toDouble();
     if (field == u"duration") return t.durationSec;
@@ -176,6 +177,7 @@ const std::vector<MixHouseSmartField>& smartFields()
         { "grouping", "Grouping", "text" },
         { "comment", "Comment", "text" },
         { "bpm", "BPM", "number" },
+        { "energy", "Energy (1-10)", "number" },
         { "key", "Key", "key" },
         { "rating", "Rating", "number" },
         { "color", "Color", "color" },

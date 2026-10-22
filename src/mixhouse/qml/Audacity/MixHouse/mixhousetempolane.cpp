@@ -43,6 +43,112 @@ MixHouseTempoLane::MixHouseTempoLane(QQuickItem* parent)
     setAntialiasing(true);
     connect(this, &MixHouseTempoLane::colorsChanged, this, [this]() { update(); });
     connect(this, &MixHouseTempoLane::heightChanged, this, [this]() { update(); });
+    m_energyPoll.setInterval(500);
+    connect(&m_energyPoll, &QTimer::timeout, this, [this]() { refreshEnergy(); });
+    connect(this, &MixHouseTempoLane::widthChanged, this, [this]() { refreshEnergy(); });
+    connect(this, &QQuickItem::visibleChanged, this, [this]() { setShowEnergy(m_showEnergy); });
+}
+
+void MixHouseTempoLane::setShowTempo(bool show)
+{
+    if (m_showTempo == show) {
+        return;
+    }
+    m_showTempo = show;
+    emit layersChanged();
+    update();
+}
+
+void MixHouseTempoLane::setShowEnergy(bool show)
+{
+    const bool changed = m_showEnergy != show;
+    m_showEnergy = show;
+    if (show && isVisible()) {
+        if (!m_energyPoll.isActive()) {
+            m_energyPoll.start();
+        }
+        refreshEnergy();
+    } else {
+        m_energyPoll.stop();
+    }
+    if (changed) {
+        emit layersChanged();
+        update();
+    }
+}
+
+void MixHouseTempoLane::refreshEnergy()
+{
+    if (!m_showEnergy || !isVisible() || width() < 2.0 || !beatGrids() || m_zoom <= 0.0) {
+        return;
+    }
+    const size_t count = static_cast<size_t>(std::ceil(width() / kEnergyColumnPx));
+    std::vector<double> curve = beatGrids()->energyCurve(m_frameStartTime, kEnergyColumnPx / m_zoom, count);
+    if (curve != m_energy) {
+        m_energy = std::move(curve);
+        update();
+    }
+}
+
+QColor MixHouseTempoLane::energyColor(double energy)
+{
+    // Calm blue, steady green, building yellow-orange, peak red.
+    static const QColor stops[] = { QColor(0x3B, 0x6E, 0xF0), QColor(0x22, 0xB8, 0xCF), QColor(0x2F, 0xC4, 0x5A),
+                                    QColor(0xF2, 0xC2, 0x2E), QColor(0xF5, 0x7C, 0x22), QColor(0xE8, 0x30, 0x3A) };
+    const double pos = std::clamp((energy - 1.0) / 9.0, 0.0, 1.0) * 5.0;
+    const int i = std::min(4, static_cast<int>(pos));
+    const double f = pos - i;
+    const QColor& a = stops[i];
+    const QColor& b = stops[i + 1];
+    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * f, a.greenF() + (b.greenF() - a.greenF()) * f,
+                            a.blueF() + (b.blueF() - a.blueF()) * f);
+}
+
+void MixHouseTempoLane::paintEnergy(QPainter* p)
+{
+    // Energy 1 at the bottom, 10 at the top of the field, behind the line.
+    const double top = kInset;
+    const double bottom = height() - 2.0;
+    const auto yOf = [&](double e) { return bottom - (e - 1.0) / 9.0 * (bottom - top); };
+    // With the tempo line on top it stays a backdrop; alone it is the picture.
+    const double alpha = m_showTempo ? 0.45 : 0.8;
+    QPainterPath edge;
+    bool drawing = false;
+    for (size_t i = 0; i < m_energy.size(); ++i) {
+        const double e = m_energy[i];
+        const double x = i * kEnergyColumnPx;
+        if (e <= 0.0) {
+            drawing = false;
+            continue;
+        }
+        QColor fill = energyColor(e);
+        fill.setAlphaF(alpha);
+        const double y = yOf(e);
+        p->fillRect(QRectF(x, y, kEnergyColumnPx, bottom - y), fill);
+        if (!drawing) {
+            edge.moveTo(x, y);
+            drawing = true;
+        } else {
+            edge.lineTo(x + kEnergyColumnPx / 2.0, y);
+        }
+    }
+    QColor edgeColor = m_labelColor;
+    edgeColor.setAlphaF(m_showTempo ? 0.35 : 0.8);
+    p->setPen(QPen(edgeColor, 1.2));
+    p->setBrush(Qt::NoBrush);
+    p->drawPath(edge);
+    if (!m_showTempo) {
+        return;
+    }
+    // Which colour is which: a small legend at the bottom right.
+    QFont font = p->font();
+    font.setPixelSize(10);
+    p->setFont(font);
+    QColor legend = m_labelColor;
+    legend.setAlphaF(0.6);
+    p->setPen(legend);
+    p->drawText(QRectF(0, 0, width() - 8.0, height() - 3.0), Qt::AlignRight | Qt::AlignBottom,
+                QStringLiteral("ENERGY"));
 }
 
 void MixHouseTempoLane::componentComplete()
@@ -51,6 +157,10 @@ void MixHouseTempoLane::componentComplete()
     if (tempoMap()) {
         tempoMap()->tempoMapChanged().onNotify(this, [this]() { update(); });
     }
+    if (beatGrids()) {
+        beatGrids()->beatGridsChanged().onNotify(this, [this]() { refreshEnergy(); });
+    }
+    setShowEnergy(m_showEnergy);
 }
 
 void MixHouseTempoLane::setFrameStartTime(double time)
@@ -60,6 +170,7 @@ void MixHouseTempoLane::setFrameStartTime(double time)
     }
     m_frameStartTime = time;
     emit viewChanged();
+    refreshEnergy();
     update();
 }
 
@@ -70,6 +181,7 @@ void MixHouseTempoLane::setZoom(double zoom)
     }
     m_zoom = zoom;
     emit viewChanged();
+    refreshEnergy();
     update();
 }
 
@@ -117,9 +229,15 @@ void MixHouseTempoLane::paint(QPainter* p)
     if (!tempoMap() || width() <= 0.0 || height() <= 0.0) {
         return;
     }
-    const Points points = tempoMap()->points();
     p->setRenderHint(QPainter::Antialiasing, true);
     p->setClipRect(r);
+    if (m_showEnergy) {
+        paintEnergy(p);
+    }
+    if (!m_showTempo) {
+        return;
+    }
+    const Points points = tempoMap()->points();
 
     // The line: from the left edge at the first BPM, through every point
     // (curved segments subdivided, as the parked drawTempoCurve did), then the
@@ -172,7 +290,7 @@ void MixHouseTempoLane::paint(QPainter* p)
 
 void MixHouseTempoLane::mousePressEvent(QMouseEvent* e)
 {
-    if (!tempoMap()) {
+    if (!tempoMap() || !m_showTempo) {
         e->ignore();
         return;
     }
@@ -303,7 +421,7 @@ void MixHouseTempoLane::mouseDoubleClickEvent(QMouseEvent* e)
     if (e->button() != Qt::LeftButton) {
         return;
     }
-    if (!tempoMap()) {
+    if (!tempoMap() || !m_showTempo) {
         return;
     }
     // The first click of a double-click already added (or grabbed) a point;
@@ -320,7 +438,7 @@ void MixHouseTempoLane::mouseDoubleClickEvent(QMouseEvent* e)
 
 void MixHouseTempoLane::hoverMoveEvent(QHoverEvent* e)
 {
-    if (!tempoMap()) {
+    if (!tempoMap() || !m_showTempo) {
         return;
     }
     setCursor(hitPoint(e->position(), tempoMap()->points()) >= 0 ? Qt::SizeAllCursor : Qt::ArrowCursor);

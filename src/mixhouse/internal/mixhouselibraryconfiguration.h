@@ -40,6 +40,10 @@ public:
 
     bool rescanOnStartup() const override;
     void setRescanOnStartup(bool rescan) override;
+    bool watchMusicDirectories() const override;
+    void setWatchMusicDirectories(bool watch) override;
+    bool analyzeNewTracks() const override;
+    void setAnalyzeNewTracks(bool analyze) override;
     bool accurateBeatAnalysis() const override;
     void setAccurateBeatAnalysis(bool accurate) override;
 
@@ -91,6 +95,8 @@ public:
     void setPhraseRibbonVisible(bool visible) override;
     bool tempoLaneVisible() const override;
     void setTempoLaneVisible(bool visible) override;
+    bool energyLaneVisible() const override;
+    void setEnergyLaneVisible(bool visible) override;
     int tempoLaneHeight() const override;
     void setTempoLaneHeight(int height) override;
     void setShowWaveformMinuteMarkers(bool show) override;
