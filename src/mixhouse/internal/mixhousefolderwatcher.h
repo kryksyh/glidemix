@@ -50,6 +50,7 @@ private:
     QSet<QString> m_changed;          ///< folders to scan once things settle
     QStringList m_scanning;           ///< the folders of the watch scan running now
     QTimer m_settle;
+    bool m_started = false;           ///< past the first rewatch() at start-up
     QList<int> m_analysisQueue;       ///< new songs waiting for a running analysis to end
 };
 }

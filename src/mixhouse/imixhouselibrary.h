@@ -169,6 +169,8 @@ public:
     ///   2 PLHT_SET_LOG    -- session history, one per date
     /// Listing them together is what turned the sidebar into 123 date rows.
     virtual MixHouseNamedList playlists() const = 0;
+    /// GlideMix: the playlists `trackId` is in (the sidebar lights them up).
+    virtual QList<int> playlistsContainingTrack(int trackId) const = 0;
     virtual MixHouseNamedList autoDjQueue() const = 0;
     virtual MixHouseNamedList historySessions() const = 0;
     virtual MixHouseNamedList crates() const = 0;

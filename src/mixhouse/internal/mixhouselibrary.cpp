@@ -1082,6 +1082,23 @@ MixHouseNamedList MixHouseLibrary::playlistsOfType(int hidden, bool newestFirst)
 // every one of its callers) for two columns only one of them needs. See
 // MixHouseNamedItem::parentId's own comment for why this is original work,
 // not a port.
+QList<int> MixHouseLibrary::playlistsContainingTrack(int trackId) const
+{
+    QList<int> ids;
+    if (trackId < 0 || !ensureOpen()) {
+        return ids;
+    }
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT DISTINCT playlist_id FROM PlaylistTracks WHERE track_id = :id"));
+    q.bindValue(QStringLiteral(":id"), trackId);
+    if (q.exec()) {
+        while (q.next()) {
+            ids << q.value(0).toInt();
+        }
+    }
+    return ids;
+}
+
 MixHouseNamedList MixHouseLibrary::playlists() const
 {
     // ensureWritable(), not just ensureOpen() -- m_db (this method's own
@@ -2016,6 +2033,10 @@ void MixHouseLibrary::onAnalyzerWorkerFinished(QThread* thread, int trackId, boo
     } else {
         ++m_analyzeFailed;
     }
+    // Its phrases were just written: an answer cached before the analysis
+    // (none yet) must not outlive it -- the library's waveform asks for the
+    // song's cue points the moment this arrives.
+    m_detectedPhrases.remove(trackId);
     m_trackAnalysisProgress.send(trackId, success ? -1 : -2);
     m_analysisProgress.send(m_analyzeSucceeded + m_analyzeFailed, m_analyzeTotal);
 

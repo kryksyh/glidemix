@@ -60,6 +60,7 @@ public:
     int trackCount() const override;
     MatchingTracks matchingTracks(const TrackQuery& query) const override;
     MixHouseNamedList playlists() const override;
+    QList<int> playlistsContainingTrack(int trackId) const override;
     MixHouseNamedList autoDjQueue() const override;
     MixHouseNamedList historySessions() const override;
     MixHouseNamedList crates() const override;

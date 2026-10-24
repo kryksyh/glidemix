@@ -38,6 +38,7 @@ void MixHouseFolderWatcher::init()
         return;
     }
     rewatch();
+    m_started = true;
     libraryConfiguration()->settingsChanged().onNotify(this, [this]() { rewatch(); });
 
     library()->scanFinished().onReceive(this, [this](const IMixHouseLibrary::ScanResult& result) {
@@ -77,6 +78,17 @@ void MixHouseFolderWatcher::rewatch()
     if (roots == m_roots) {
         return;
     }
+    // A folder just added in Preferences: its songs come in now, not at the
+    // next start (Add there only remembers the folder). The folders known at
+    // start-up are the startup rescan's job.
+    QStringList added;
+    if (m_started) {
+        for (const QString& root : std::as_const(roots)) {
+            if (!m_roots.contains(root)) {
+                added << root;
+            }
+        }
+    }
     m_roots = roots;
     m_watchedDirs.clear();
     m_changed.clear();
@@ -92,6 +104,12 @@ void MixHouseFolderWatcher::rewatch()
         watchTree(root);
     }
     LOGI() << "GlideMix watch folders: " << m_roots.size() << " folder(s), " << m_watchedDirs.size() << " watched";
+    for (const QString& root : std::as_const(added)) {
+        m_changed.insert(root);
+    }
+    if (!added.isEmpty()) {
+        m_settle.start(kSettleMs);
+    }
 }
 
 void MixHouseFolderWatcher::watchTree(const QString& dir)

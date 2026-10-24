@@ -62,7 +62,10 @@ StyledDialogView {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
-                text: qsTrc("appshell", "Everything unlocked, stems included. One-time payment, 3 computers, all 1.x updates.")
+                // GlideMix: the Beta price, with the normal price it goes up to.
+                textFormat: Text.StyledText
+                text: qsTrc("appshell", "<b>Beta price €49</b> (normal price <s>€89</s>). Everything unlocked, stems included. "
+                                        + "One-time payment, 3 computers, all 1.x updates.")
             }
         }
 

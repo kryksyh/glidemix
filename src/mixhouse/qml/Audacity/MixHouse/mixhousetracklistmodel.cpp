@@ -442,6 +442,8 @@ void MixHouseTrackListModel::load()
             fresh = browseFolderTracks();
         } else if (m_externalSource == u"smart") {
             fresh = smartPlaylistTracks(m_externalPlaylist);
+        } else if (m_externalSource == u"duplicates") {
+            fresh = duplicateTracks();
         } else if (!m_externalSource.isEmpty()) {
             const IMixHouseExternalLibrary* external = externalLibrary(m_externalSource);
             fresh = external ? external->tracks(m_externalPlaylist, m_query) : MixHouseTrackList();
@@ -479,6 +481,17 @@ void MixHouseTrackListModel::sortBy(int sortKey)
         m_query.sort = key;
         m_query.ascending = true;                 // new column: start ascending
     }
+    load();
+}
+
+void MixHouseTrackListModel::setSort(int sortKey, bool ascending)
+{
+    const auto key = static_cast<IMixHouseLibrary::SortKey>(sortKey);
+    if (m_query.sort == key && m_query.ascending == ascending) {
+        return;
+    }
+    m_query.sort = key;
+    m_query.ascending = ascending;
     load();
 }
 
@@ -785,6 +798,321 @@ void MixHouseTrackListModel::setSmartPlaylist(int id)
         }
     }
     load();
+}
+
+void MixHouseTrackListModel::setDuplicates()
+{
+    m_externalSource = QStringLiteral("duplicates");
+    m_externalPlaylist = -1;
+    m_query.playlistId = -1;
+    m_query.crateId = -1;
+    m_query.missingOnly = false;
+    m_query.hiddenOnly = false;
+    m_query.unanalyzedOnly = false;
+    m_query.playedOnly = false;
+    m_emptyPlaceholder = false;
+    m_query.filter.clear();
+    load();
+}
+
+namespace {
+//! Artist or title as a duplicate key: case, punctuation and spacing don't count.
+QString duplicateKeyPart(const QString& text)
+{
+    QString out;
+    out.reserve(text.size());
+    bool space = false;
+    for (const QChar c : text.toLower()) {
+        if (c.isLetterOrNumber()) {
+            out += c;
+            space = false;
+        } else if (!space && !out.isEmpty()) {
+            out += u' ';
+            space = true;
+        }
+    }
+    return out.trimmed();
+}
+
+//! Which copy to keep: lossless first, then the higher bitrate, then an
+//! analysed one, then the one rated higher.
+double copyQuality(const MixHouseTrack& t)
+{
+    static const QStringList lossless = { QStringLiteral("wav"), QStringLiteral("aif"), QStringLiteral("aiff"),
+                                          QStringLiteral("flac"), QStringLiteral("alac") };
+    const QString type = t.fileType.isEmpty() ? QFileInfo(t.filePath).suffix().toLower() : t.fileType.toLower();
+    return (lossless.contains(type) ? 1e6 : 0.0) + t.bitrate * 10.0 + (t.analyzed ? 5.0 : 0.0) + t.rating;
+}
+}
+
+MixHouseTrackList MixHouseTrackListModel::duplicateTracks()
+{
+    m_duplicateExtras.clear();
+    m_duplicateGroups = 0;
+    IMixHouseLibrary::TrackQuery q = m_query;
+    q.limit = 0;
+    q.playlistId = -1;
+    q.crateId = -1;
+    MixHouseTrackList all = library()->tracks(q);
+
+    QHash<QString, std::vector<size_t> > byKey;
+    for (size_t i = 0; i < all.size(); ++i) {
+        const MixHouseTrack& t = all[i];
+        const QString title = duplicateKeyPart(t.title.isEmpty() ? QFileInfo(t.filePath).completeBaseName() : t.title);
+        if (title.isEmpty()) {
+            continue;
+        }
+        byKey[duplicateKeyPart(t.artist) + u'|' + title].push_back(i);
+    }
+
+    std::vector<std::vector<size_t> > groups;
+    for (auto it = byKey.begin(); it != byKey.end(); ++it) {
+        std::vector<size_t>& idx = it.value();
+        if (idx.size() < 2) {
+            continue;
+        }
+        // Same name, different length (radio edit vs extended) is not a copy.
+        std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b) { return all[a].durationSec < all[b].durationSec; });
+        std::vector<size_t> run { idx.front() };
+        const auto flush = [&]() {
+            if (run.size() >= 2) {
+                groups.push_back(run);
+            }
+        };
+        for (size_t k = 1; k < idx.size(); ++k) {
+            const double a = all[run.back()].durationSec;
+            const double b = all[idx[k]].durationSec;
+            if (a > 0.0 && b > 0.0 && b - a > 3.0) {
+                flush();
+                run.clear();
+            }
+            run.push_back(idx[k]);
+        }
+        flush();
+    }
+    for (std::vector<size_t>& g : groups) {
+        std::stable_sort(g.begin(), g.end(), [&](size_t a, size_t b) { return copyQuality(all[a]) > copyQuality(all[b]); });
+    }
+    std::sort(groups.begin(), groups.end(), [&](const std::vector<size_t>& a, const std::vector<size_t>& b) {
+        const MixHouseTrack& x = all[a.front()];
+        const MixHouseTrack& y = all[b.front()];
+        const int byArtist = QString::localeAwareCompare(x.artist, y.artist);
+        return byArtist != 0 ? byArtist < 0 : QString::localeAwareCompare(x.title, y.title) < 0;
+    });
+
+    MixHouseTrackList out;
+    for (const std::vector<size_t>& g : groups) {
+        for (size_t k = 0; k < g.size(); ++k) {
+            if (k > 0) {
+                m_duplicateExtras.insert(all[g[k]].id);
+            }
+            out.push_back(all[g[k]]);
+        }
+    }
+    m_duplicateGroups = static_cast<int>(groups.size());
+    return out;
+}
+
+namespace {
+// The generator's names: "Genre · House", "Key · 8A", "Energy · 7".
+const QString kGeneratedSeparator = QStringLiteral(" · ");
+QStringList generatedPrefixes()
+{
+    return { QStringLiteral("Genre") + kGeneratedSeparator, QStringLiteral("Key") + kGeneratedSeparator,
+             QStringLiteral("Energy") + kGeneratedSeparator };
+}
+}
+
+void MixHouseTrackListModel::generateSmartPlaylists(const QString& field, const QString& source)
+{
+    IMixHouseLibrary::TrackQuery base;
+    const MixHouseTrackList tracks = smartCandidates(source, base);
+    QSet<QString> existing;
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        existing.insert(p.name);
+    }
+
+    // value -> how many songs; ordered for the sidebar.
+    std::vector<std::pair<QString, int> > values;
+    MixHouseSmartRule rule;
+    rule.field = field;
+    QString prefix;
+    if (field == u"genre") {
+        // Lexicon's genres are often lists ("Dubstep, EDM"): count each one.
+        QHash<QString, int> counts;
+        QHash<QString, QString> spelling;
+        static const QRegularExpression separators(QStringLiteral("[,;/]"));
+        for (const MixHouseTrack& t : tracks) {
+            QSet<QString> seen;
+            for (QString g : t.genre.split(separators, Qt::SkipEmptyParts)) {
+                g = g.trimmed();
+                const QString key = g.toLower();
+                if (g.isEmpty() || seen.contains(key)) {
+                    continue;
+                }
+                seen.insert(key);
+                ++counts[key];
+                spelling.insert(key, g);
+            }
+        }
+        for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
+            if (it.value() >= 10) {
+                values.push_back({ spelling.value(it.key()), it.value() });
+            }
+        }
+        // The 50 biggest, alphabetically.
+        std::sort(values.begin(), values.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        if (values.size() > 50) {
+            values.resize(50);
+        }
+        std::sort(values.begin(), values.end(), [](const auto& a, const auto& b) {
+            return QString::localeAwareCompare(a.first, b.first) < 0;
+        });
+        rule.op = QStringLiteral("contains");
+        prefix = QStringLiteral("Genre");
+    } else if (field == u"key") {
+        QHash<QString, int> counts;
+        for (const MixHouseTrack& t : tracks) {
+            if (t.keyId >= 1 && t.keyId <= 24) {
+                ++counts[IMixHouseKeyMatch::camelot(t.keyId)];
+            }
+        }
+        for (int n = 1; n <= 12; ++n) {
+            for (const QChar mode : { u'A', u'B' }) {
+                const QString key = QString::number(n) + mode;
+                if (counts.value(key) > 0) {
+                    values.push_back({ key, counts.value(key) });
+                }
+            }
+        }
+        rule.op = QStringLiteral("is");
+        prefix = QStringLiteral("Key");
+    } else if (field == u"energy") {
+        int counts[11] = {};
+        for (const MixHouseTrack& t : tracks) {
+            const int e = static_cast<int>(std::lround(t.energy));
+            if (e >= 1 && e <= 10) {
+                ++counts[e];
+            }
+        }
+        for (int e = 1; e <= 10; ++e) {
+            if (counts[e] > 0) {
+                values.push_back({ QString::number(e), counts[e] });
+            }
+        }
+        rule.op = QStringLiteral("is");
+        prefix = QStringLiteral("Energy");
+    } else {
+        return;
+    }
+
+    int made = 0;
+    for (const auto& [value, count] : values) {
+        MixHouseSmartPlaylist p;
+        p.name = prefix + kGeneratedSeparator + value;
+        if (existing.contains(p.name)) {
+            continue;
+        }
+        p.source = source;
+        rule.value = value;
+        p.groups = { { rule } };
+        if (library()->saveSmartPlaylist(p) >= 0) {
+            ++made;
+        }
+    }
+    emit loaded();   // the sidebar re-reads its nodes
+    const std::string text = made > 0
+        ? muse::qtrc("mixhouse", "Made %n smart playlist(s). They are under Smart Playlists and update by themselves.",
+                     nullptr, made).toStdString()
+        : muse::trc("mixhouse", "No new smart playlists: there was nothing to make, or they exist already.");
+    interactive()->info(muse::trc("mixhouse", "Generate Smart Playlists"), text);
+}
+
+void MixHouseTrackListModel::deleteGeneratedSmartPlaylistsWithConfirm()
+{
+    std::vector<int> ids;
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        for (const QString& prefix : generatedPrefixes()) {
+            if (p.name.startsWith(prefix)) {
+                ids.push_back(p.id);
+                break;
+            }
+        }
+    }
+    if (ids.empty()) {
+        interactive()->info(muse::trc("mixhouse", "Delete Generated Smart Playlists"),
+                            muse::trc("mixhouse", "There are no generated smart playlists."));
+        return;
+    }
+    const auto result = interactive()->questionSync(
+        muse::trc("mixhouse", "Delete Generated Smart Playlists"),
+        muse::qtrc("mixhouse", "Delete the %n generated smart playlist(s) (Genre ·, Key ·, Energy ·)? "
+                               "Their tracks stay in your library.", nullptr, static_cast<int>(ids.size())).toStdString(),
+        { muse::IInteractive::Button::Cancel, muse::IInteractive::Button::Ok });
+    if (result.standardButton() != muse::IInteractive::Button::Ok) {
+        return;
+    }
+    const bool viewingOne = m_externalSource == u"smart"
+                            && std::find(ids.begin(), ids.end(), m_externalPlaylist) != ids.end();
+    for (const int id : ids) {
+        library()->deleteSmartPlaylist(id);
+    }
+    if (viewingOne) {
+        setPlaylist(-1);
+    }
+    emit loaded();
+}
+
+QStringList MixHouseTrackListModel::sidebarNodesContaining(int row) const
+{
+    QStringList nodes;
+    if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
+        return nodes;
+    }
+    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    const bool external = isExternalTrack(t);
+    // A Lexicon / rekordbox song is in our playlists as its library copy.
+    const int libraryId = external ? libraryIdForFile(t.filePath) : t.id;
+    for (const int id : library()->playlistsContainingTrack(libraryId)) {
+        nodes << QStringLiteral("pl-") + QString::number(id);
+    }
+    // Smart playlists: their rules, for this one song. Ones with a limit
+    // ("the newest 50") depend on the others, so they are left out.
+    const bool fromLexicon = lexicon() && lexicon()->ownsTrack(t.id);
+    const bool fromRekordbox = rekordboxXml() && rekordboxXml()->ownsTrack(t.id);
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        if (p.limit > 0) {
+            continue;
+        }
+        const bool sourceFits = p.source == u"all" || (p.source == u"collection" && !external)
+                                || (p.source == u"lexicon" && fromLexicon) || (p.source == u"rekordbox" && fromRekordbox);
+        if (!sourceFits) {
+            continue;
+        }
+        MixHouseSmartContext context;
+        for (const auto& group : p.groups) {
+            for (const MixHouseSmartRule& r : group) {
+                if (r.field == u"inPlaylist" && !context.playlistFiles.contains(r.value)) {
+                    context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
+                }
+            }
+        }
+        if (smartPlaylistMatches(p, t, context)) {
+            nodes << QStringLiteral("sp-") + QString::number(p.id);
+        }
+    }
+    return nodes;
+}
+
+QVariantList MixHouseTrackListModel::duplicateExtraRows() const
+{
+    QVariantList rows;
+    for (size_t r = 0; r < m_tracks.size(); ++r) {
+        if (m_duplicateExtras.contains(m_tracks[r].id)) {
+            rows << static_cast<int>(r);
+        }
+    }
+    return rows;
 }
 
 MixHouseTrackList MixHouseTrackListModel::smartCandidates(const QString& source, const IMixHouseLibrary::TrackQuery& base) const
@@ -1628,6 +1956,7 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     if (isOpen("tracks")) {
         out << node("missing", QObject::tr("Missing Tracks"), 1, "missing", -1,
                     library()->missingTrackCount(), false);
+        out << node("duplicates", QObject::tr("Duplicates"), 1, "duplicates", -1, -1, false);
         // GlideMix: no Hidden Tracks node. Nothing hides a track here
         // (Remove from Library deletes it), so it was always empty.
     }

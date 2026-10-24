@@ -23,7 +23,7 @@ Rectangle {
     readonly property var cards: [
         { icon: IconCode.LEARN, title: qsTrc("appshell", "Getting started"),
           text: qsTrc("appshell", "What GlideMix does and how a mix comes together, with pictures."),
-          button: qsTrc("appshell", "Open the guide"), url: root.releasesUrl + "#readme" },
+          button: qsTrc("appshell", "Open the guide"), url: "https://glidemix.com/#features" },
         { icon: IconCode.STAR, title: qsTrc("appshell", "What's new"),
           text: qsTrc("appshell", "Every version and what changed, from the first build on."),
           button: qsTrc("appshell", "Read the changelog"), url: root.releasesUrl + "/blob/main/CHANGELOG.md" },
@@ -36,6 +36,9 @@ Rectangle {
         { icon: IconCode.GLOBE, title: qsTrc("appshell", "r/GlideMix on Reddit"),
           text: qsTrc("appshell", "Show your mixes, find tips and tell us what to build next."),
           button: qsTrc("appshell", "Open r/GlideMix"), url: "https://www.reddit.com/r/GlideMix/" },
+        { icon: IconCode.GLOBE, title: qsTrc("appshell", "glidemix.com"),
+          text: qsTrc("appshell", "The website: help and answers to common questions, downloads and pricing."),
+          button: qsTrc("appshell", "Open Help and FAQ"), url: "https://glidemix.com/help" },
         { icon: IconCode.QUESTION_MARK, title: qsTrc("appshell", "Help and support"),
           text: qsTrc("appshell", "Something not working? Write to us, we answer every message."),
           button: "support@glidemix.com", url: "mailto:support@glidemix.com" },

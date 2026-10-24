@@ -208,6 +208,60 @@ Item {
     //                    and the track menu's batch "Collection Actions"
     //                    both read.
     property int currentRow: -1
+    // GlideMix (Lexicon): the playlists and smart playlists the selected song
+    // is in, marked in the sidebar ("pl-<id>", "sp-<id>").
+    property var containingNodes: []
+
+    // GlideMix (Lexicon): each list remembers its sort, scroll position and
+    // selected song while the app runs, so going back to a playlist puts you
+    // where you were.
+    property string currentViewKey: "all:-1"
+    property var viewMemory: ({})
+    property var pendingViewRestore: null
+    function rememberViewAndSwitch(kind, refId) {
+        if (kind + ":" + refId === root.currentViewKey) {
+            return   // the same list clicked again: nothing changes
+        }
+        var memory = root.viewMemory
+        memory[root.currentViewKey] = { sort: tracksModel.sortKey, ascending: tracksModel.sortAscending,
+                                        y: trackTableView.contentY, row: root.currentRow }
+        root.viewMemory = memory
+        root.currentViewKey = kind + ":" + refId
+        root.pendingViewRestore = memory[root.currentViewKey] || null
+    }
+    function applyViewRestore() {
+        var restore = root.pendingViewRestore
+        if (!restore) {
+            return
+        }
+        if (tracksModel.sortKey !== restore.sort || tracksModel.sortAscending !== restore.ascending) {
+            tracksModel.setSort(restore.sort, restore.ascending)   // loads again, which runs this once more
+            if (!root.pendingViewRestore) {
+                return
+            }
+        }
+        root.pendingViewRestore = null
+        Qt.callLater(function() {
+            trackTableView.contentY = Math.max(0, Math.min(restore.y, trackTableView.contentHeight - trackTableView.height))
+            if (restore.row >= 0 && restore.row < tracksModel.rowCount()) {
+                root.selectedRows = [restore.row]
+                root.currentRow = restore.row
+            }
+        })
+    }
+    onCurrentRowChanged: containingNodesTimer.restart()
+    Timer {
+        id: containingNodesTimer
+        interval: 150
+        onTriggered: root.containingNodes = root.currentRow >= 0 ? tracksModel.sidebarNodesContaining(root.currentRow) : []
+    }
+    Connections {
+        target: tracksModel
+        function onLoaded() {
+            containingNodesTimer.restart()
+            root.applyViewRestore()
+        }
+    }
     property var selectedRows: []
     // Room left of each waveform for the preview's stop button (rekordbox).
     readonly property int previewStopZoneWidth: 18
@@ -1123,8 +1177,24 @@ Item {
                                     { id: "add-folder", title: qsTrc("mixhouse", "Add Folder to Library…") }
                                 ])
                             } else if (nodeId === "smart") {
+                                // GlideMix: Lexicon's Smartlist Generator.
+                                var sources = function(field) {
+                                    return [
+                                        { id: "gen:" + field + ":collection", title: qsTrc("mixhouse", "From Music Collection") },
+                                        { id: "gen:" + field + ":lexicon", title: qsTrc("mixhouse", "From Lexicon DJ") },
+                                        { id: "gen:" + field + ":rekordbox", title: qsTrc("mixhouse", "From Rekordbox XML") },
+                                        { id: "gen:" + field + ":all", title: qsTrc("mixhouse", "From all libraries") }
+                                    ]
+                                }
                                 smartRootMenu.show(pos, [
-                                    { id: "new-smart", title: qsTrc("mixhouse", "New Smart Playlist…") }
+                                    { id: "new-smart", title: qsTrc("mixhouse", "New Smart Playlist…") },
+                                    {},
+                                    { id: "gen-menu", title: qsTrc("mixhouse", "Generate Smart Playlists"), subitems: [
+                                        { id: "gen-genre", title: qsTrc("mixhouse", "One per Genre"), subitems: sources("genre") },
+                                        { id: "gen-key", title: qsTrc("mixhouse", "One per Key"), subitems: sources("key") },
+                                        { id: "gen-energy", title: qsTrc("mixhouse", "One per Energy level"), subitems: sources("energy") }
+                                    ] },
+                                    { id: "delete-generated", title: qsTrc("mixhouse", "Delete Generated Smart Playlists…") }
                                 ])
                             } else if ((kind === "lexicon-playlist" || kind === "rekordbox-playlist") && refId >= 0) {
                                 externalPlaylistMenu.kind = kind
@@ -1173,7 +1243,11 @@ Item {
                         // clears its OWN copy of the filter in each of
                         // these calls -- this just keeps the visible box in
                         // sync with that.)
-                        if (["all", "playlist", "crate", "missing", "hidden", "placeholder", "lexicon-all", "lexicon-playlist", "rekordbox-all", "rekordbox-playlist", "folder-browse", "recordings-view", "history-view", "analyze-view", "smart-playlist"].indexOf(kind) >= 0) {
+                        if (["all", "playlist", "crate", "missing", "duplicates", "lexicon-all", "lexicon-playlist",
+                             "rekordbox-all", "rekordbox-playlist", "smart-playlist", "history-view", "analyze-view"].indexOf(kind) >= 0) {
+                            root.rememberViewAndSwitch(kind, refId)
+                        }
+                        if (["all", "playlist", "crate", "missing", "duplicates", "hidden", "placeholder", "lexicon-all", "lexicon-playlist", "rekordbox-all", "rekordbox-playlist", "folder-browse", "recordings-view", "history-view", "analyze-view", "smart-playlist"].indexOf(kind) >= 0) {
                             search.clear()
                         }
                         if (kind === "recordings-view") {
@@ -1209,6 +1283,8 @@ Item {
                             // last true.
                             tracksModel.setMissing()
                             tracksModel.verifyMissingTracks()
+                        } else if (kind === "duplicates") {
+                            tracksModel.setDuplicates()
                         } else if (kind === "hidden") {
                             tracksModel.setHidden()
                         } else if (kind === "placeholder") {
@@ -1490,6 +1566,14 @@ Item {
                             horizontalAlignment: Qt.AlignLeft
                             text: modelData.name
                             font.bold: modelData.level === 0
+                        }
+                        // The selected song is in this playlist.
+                        Rectangle {
+                            visible: root.containingNodes.indexOf(modelData.nodeId) >= 0
+                            Layout.preferredWidth: 7
+                            Layout.preferredHeight: 7
+                            radius: 3.5
+                            color: ui.theme.accentColor
                         }
                         StyledTextLabel {
                             horizontalAlignment: Qt.AlignRight
@@ -1835,6 +1919,11 @@ Item {
                 onHandleMenuItem: function(itemId) {
                     if (itemId === "new-smart") {
                         smartPlaylistEditor.openFor(-1)
+                    } else if (itemId.indexOf("gen:") === 0) {
+                        var parts = itemId.split(":")
+                        tracksModel.generateSmartPlaylists(parts[1], parts[2])
+                    } else if (itemId === "delete-generated") {
+                        tracksModel.deleteGeneratedSmartPlaylistsWithConfirm()
                     }
                 }
             }
@@ -2233,6 +2322,29 @@ Item {
                         root.selectedRows = rows
                         root.currentRow = rows.length > 0 ? rows[0] : -1
                     }
+                }
+
+                // GlideMix: Duplicates -- select every copy but the best of
+                // each song, ready for Remove from Library / Delete from Disk.
+                FlatButton {
+                    visible: tracksModel.duplicatesView
+                    text: qsTrc("mixhouse", "Select extra copies")
+                    toolTipTitle: qsTrc("mixhouse", "Select every copy except the best one of each song")
+                    toolTipDescription: qsTrc("mixhouse", "The best copy is listed first: lossless before MP3, then the higher bitrate. Then right-click > Remove from Library or Delete from Disk.")
+                    enabled: tracksModel.duplicateGroups > 0
+                    onClicked: {
+                        var rows = tracksModel.duplicateExtraRows()
+                        root.selectedRows = rows
+                        root.currentRow = rows.length > 0 ? rows[0] : -1
+                    }
+                }
+
+                StyledTextLabel {
+                    visible: tracksModel.duplicatesView
+                    text: tracksModel.duplicateGroups > 0
+                          ? (tracksModel.duplicateGroups === 1 ? qsTrc("mixhouse", "1 song is in your collection more than once")
+                             : qsTrc("mixhouse", "%1 songs are in your collection more than once").arg(tracksModel.duplicateGroups))
+                          : qsTrc("mixhouse", "No duplicates found")
                 }
 
                 FlatButton {

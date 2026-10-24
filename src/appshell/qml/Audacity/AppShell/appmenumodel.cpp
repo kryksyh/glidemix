@@ -542,6 +542,9 @@ MenuItem* AppMenuModel::makeHelpMenu()
         //! AboutRole puts this where macOS expects it, at the top of the
         //! application menu. About Qt carries no role, so it stays here in
         //! Help rather than being hoisted up beside it.
+        makeMenuItem("glidemix-help"),
+        makeMenuItem("glidemix-website"),
+        makeSeparator(),
         makeMenuItem("show-licence"),
         makeMenuItem("show-shortcuts"),
         makeSeparator(),

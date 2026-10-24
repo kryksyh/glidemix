@@ -80,6 +80,8 @@ void ApplicationActionController::init()
     dispatcher()->reg(this, "about-qt", this, &ApplicationActionController::openAboutQtDialog);
     dispatcher()->reg(this, "show-shortcuts", this, &ApplicationActionController::openShortcutsListDialog);
     dispatcher()->reg(this, "show-licence", [this]() { interactive()->open("audacity://licence"); });
+    dispatcher()->reg(this, "glidemix-website", [this]() { platformInteractive()->openUrl(std::string("https://glidemix.com")); });
+    dispatcher()->reg(this, "glidemix-help", [this]() { platformInteractive()->openUrl(std::string("https://glidemix.com/help")); });
     dispatcher()->reg(this, "online-handbook", this, &ApplicationActionController::openOnlineHandbookPage);
     dispatcher()->reg(this, "ask-help", this, &ApplicationActionController::openAskForHelpPage);
     dispatcher()->reg(this, "preference-dialog", this, &ApplicationActionController::openPreferencesDialog);

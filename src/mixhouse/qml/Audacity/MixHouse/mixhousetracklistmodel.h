@@ -10,6 +10,7 @@
 #include <QAbstractListModel>
 #include <QtQmlIntegration>
 #include <QHash>
+#include <QSet>
 #include <QPixmap>
 #include <QTimer>
 
@@ -155,6 +156,8 @@ public:
     Q_INVOKABLE void load();
     /// Clicking a column header: same column flips direction, new column resets.
     Q_INVOKABLE void sortBy(int sortKey);
+    /// Sets the sort directly (a list coming back to how it was left).
+    Q_INVOKABLE void setSort(int sortKey, bool ascending);
     Q_INVOKABLE void setSearch(const QString& text);
     Q_INVOKABLE void setPlaylist(int playlistId);
     /// Mirrors setPlaylist() for a crate -- see TrackQuery::crateId in
@@ -191,6 +194,22 @@ public:
     //! {id, name, match: "all"|"any", source, groups: [[{field, op, value,
     //! value2}]], sort, ascending, limit}.
     Q_INVOKABLE void setSmartPlaylist(int id);
+    /// GlideMix: the sidebar's Duplicates -- songs in the Music Collection
+    /// more than once (same artist and title, lengths within 3 s), each
+    /// group together with its best copy first (lossless, then bitrate).
+    Q_INVOKABLE void setDuplicates();
+    /// Rows of every copy but the best one in each group, to select and remove.
+    Q_INVOKABLE QVariantList duplicateExtraRows() const;
+    /// GlideMix: Lexicon's Smartlist Generator -- one smart playlist per
+    /// genre ("genre"), Camelot key ("key") or energy level ("energy") of
+    /// `source` ("collection", "lexicon", "rekordbox", "all"). Skips names
+    /// that exist already; reports how many were made.
+    Q_INVOKABLE void generateSmartPlaylists(const QString& field, const QString& source);
+    /// Deletes every smart playlist the generator made (after asking).
+    Q_INVOKABLE void deleteGeneratedSmartPlaylistsWithConfirm();
+    /// GlideMix (Lexicon): the sidebar nodes ("pl-<id>", "sp-<id>") of the
+    /// playlists and smart playlists the song in `row` is in.
+    Q_INVOKABLE QStringList sidebarNodesContaining(int row) const;
     Q_INVOKABLE QVariantList smartFieldList() const;
     Q_INVOKABLE QVariantList smartOperatorList(const QString& fieldType) const;
     Q_INVOKABLE QVariantMap smartPlaylistDefinition(int id) const;
@@ -601,6 +620,8 @@ public:
     /// "New" mirrors real mixxx's own recentFilter() exactly: added within
     /// the last 7 days (library/analysis/analysislibrarytablemodel.cpp).
     Q_PROPERTY(bool analyzing READ analyzing NOTIFY analyzingChanged)
+    Q_PROPERTY(bool duplicatesView READ duplicatesView NOTIFY loaded)
+    Q_PROPERTY(int duplicateGroups READ duplicateGroups NOTIFY loaded)
     /// A few seconds of "Analysis finished/stopped" text after a batch.
     Q_PROPERTY(QString analysisMessage READ analysisMessage NOTIFY analysisMessageChanged)
     Q_PROPERTY(int analyzeProcessed READ analyzeProcessed NOTIFY analyzeProgressChanged)
@@ -787,6 +808,11 @@ private:
     void applyOwnOverrides(MixHouseTrackList& tracks) const;
     //! GlideMix: the tracks a smart playlist picks, filtered by the search box.
     MixHouseTrackList smartPlaylistTracks(int id) const;
+    MixHouseTrackList duplicateTracks();
+    bool duplicatesView() const { return m_externalSource == u"duplicates"; }
+    int duplicateGroups() const { return duplicatesView() ? m_duplicateGroups : 0; }
+    QSet<int> m_duplicateExtras;   ///< ids of the copies that aren't the best
+    int m_duplicateGroups = 0;
     MixHouseTrackList smartCandidates(const QString& source, const IMixHouseLibrary::TrackQuery& query) const;
     QSet<QString> smartPlaylistFiles(const QString& playlistRef) const;
     MixHouseTrackList playlistTracksForExport(const QString& kind, int id) const;
