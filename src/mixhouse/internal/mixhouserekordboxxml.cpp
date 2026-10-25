@@ -3,6 +3,7 @@
  */
 #include "mixhouserekordboxxml.h"
 
+#include <algorithm>
 #include <cmath>
 #include <thread>
 
@@ -179,7 +180,7 @@ void readNode(QXmlStreamReader& xml, Data& data, int parentId, const QHash<qint6
     }
 }
 
-std::shared_ptr<Data> parse(const QString& path)
+std::shared_ptr<Data> parse(const QString& path, std::atomic<int>* progress)
 {
     auto data = std::make_shared<Data>();
     QFile file(path);
@@ -199,6 +200,12 @@ std::shared_ptr<Data> parse(const QString& path)
             while (xml.readNextStartElement()) {
                 if (xml.name() == QLatin1String("TRACK")) {
                     readTrack(xml, *data, indexById, indexByLocation);
+                    // The collection is nearly all of the file: its share of
+                    // the bytes read is the progress (the playlists after it
+                    // are quick).
+                    if (progress && (data->tracks.size() % 200) == 0 && file.size() > 0) {
+                        progress->store(static_cast<int>(std::min<qint64>(99, file.pos() * 100 / file.size())));
+                    }
                 } else {
                     xml.skipCurrentElement();
                 }
@@ -286,17 +293,20 @@ void MixHouseRekordboxXml::reload()
         return;
     }
     m_loading = true;
+    m_progress->store(0);
+    m_changed.notify();   // the sidebar shows "Loading" right away
     const int generation = ++m_generation;
-    std::thread([this, file, generation]() {
+    std::thread([this, file, generation, progress = m_progress]() {
         QElapsedTimer timer;
         timer.start();
-        std::shared_ptr<const Data> data = parse(file);
+        std::shared_ptr<const Data> data = parse(file, progress.get());
         const qint64 ms = timer.elapsed();
         QTimer::singleShot(0, qApp, [this, data, generation, ms, file]() {
             if (generation != m_generation) {
                 return;
             }
             m_loading = false;
+            m_progress->store(-1);
             m_data = data;
             if (!data->error.isEmpty()) {
                 LOGW() << "rekordbox XML " << file << ": " << data->error;
@@ -315,6 +325,16 @@ void MixHouseRekordboxXml::reload()
 bool MixHouseRekordboxXml::loading() const
 {
     return m_loading;
+}
+
+int MixHouseRekordboxXml::loadProgress() const
+{
+    return m_loading ? m_progress->load() : -1;
+}
+
+QString MixHouseRekordboxXml::loadError() const
+{
+    return m_data ? m_data->error : QString();
 }
 
 muse::async::Notification MixHouseRekordboxXml::changed() const

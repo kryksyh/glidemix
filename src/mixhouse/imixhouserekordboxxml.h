@@ -26,6 +26,10 @@ public:
     virtual void setPath(const QString& path) = 0;
     //! True while the file is being read.
     virtual bool loading() const = 0;
+    //! How far the read has got, 0-100 (-1 when not reading).
+    virtual int loadProgress() const = 0;
+    //! Why the last read failed ("" when it didn't).
+    virtual QString loadError() const = 0;
     //! Fires when a (re)read finished or the path changed.
     virtual muse::async::Notification changed() const = 0;
 };

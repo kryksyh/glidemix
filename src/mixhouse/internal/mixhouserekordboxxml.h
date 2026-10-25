@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <atomic>
 #include <memory>
 
 #include <QFileSystemWatcher>
@@ -29,6 +30,8 @@ public:
     QString path() const override;
     void setPath(const QString& path) override;
     bool loading() const override;
+    int loadProgress() const override;
+    QString loadError() const override;
     muse::async::Notification changed() const override;
 
     struct Data {
@@ -48,6 +51,7 @@ private:
     std::shared_ptr<const Data> m_data;
     std::unique_ptr<QFileSystemWatcher> m_watcher;
     bool m_loading = false;
+    std::shared_ptr<std::atomic<int> > m_progress = std::make_shared<std::atomic<int> >(-1);
     bool m_reloadPending = false;
     int m_generation = 0;
     muse::async::Notification m_changed;

@@ -245,7 +245,39 @@ void MixHouseTrackListModel::load()
         m_subscribedToExternal = true;
         // A rekordbox XML read finishes in the background: refresh the
         // sidebar (and the table, when it shows that XML).
-        rekordboxXml()->changed().onNotify(this, [this]() { load(); });
+        rekordboxXml()->changed().onNotify(this, [this]() {
+            // Reading (again): follow its progress for the sidebar row.
+            if (rekordboxXml()->loading() && !m_rekordboxProgressTimer.isActive()) {
+                m_rekordboxProgressTimer.setInterval(250);
+                QObject::connect(&m_rekordboxProgressTimer, &QTimer::timeout, this, [this]() {
+                    const int progress = rekordboxLoadProgress();
+                    if (progress != m_rekordboxProgress) {
+                        m_rekordboxProgress = progress;
+                        emit rekordboxLoadProgressChanged();
+                    }
+                    if (progress < 0) {
+                        m_rekordboxProgressTimer.stop();
+                    }
+                }, Qt::UniqueConnection);
+                m_rekordboxProgressTimer.start();
+            }
+            m_rekordboxProgress = rekordboxLoadProgress();
+            emit rekordboxLoadProgressChanged();
+            load();
+            emit loaded();   // the sidebar row: Loading, then the count and the playlists
+            // A file just chosen (here or in File > Add to Library) that
+            // isn't a rekordbox collection: say so once.
+            if (!rekordboxXml()->loading() && rekordboxXml()->path() != m_rekordboxCheckedPath) {
+                m_rekordboxCheckedPath = rekordboxXml()->path();
+                const QString error = rekordboxXml()->loadError();
+                if (!error.isEmpty()) {
+                    interactive()->warning(muse::trc("mixhouse", "Rekordbox XML"),
+                                           muse::qtrc("mixhouse", "This file couldn't be read as a rekordbox collection: %1\n\n"
+                                                                  "In rekordbox: File > Export Collection in xml format.")
+                                           .arg(error).toStdString());
+                }
+            }
+        });
     }
     if (!m_subscribedToLibraryChanged) {
         m_subscribedToLibraryChanged = true;
@@ -692,9 +724,15 @@ const IMixHouseExternalLibrary* MixHouseTrackListModel::externalLibrary(const QS
 
 void MixHouseTrackListModel::setRekordboxXmlPath(const QString& path)
 {
-    if (rekordboxXml()) {
+    if (rekordboxXml() && !path.isEmpty()) {
+        m_rekordboxCheckedPath.clear();   // report on this file even when it is the same one again
         rekordboxXml()->setPath(path);
     }
+}
+
+int MixHouseTrackListModel::rekordboxLoadProgress() const
+{
+    return rekordboxXml() ? rekordboxXml()->loadProgress() : -1;
 }
 
 void MixHouseTrackListModel::setExternalPlaylist(const QString& source, int playlistId)
@@ -2039,8 +2077,13 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     // each one's tracks under the parent, its folders and playlists as
     // children (read-only).
     const bool rekordboxReady = rekordboxXml() && rekordboxXml()->available();
-    out << node("rekordbox", QObject::tr("Rekordbox XML"), 0, rekordboxReady ? "rekordbox-all" : "placeholder", -1,
-                rekordboxReady ? rekordboxXml()->trackCount() : 0, rekordboxReady);
+    const bool rekordboxLoading = rekordboxXml() && rekordboxXml()->loading();
+    // Nothing chosen yet: a click asks for the file (rekordbox: File >
+    // Export Collection in xml format). While it reads, the row shows the
+    // progress instead of the count (MixHouseLibraryPanel.qml).
+    out << node("rekordbox", QObject::tr("Rekordbox XML"), 0,
+                rekordboxReady ? "rekordbox-all" : rekordboxLoading ? "none" : "rekordbox-choose", -1,
+                rekordboxReady && !rekordboxLoading ? rekordboxXml()->trackCount() : 0, rekordboxReady);
     if (rekordboxReady && isOpen("rekordbox")) {
         appendExternalTree(out, rekordboxXml()->nodes(), QStringLiteral("rb-"), QStringLiteral("rekordbox-playlist"), -1, 1,
                            expandedIds);

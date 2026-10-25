@@ -620,6 +620,8 @@ public:
     /// "New" mirrors real mixxx's own recentFilter() exactly: added within
     /// the last 7 days (library/analysis/analysislibrarytablemodel.cpp).
     Q_PROPERTY(bool analyzing READ analyzing NOTIFY analyzingChanged)
+    //! GlideMix: how far the rekordbox XML has been read, 0-100 (-1 = not reading).
+    Q_PROPERTY(int rekordboxLoadProgress READ rekordboxLoadProgress NOTIFY rekordboxLoadProgressChanged)
     Q_PROPERTY(bool duplicatesView READ duplicatesView NOTIFY loaded)
     Q_PROPERTY(int duplicateGroups READ duplicateGroups NOTIFY loaded)
     /// A few seconds of "Analysis finished/stopped" text after a batch.
@@ -691,6 +693,7 @@ public:
 signals:
     void analysisMessageChanged();
     void loaded();
+    void rekordboxLoadProgressChanged();
     void uiColumnCountChanged();
     void analyzingChanged();
     void analyzeProgressChanged();
@@ -810,6 +813,12 @@ private:
     MixHouseTrackList smartPlaylistTracks(int id) const;
     MixHouseTrackList duplicateTracks();
     bool duplicatesView() const { return m_externalSource == u"duplicates"; }
+    int rekordboxLoadProgress() const;
+    QTimer m_rekordboxProgressTimer;
+    int m_rekordboxProgress = -1;
+    //! The rekordbox XML whose read result was last looked at: a file that
+    //! isn't a rekordbox collection is reported once per choice.
+    QString m_rekordboxCheckedPath;
     int duplicateGroups() const { return duplicatesView() ? m_duplicateGroups : 0; }
     QSet<int> m_duplicateExtras;   ///< ids of the copies that aren't the best
     int m_duplicateGroups = 0;

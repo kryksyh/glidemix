@@ -8,6 +8,7 @@
 #include "framework/actions/iactionsdispatcher.h"
 #include "framework/interactive/iinteractive.h"
 #include "mixhouse/imixhouselibrary.h"
+#include "mixhouse/imixhouserekordboxxml.h"
 #include "mixhouse/imixhouselibraryconfiguration.h"
 #include "broadcast/ibroadcaster.h"
 #include "mixhouse/imixhousebeatgrids.h"
@@ -33,6 +34,7 @@ class MixHouseActionsController : public muse::actions::Actionable, public muse:
 {
     muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher { this };
     muse::ContextInject<IMixHouseLibrary> library { this };
+    muse::ContextInject<IMixHouseRekordboxXml> rekordboxXml { this };
     muse::ContextInject<muse::IInteractive> interactive { this };
     muse::GlobalInject<IMixHouseLibraryConfiguration> libraryConfiguration;
     muse::GlobalInject<broadcast::IBroadcaster> broadcaster;

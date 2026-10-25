@@ -207,7 +207,12 @@ void MixHouseActionsController::importFromRekordboxXml()
     if (file.empty()) {
         return;
     }
-    reportImportResult(QStringLiteral("Rekordbox"), library()->importFromRekordboxXml(file.toQString()));
+    // GlideMix: shown under Rekordbox XML in the library, read-only and live,
+    // like Lexicon DJ; its row there shows the reading progress. (Copying
+    // it into the Music Collection is on that row's right-click menu.)
+    if (rekordboxXml()) {
+        rekordboxXml()->setPath(file.toQString());
+    }
 }
 
 void MixHouseActionsController::importFromItunesXml()

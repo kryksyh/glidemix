@@ -218,6 +218,14 @@ Item {
     property string currentViewKey: "all:-1"
     property var viewMemory: ({})
     property var pendingViewRestore: null
+    // GlideMix: the Rekordbox XML row opened, so its playlists show the
+    // moment the XML has been read.
+    function openRekordboxNode() {
+        if (sidebarColumn.expandedIds.indexOf("rekordbox") < 0) {
+            sidebarColumn.expandedIds = sidebarColumn.expandedIds.concat(["rekordbox"])
+        }
+    }
+
     function rememberViewAndSwitch(kind, refId) {
         if (kind + ":" + refId === root.currentViewKey) {
             return   // the same list clicked again: nothing changes
@@ -1214,9 +1222,12 @@ Item {
                                     { id: "delete-smart", title: qsTrc("mixhouse", "Delete") }
                                 ])
                             } else if (nodeId === "rekordbox") {
+                                // GlideMix: Import shows the XML here, read-only and
+                                // live, like Lexicon DJ; Copy puts its songs and
+                                // playlists into your own Music Collection.
                                 rekordboxMenu.show(pos, [
-                                    { id: "choose-rekordbox-xml", title: qsTrc("mixhouse", "Show Rekordbox XML File…") },
                                     { id: "import-rekordbox", title: qsTrc("mixhouse", "Import from Rekordbox XML…") },
+                                    { id: "copy-rekordbox", title: qsTrc("mixhouse", "Copy Rekordbox XML into Music Collection…") },
                                     {},
                                     { id: "export-rekordbox-xml", title: qsTrc("mixhouse", "Export GlideMix to rekordbox XML…") }
                                 ])
@@ -1285,6 +1296,15 @@ Item {
                             tracksModel.verifyMissingTracks()
                         } else if (kind === "duplicates") {
                             tracksModel.setDuplicates()
+                        } else if (kind === "rekordbox-choose") {
+                            // No rekordbox XML chosen yet: ask for it.
+                            Qt.callLater(function() {
+                                var xmlFile = rekordboxXmlPicker.selectFile()
+                                if (xmlFile) {
+                                    root.openRekordboxNode()
+                                    tracksModel.setRekordboxXmlPath(xmlFile)
+                                }
+                            })
                         } else if (kind === "hidden") {
                             tracksModel.setHidden()
                         } else if (kind === "placeholder") {
@@ -1575,10 +1595,28 @@ Item {
                             radius: 3.5
                             color: ui.theme.accentColor
                         }
+                        // GlideMix: the rekordbox XML being read -- its
+                        // progress instead of the count.
+                        readonly property bool rekordboxReading: modelData.nodeId === "rekordbox"
+                                                                 && tracksModel.rekordboxLoadProgress >= 0
+                        Rectangle {
+                            visible: parent.rekordboxReading
+                            Layout.preferredWidth: 46
+                            Layout.preferredHeight: 4
+                            radius: 2
+                            color: ui.theme.strokeColor
+                            Rectangle {
+                                width: parent.width * Math.max(0, tracksModel.rekordboxLoadProgress) / 100
+                                height: parent.height
+                                radius: 2
+                                color: ui.theme.accentColor
+                            }
+                        }
                         StyledTextLabel {
                             horizontalAlignment: Qt.AlignRight
-                            text: modelData.count > 0 ? modelData.count : ""
-                            opacity: 0.5
+                            text: parent.rekordboxReading ? qsTrc("mixhouse", "Loading %1%").arg(tracksModel.rekordboxLoadProgress)
+                                  : modelData.count > 0 ? modelData.count : ""
+                            opacity: parent.rekordboxReading ? 0.85 : 0.5
                         }
                         FlatButton {
                             id: sidebarAddButton
@@ -1640,8 +1678,8 @@ Item {
                                     newListPopup.openStandalone(true)
                                 } else if (nodeId === "rekordbox") {
                                     rekordboxMenu.show(pos, [
-                                        { id: "choose-rekordbox-xml", title: qsTrc("mixhouse", "Show Rekordbox XML File…") },
-                                    { id: "import-rekordbox", title: qsTrc("mixhouse", "Import from Rekordbox XML…") }
+                                        { id: "import-rekordbox", title: qsTrc("mixhouse", "Import from Rekordbox XML…") },
+                                        { id: "copy-rekordbox", title: qsTrc("mixhouse", "Copy Rekordbox XML into Music Collection…") }
                                     ])
                                 } else {
                                     computerMenu.show(pos, [
@@ -1960,15 +1998,17 @@ Item {
                 id: rekordboxMenu
 
                 onHandleMenuItem: function(itemId) {
-                    if (itemId === "choose-rekordbox-xml") {
-                        // GlideMix: the XML shown live under Rekordbox XML.
+                    if (itemId === "import-rekordbox") {
+                        // GlideMix: the XML shown live under Rekordbox XML,
+                        // like Lexicon DJ (its row shows the reading progress).
                         var xmlFile = rekordboxXmlPicker.selectFile()
                         if (xmlFile) {
+                            root.openRekordboxNode()
                             tracksModel.setRekordboxXmlPath(xmlFile)
                         }
                     } else if (itemId === "export-rekordbox-xml") {
                         tracksModel.exportRekordboxXml()
-                    } else if (itemId === "import-rekordbox") {
+                    } else if (itemId === "copy-rekordbox") {
                         var chosen = rekordboxXmlPicker.selectFile()
                         if (chosen) {
                             tracksModel.importFromRekordboxXml(chosen)
