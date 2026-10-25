@@ -25,11 +25,13 @@ clipautomation::Curve ClipParameterAutomation::Curve::Bezier() const
     for (size_t i = 0; i < envelope.GetNumberOfPoints(); ++i) {
         const auto& p = envelope[i];
         clipautomation::Point next{p.GetT(), p.GetVal()};
-        result.segments.push_back({previous, next, 0});
+        // GlideMix: a level held flat turns into an S-curve once a point on
+        // it is moved (new ramps ease like the tempo line's glides).
+        result.segments.push_back({previous, next, 0, previous.value == next.value});
         previous = next;
     }
     const double length = std::max(previous.timeOffset, envelope.GetTrackLen());
-    result.segments.push_back({previous, {length, previous.value}, 0});
+    result.segments.push_back({previous, {length, previous.value}, 0, true});
     return result;
 }
 
@@ -255,14 +257,16 @@ bool ClipParameterAutomation::HandleXMLTag(const std::string_view& tag, const At
         auto& curve = mCurves[*mReadingCurve];
         if (curve.envelope.GetNumberOfPoints() || curve.bezier.segments.size() >= MaxPointsPerCurve) { return fail(); }
         double t0 = -1, t1 = -1, v0 = -1, v1 = -1, c = 2;
+        bool eased = false;
         for (const auto& [name, value] : attrs) {
             if (name == "t0" && !value.TryGet(t0)) { return fail(); }
             if (name == "t1" && !value.TryGet(t1)) { return fail(); }
             if (name == "v0" && !value.TryGet(v0)) { return fail(); }
             if (name == "v1" && !value.TryGet(v1)) { return fail(); }
             if (name == "c" && !value.TryGet(c)) { return fail(); }
+            if (name == "e" && !value.TryGet(eased)) { return fail(); }
         }
-        curve.bezier.segments.push_back({{t0, v0}, {t1, v1}, static_cast<float>(c)});
+        curve.bezier.segments.push_back({{t0, v0}, {t1, v1}, static_cast<float>(c), eased});
         // Validate only the new join; avoid quadratic-time loading.
         clipautomation::Curve check;
         if (curve.bezier.segments.size() > 1) { check.segments.push_back(curve.bezier.segments[curve.bezier.segments.size() - 2]); }
@@ -319,6 +323,9 @@ void ClipParameterAutomation::WriteXML(XMLWriter& writer) const
                 writer.WriteAttr("t1", s.endPoint.timeOffset, 17);
                 writer.WriteAttr("v1", s.endPoint.value, 17);
                 writer.WriteAttr("c", static_cast<double>(s.curvature), 17);
+                if (s.eased) {
+                    writer.WriteAttr("e", true);
+                }
                 writer.EndTag("segment");
             }
         } else for (size_t i = 0; i < curve.envelope.GetNumberOfPoints(); ++i) {

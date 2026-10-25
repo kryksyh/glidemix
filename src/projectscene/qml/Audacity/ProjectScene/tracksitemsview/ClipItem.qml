@@ -1205,13 +1205,27 @@ Rectangle {
                         onHandleMenuItem: function(itemId) {
                             if (itemId === "delete-point") {
                                 pluginAutomationLane.deletePoint(node)
+                            } else if (itemId === "line-straight") {
+                                pluginAutomationLane.setSCurve(node, false)
+                            } else if (itemId === "line-s-curve") {
+                                pluginAutomationLane.setSCurve(node, true)
                             }
                         }
                         onClosed: pluginAutomationLane.clearPointHighlight()
                     }
                     onPointMenuRequested: function(node, x, y) {
                         pluginPointMenu.node = node
-                        pluginPointMenu.show(Qt.point(x, y), [{ id: "delete-point", title: qsTrc("projectscene", "Delete point") }])
+                        // GlideMix: the line on to the next point, like the tempo line's glides.
+                        const sCurve = pluginAutomationLane.isSCurve(node)
+                        let items = [
+                            { id: "line-straight", title: qsTrc("projectscene", "Line: straight"), checkable: true, checked: !sCurve },
+                            { id: "line-s-curve", title: qsTrc("projectscene", "Line: S-curve (smooth start and end)"), checkable: true, checked: sCurve }
+                        ]
+                        if (node > 0) {
+                            items.push({})
+                            items.push({ id: "delete-point", title: qsTrc("projectscene", "Delete point") })
+                        }
+                        pluginPointMenu.show(Qt.point(x, y), items)
                     }
 
                     // Readable over the waveform, and below the IN/OUT markers.
@@ -1281,13 +1295,27 @@ Rectangle {
                         onHandleMenuItem: function(itemId) {
                             if (itemId === "delete-point") {
                                 automation.deletePoint(node)
+                            } else if (itemId === "line-straight") {
+                                automation.setSCurve(node, false)
+                            } else if (itemId === "line-s-curve") {
+                                automation.setSCurve(node, true)
                             }
                         }
                         onClosed: automation.clearPointHighlight()
                     }
                     onPointMenuRequested: function(node, x, y) {
                         gainPointMenu.node = node
-                        gainPointMenu.show(Qt.point(x, y), [{ id: "delete-point", title: qsTrc("projectscene", "Delete point") }])
+                        // GlideMix: the line on to the next point, like the tempo line's glides.
+                        const sCurve = automation.isSCurve(node)
+                        let items = [
+                            { id: "line-straight", title: qsTrc("projectscene", "Line: straight"), checkable: true, checked: !sCurve },
+                            { id: "line-s-curve", title: qsTrc("projectscene", "Line: S-curve (smooth start and end)"), checkable: true, checked: sCurve }
+                        ]
+                        if (node > 0) {
+                            items.push({})
+                            items.push({ id: "delete-point", title: qsTrc("projectscene", "Delete point") })
+                        }
+                        gainPointMenu.show(Qt.point(x, y), items)
                     }
 
 

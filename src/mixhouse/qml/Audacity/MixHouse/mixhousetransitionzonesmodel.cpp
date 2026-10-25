@@ -71,6 +71,7 @@ QVariant MixHouseTransitionZonesModel::data(const QModelIndex& index, int role) 
     case EndTimeRole: return z.end;
     case CrossfadedRole: return z.crossfaded;
     case PresetRole: return QString::fromStdString(z.preset);
+    case DisabledRole: return z.disabled;
     default: return {};
     }
 }
@@ -84,6 +85,7 @@ QHash<int, QByteArray> MixHouseTransitionZonesModel::roleNames() const
         { EndTimeRole, "endTime" },
         { CrossfadedRole, "crossfaded" },
         { PresetRole, "preset" },
+        { DisabledRole, "disabled" },
     };
 }
 
@@ -210,6 +212,58 @@ bool MixHouseTransitionZonesModel::addEffect(int row, const QString& kind)
     }
     const auto zone = m_zones[static_cast<size_t>(row)];
     return transitions()->addEffect(zone.outgoing, zone.incoming, kind.toStdString());
+}
+
+QVariantList MixHouseTransitionZonesModel::addedEffects(int row) const
+{
+    QVariantList result;
+    if (row < 0 || row >= rowCount() || !transitions()) {
+        return result;
+    }
+    const auto& zone = m_zones[static_cast<size_t>(row)];
+    for (const auto& e : transitions()->addedEffects(zone.outgoing, zone.incoming)) {
+        result.push_back(QVariantMap { { "kind", QString::fromStdString(e.kind) },
+                                       { "name", QString::fromStdString(e.name) },
+                                       { "amount", e.amount },
+                                       { "enabled", e.enabled } });
+    }
+    return result;
+}
+
+bool MixHouseTransitionZonesModel::setEffectAmount(int row, const QString& kind, double amount)
+{
+    if (row < 0 || row >= rowCount() || !transitions()) {
+        return false;
+    }
+    const auto zone = m_zones[static_cast<size_t>(row)];
+    return transitions()->setEffectAmount(zone.outgoing, zone.incoming, kind.toStdString(), amount);
+}
+
+bool MixHouseTransitionZonesModel::removeEffect(int row, const QString& kind)
+{
+    if (row < 0 || row >= rowCount() || !transitions()) {
+        return false;
+    }
+    const auto zone = m_zones[static_cast<size_t>(row)];
+    return transitions()->removeEffect(zone.outgoing, zone.incoming, kind.toStdString());
+}
+
+bool MixHouseTransitionZonesModel::setEffectEnabled(int row, const QString& kind, bool enabled)
+{
+    if (row < 0 || row >= rowCount() || !transitions()) {
+        return false;
+    }
+    const auto zone = m_zones[static_cast<size_t>(row)];
+    return transitions()->setEffectEnabled(zone.outgoing, zone.incoming, kind.toStdString(), enabled);
+}
+
+bool MixHouseTransitionZonesModel::setTransitionEnabled(int row, bool enabled)
+{
+    if (row < 0 || row >= rowCount() || !transitions()) {
+        return false;
+    }
+    const auto zone = m_zones[static_cast<size_t>(row)];
+    return transitions()->setTransitionEnabled(zone.outgoing, zone.incoming, enabled);
 }
 
 double MixHouseTransitionZonesModel::lengthBars(int row) const

@@ -533,6 +533,19 @@ void ProjectViewState::changeTrackHeight(const trackedit::TrackId& trackId, int 
     }
 }
 
+void ProjectViewState::setTracksHeight(const trackedit::TrackIdList& trackIds, int height)
+{
+    if (trackIds.empty()) {
+        return;
+    }
+    m_batchingTrackHeights = true;
+    for (const trackedit::TrackId& id : trackIds) {
+        setTrackHeight(id, height);
+    }
+    m_batchingTrackHeights = false;
+    recomputeTotalTrackHeight();
+}
+
 void ProjectViewState::setTrackHeight(const trackedit::TrackId& trackId, int height)
 {
     TrackData* d = nullptr;
@@ -547,7 +560,9 @@ void ProjectViewState::setTrackHeight(const trackedit::TrackId& trackId, int hei
     d->height.set(newHeight);
     d->collapsed.set(height < TRACK_COLLAPSE_HEIGHT);
 
-    recomputeTotalTrackHeight();
+    if (!m_batchingTrackHeights) {
+        recomputeTotalTrackHeight();
+    }
 
     const project::IAudacityProjectPtr prj = globalContext()->currentProject();
     if (prj) {

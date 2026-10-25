@@ -28,7 +28,8 @@ QVariantList BezierAutomationLane::segments() const
     QVariantList result;
     for (const auto& s : m_curve.segments) {
         result.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", s.startPoint.value},
-            {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature}});
+            {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature},
+            {"eased", s.eased}});
     }
     return result;
 }
@@ -39,15 +40,27 @@ void BezierAutomationLane::setSegments(const QVariantList& data)
     // edits reload the clip model on every move) -- keep the gesture's own
     // curve; the release commits and the next update applies normally.
     if (m_dragging) { return; }
+    // GlideMix: never keep showing the previous curve when new data comes in
+    // -- that left stray points on screen until a restart. Values a rounding
+    // error outside 0..1 are clamped and joins re-attached; anything still
+    // unusable clears the lane.
     clipautomation::Curve curve;
     for (const auto& entry : data) {
         const auto s = entry.toMap();
         if (!s.contains("startTime") || !s.contains("endTime") || !s.contains("startValue")
-            || !s.contains("endValue") || !s.contains("curvature")) { return; }
-        curve.segments.push_back({{s["startTime"].toDouble(), s["startValue"].toDouble()},
-            {s["endTime"].toDouble(), s["endValue"].toDouble()}, s["curvature"].toFloat()});
+            || !s.contains("endValue") || !s.contains("curvature")) { curve = {}; break; }
+        clipautomation::Segment segment{{s["startTime"].toDouble(), std::clamp(s["startValue"].toDouble(), 0.0, 1.0)},
+            {s["endTime"].toDouble(), std::clamp(s["endValue"].toDouble(), 0.0, 1.0)},
+            std::clamp(s["curvature"].toFloat(), -1.0f, 1.0f), s.value("eased", false).toBool()};
+        if (!curve.segments.empty()) {
+            segment.startPoint = curve.segments.back().endPoint;
+        }
+        curve.segments.push_back(segment);
     }
-    if (!curve.Valid()) { return; }
+    if (!curve.Valid()) { curve = {}; }
+    m_hoverNode = -1;
+    m_selectedNode = -1;
+    m_hoverPoint = false;
     m_curve = std::move(curve);
     emit segmentsChanged();
     update();
@@ -119,6 +132,9 @@ void BezierAutomationLane::paint(QPainter* painter)
             const QPointF from = map(s.startPoint), to = map(s.endPoint);
             path.lineTo(to.x(), from.y());   // hold
             path.lineTo(to);                 // jump at the next point
+        } else if (s.eased) {
+            const auto [c1, c2] = s.CubicControlPoints();
+            path.cubicTo(map(c1), map(c2), map(s.endPoint));
         } else {
             path.quadTo(map(s.ControlPoint()), map(s.endPoint));
         }
@@ -223,8 +239,9 @@ void BezierAutomationLane::mousePressEvent(QMouseEvent* e)
 {
     if (e->button() == Qt::RightButton) {
         // Right-click on a point: its menu. Anywhere else the clip's menu.
+        // The first point has one too (its line's shape), without Delete.
         const int node = hitNode(e->position());
-        if (node <= 0 || node >= static_cast<int>(m_curve.segments.size())) {
+        if (node < 0 || node >= static_cast<int>(m_curve.segments.size())) {
             e->ignore();
             return;
         }
@@ -269,6 +286,7 @@ void BezierAutomationLane::mouseMoveEvent(QMouseEvent* e)
     if (m_bending) {
         // Curvature isn't a point value -- nothing for a value readout to show.
         s.curvature = static_cast<float>(std::clamp(s.curvature + delta * 4, -1.0, 1.0));
+        s.eased = false;   // bending replaces an S-curve, as on the tempo line
         clearActivePoint();
     } else if (m_shelf) {
         const double from = std::max(m_selectionStart, m_curve.segments.front().startPoint.timeOffset);
@@ -375,6 +393,27 @@ void BezierAutomationLane::clearPointHighlight()
         m_selectedNode = -1;
         update();
     }
+}
+
+bool BezierAutomationLane::isSCurve(int node) const
+{
+    return node >= 0 && node < static_cast<int>(m_curve.segments.size())
+           && m_curve.segments[static_cast<size_t>(node)].eased;
+}
+
+bool BezierAutomationLane::setSCurve(int node, bool sCurve)
+{
+    if (m_dragging || node < 0 || node >= static_cast<int>(m_curve.segments.size())) {
+        return false;
+    }
+    auto& segment = m_curve.segments[static_cast<size_t>(node)];
+    segment.eased = sCurve;
+    segment.curvature = 0;
+    m_selectedNode = -1;
+    emit segmentsChanged();
+    update();
+    emit editCommitted(segments());
+    return true;
 }
 
 bool BezierAutomationLane::deletePoint(int node)

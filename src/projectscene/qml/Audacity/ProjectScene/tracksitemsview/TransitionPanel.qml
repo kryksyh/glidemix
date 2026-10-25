@@ -16,6 +16,8 @@ import QtQuick.Layouts
 import Muse.Ui
 import Muse.UiComponents
 
+import Audacity.Effects
+
 import "../trackspanel/audio"
 
 StyledDialogView {
@@ -325,36 +327,127 @@ StyledDialogView {
             }
         }
 
-        // ---- ADD FX -------------------------------------------------------
-        RowLayout {
+        // ---- effects: the track effect list's look -------------------------
+        // GlideMix: each effect ADD FX put on this transition is a row like a
+        // track's effect -- power, name, its amount, a menu to remove it --
+        // and acts inside the transition only.
+        ColumnLayout {
             Layout.fillWidth: true
+            spacing: 6
+
+            Repeater {
+                id: fxRepeater
+                model: {
+                    root.revision
+                    return root.zonesModel && root.row >= 0 ? root.zonesModel.addedEffects(root.row) : []
+                }
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 28
+                    spacing: 6
+
+                    BypassEffectButton {
+                        size: 28
+                        accentButton: modelData.enabled
+                        toolTipTitle: qsTrc("mixhouse", "Switch this effect on or off")
+                        onClicked: root.zonesModel.setEffectEnabled(root.row, modelData.kind, !modelData.enabled)
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 3
+                        color: ui.theme.backgroundPrimaryColor
+                        border.color: ui.theme.strokeColor
+                        opacity: modelData.enabled ? 1 : 0.6
+                        StyledTextLabel {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            horizontalAlignment: Text.AlignLeft
+                            text: modelData.name
+                            elide: Text.ElideRight
+                        }
+                    }
+                    KnobControl {
+                        id: amountKnob
+                        radius: 12
+                        from: 0
+                        to: 1
+                        stepSize: 0.02
+                        value: modelData.amount
+                        onNewValueRequested: function(v) {
+                            value = v
+                            amountTimer.restart()
+                        }
+                        // One turn, one undo step.
+                        Timer {
+                            id: amountTimer
+                            interval: 350
+                            onTriggered: root.zonesModel.setEffectAmount(root.row, modelData.kind, amountKnob.value)
+                        }
+                    }
+                    StyledTextLabel {
+                        Layout.preferredWidth: 36
+                        opacity: 0.7
+                        text: Math.round(amountKnob.value * 100) + "%"
+                    }
+                    // No pop-up menus in this window: on Windows a menu opened from
+                    // a floating window closes without running the chosen item.
+                    FlatButton {
+                        Layout.preferredWidth: 28
+                        Layout.fillHeight: true
+                        icon: IconCode.CLOSE_X_ROUNDED
+                        toolTipTitle: qsTrc("mixhouse", "Remove effect")
+                        onClicked: root.zonesModel.removeEffect(root.row, modelData.kind)
+                    }
+                }
+            }
 
             FlatButton {
-                text: qsTrc("mixhouse", "+ ADD FX")
-                onClicked: fxMenu.toggleOpened([
-                    { id: "filter-out", title: qsTrc("mixhouse", "Filter: song out thins out") },
-                    { id: "filter-in", title: qsTrc("mixhouse", "Filter: song in opens up") },
-                    { id: "echo", title: qsTrc("mixhouse", "Echo out") },
-                    { id: "reverb", title: qsTrc("mixhouse", "Reverb out") },
-                    { id: "riser", title: qsTrc("mixhouse", "Noise riser") },
-                    { id: "downsweep", title: qsTrc("mixhouse", "Noise downsweep") },
-                    {},
-                    { id: "vinyl-brake", title: qsTrc("mixhouse", "Vinyl brake (last beat)") },
-                    { id: "tape-stop", title: qsTrc("mixhouse", "Tape stop (last bar)") },
-                    { id: "roll-out", title: qsTrc("mixhouse", "Beat roll out (last 2 beats)") }
-                ])
+                id: addEffectButton
+                property bool open: false
+                Layout.fillWidth: true
+                Layout.preferredHeight: 28
+                text: open ? qsTrc("mixhouse", "Close") : qsTrc("mixhouse", "Add effect")
+                onClicked: open = !open
+            }
 
-                StyledMenuLoader {
-                    id: fxMenu
-                    onHandleMenuItem: function(itemId) {
-                        root.zonesModel.addEffect(root.row, itemId)
+            // The effects to add, listed in the panel (no pop-up menu, see above).
+            GridLayout {
+                Layout.fillWidth: true
+                visible: addEffectButton.open
+                columns: 2
+                columnSpacing: 6
+                rowSpacing: 4
+                Repeater {
+                    model: [
+                        { id: "filter-out", title: qsTrc("mixhouse", "Filter: song out thins out") },
+                        { id: "filter-in", title: qsTrc("mixhouse", "Filter: song in opens up") },
+                        { id: "echo", title: qsTrc("mixhouse", "Echo out") },
+                        { id: "reverb", title: qsTrc("mixhouse", "Reverb out") },
+                        { id: "riser", title: qsTrc("mixhouse", "Noise riser") },
+                        { id: "downsweep", title: qsTrc("mixhouse", "Noise downsweep") },
+                        { id: "vinyl-brake", title: qsTrc("mixhouse", "Vinyl brake (last beat)") },
+                        { id: "tape-stop", title: qsTrc("mixhouse", "Tape stop (last bar)") },
+                        { id: "roll-out", title: qsTrc("mixhouse", "Beat roll out (last 2 beats)") }
+                    ]
+                    delegate: FlatButton {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 26
+                        text: modelData.title
+                        onClicked: {
+                            root.zonesModel.addEffect(root.row, modelData.id)
+                            addEffectButton.open = false
+                        }
                     }
                 }
             }
 
             StyledTextLabel {
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignRight
+                horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 opacity: 0.6
                 text: qsTrc("mixhouse", "Turning a control sets a point at the playhead.")

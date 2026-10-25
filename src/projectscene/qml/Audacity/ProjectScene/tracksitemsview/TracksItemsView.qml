@@ -1508,7 +1508,27 @@ Rectangle {
             delegate: Item {
                 id: zoneItem
 
-                readonly property color accent: "#FFAE5A"
+                // GlideMix: grey while the transition is switched off.
+                readonly property color accent: model.disabled ? "#8a8a8a" : "#FFAE5A"
+
+                function menuItems() {
+                    return transitionZonesModel.presetMenu(model.index).concat([
+                        {},
+                        model.disabled
+                            ? { id: "enable", title: qsTrc("mixhouse", "Turn transition on") }
+                            : { id: "disable", title: qsTrc("mixhouse", "Turn transition off (right-click the pill)") },
+                        { id: "remove", title: qsTrc("mixhouse", "Remove transition"), enabled: model.crossfaded }
+                    ])
+                }
+                // Right-click on the pill: the transition off (grey, everything it
+                // wrote removed) or back on. A left click opens its menu.
+                function pillClicked(mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                        transitionZonesModel.setTransitionEnabled(model.index, model.disabled)
+                    } else {
+                        zoneMenu.toggleOpened(menuItems())
+                    }
+                }
                 // tracksVerticalOffset and tracksLayoutRevision are read so the zone
                 // follows vertical scrolling and tracks changing height or place.
                 readonly property int scrollY: tracksViewState.tracksVerticalOffset
@@ -1809,12 +1829,7 @@ Rectangle {
                         anchors.fill: parent
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            zoneMenu.toggleOpened(transitionZonesModel.presetMenu(model.index).concat([
-                                {},
-                                { id: "remove", title: qsTrc("mixhouse", "Remove transition"), enabled: model.crossfaded }
-                            ]))
-                        }
+                        onClicked: function(mouse) { zoneItem.pillClicked(mouse) }
                     }
 
                     Row {
@@ -1835,13 +1850,8 @@ Rectangle {
                                 anchors.margins: -4
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    // Crossfade, the transitions from Preferences > Transitions, then Remove.
-                                    zoneMenu.toggleOpened(transitionZonesModel.presetMenu(model.index).concat([
-                                        {},
-                                        { id: "remove", title: qsTrc("mixhouse", "Remove transition"), enabled: model.crossfaded }
-                                    ]))
-                                }
+                                // Crossfade, the transitions from Preferences > Transitions, then Remove.
+                                onClicked: function(mouse) { zoneItem.pillClicked(mouse) }
                             }
                         }
 
@@ -1909,10 +1919,7 @@ Rectangle {
                         zoneEnd: model.endTime
                         presetName: model.preset
                         onPresetMenuRequested: {
-                            zoneMenu.toggleOpened(transitionZonesModel.presetMenu(model.index).concat([
-                                {},
-                                { id: "remove", title: qsTrc("mixhouse", "Remove transition"), enabled: model.crossfaded }
-                            ]))
+                            zoneMenu.toggleOpened(zoneItem.menuItems())
                         }
                     }
 
@@ -1926,6 +1933,10 @@ Rectangle {
                                 transitionZonesModel.applyTransition(model.index, itemId.substring(11))
                             } else if (itemId === "remove") {
                                 transitionZonesModel.removeCrossfade(model.index)
+                            } else if (itemId === "disable") {
+                                transitionZonesModel.setTransitionEnabled(model.index, false)
+                            } else if (itemId === "enable") {
+                                transitionZonesModel.setTransitionEnabled(model.index, true)
                             }
                         }
                     }

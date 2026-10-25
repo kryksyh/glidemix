@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <QTimer>
+
 #include "modularity/ioc.h"
 #include "context/iglobalcontext.h"
 #include "actions/iactionsdispatcher.h"
@@ -45,7 +47,13 @@ private:
     void onProjectChanged();
     void updateValue();
 
+    void applyTrackHeight();
+
     bool m_isTimeZoom = false;
     double m_value = 0.0;
+    //! GlideMix: track zoom applies at most once per frame, all tracks at once;
+    //! the handle follows the mouse meanwhile instead of snapping back.
+    QTimer m_heightTimer;
+    int m_pendingHeight = -1;
 };
 }

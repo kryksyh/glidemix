@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace clipautomation {
@@ -27,10 +28,17 @@ struct Point {
     double value{}; // Normalized parameter value, not audio amplitude.
 };
 
+// GlideMix: the S-curve (smoothstep) a DJ rides a fader with -- flat at both
+// ends, quickest in the middle; the same shape as the tempo line's glides.
+inline double SCurve(double u) noexcept { return u * u * (3.0 - 2.0 * u); }
+
 struct Segment {
     Point startPoint;
     Point endPoint;
     float curvature{};
+    // GlideMix: an S-curve instead of the straight/bent line. Bending a
+    // segment (curvature) replaces its S-curve, so only one applies.
+    bool eased{};
 
     // Time is linear in the Bezier parameter. No inverse polynomial is needed.
     // Positive curvature bulges above the straight line in parameter space.
@@ -38,6 +46,7 @@ struct Segment {
     // quadratic Bezier with this control point traces EXACTLY the Evaluate()
     // curve pointwise (verified algebraically), which is what keeps the
     // rendered line and the real evaluated/played value in agreement.
+    // For an eased segment the line is a cubic: CubicControlPoints().
     Point ControlPoint() const noexcept
     {
         return {(startPoint.timeOffset + endPoint.timeOffset) * .5,
@@ -45,11 +54,23 @@ struct Segment {
                     + kCurvatureStrength * curvature * std::abs(endPoint.value - startPoint.value) * .5};
     }
 
+    // A smoothstep in value with time linear is the cubic Bezier whose inner
+    // control points hold the start and end values at 1/3 and 2/3 of the time.
+    std::pair<Point, Point> CubicControlPoints() const noexcept
+    {
+        const double duration = endPoint.timeOffset - startPoint.timeOffset;
+        return {{startPoint.timeOffset + duration / 3, startPoint.value},
+                {startPoint.timeOffset + duration * 2 / 3, endPoint.value}};
+    }
+
     double Evaluate(double time) const noexcept
     {
         const double duration = endPoint.timeOffset - startPoint.timeOffset;
         if (duration <= 0) { return endPoint.value; } // right limit of a step
         const double u = std::clamp((time - startPoint.timeOffset) / duration, 0.0, 1.0);
+        if (eased) {
+            return startPoint.value + SCurve(u) * (endPoint.value - startPoint.value);
+        }
         const double value = startPoint.value + u * (endPoint.value - startPoint.value)
             + kCurvatureStrength * curvature * std::abs(endPoint.value - startPoint.value) * u * (1 - u);
         // Defensive backstop for the rare extreme-placement overshoot noted
@@ -58,11 +79,14 @@ struct Segment {
     }
 
     // Exact restriction of a quadratic, retaining its shape after a split/trim.
+    // A part of an S-curve becomes an S-curve of its own between the same
+    // values: exact at both ends, the same flat-ended shape in between.
     Segment Slice(double from, double to) const noexcept
     {
         from = std::clamp(from, startPoint.timeOffset, endPoint.timeOffset);
         to = std::clamp(to, from, endPoint.timeOffset);
-        Segment result{{from, Evaluate(from)}, {to, Evaluate(to)}, 0};
+        Segment result{{from, Evaluate(from)}, {to, Evaluate(to)}, 0, eased};
+        if (eased) { return result; }
         const double duration = endPoint.timeOffset - startPoint.timeOffset;
         const double delta = std::abs(result.endPoint.value - result.startPoint.value);
         if (duration > 0 && delta > 0) {
@@ -200,7 +224,9 @@ public:
         if (segments.empty()) { return points; }
         points.push_back(segments.front().startPoint);
         for (const auto& s : segments) {
-            const double bound = std::abs(kCurvatureStrength * s.curvature * (s.endPoint.value - s.startPoint.value));
+            // An S-curve's chord error is at most max|V''| / (8 n^2), |V''| <= 6 |delta|.
+            const double bound = s.eased ? std::abs(s.endPoint.value - s.startPoint.value) * 6.0 / 2.0
+                : std::abs(kCurvatureStrength * s.curvature * (s.endPoint.value - s.startPoint.value));
             const auto count = std::max(1.0, std::ceil(std::sqrt(bound / (4 * tolerance))));
             if (count > 65536 || points.size() + count > 1000000) {
                 throw std::length_error("Automation ramp budget exceeded");

@@ -8,6 +8,7 @@
 #include "context/iglobalcontext.h"
 #include "trackedit/iprojecthistory.h"
 #include "trackedit/iclipsinteraction.h"
+#include "automation/iclipgaininteraction.h"
 #include "projectscene/types/projectscenetypes.h"
 #include "projectscene/iprojectviewstate.h"
 
@@ -38,6 +39,7 @@ class ClipPluginAutomationModel : public QObject, public muse::Contextable, publ
     muse::ContextInject<context::IGlobalContext> globalContext{this};
     muse::ContextInject<trackedit::IProjectHistory> projectHistory{this};
     muse::ContextInject<trackedit::IClipsInteraction> clipsInteraction{this};
+    muse::ContextInject<IClipGainInteraction> clipGainInteraction{this};
 public:
     explicit ClipPluginAutomationModel(QObject* parent = nullptr);
     Q_INVOKABLE void init();

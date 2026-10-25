@@ -20,7 +20,38 @@ constexpr double kSpecSilentAmplitude = 1e-3;
 struct SpecPoint {
     double offset = 0.0;
     double value = 1.0;
+    float curvature = 0.0f;   ///< the line on to the next point (volume only)
+    bool eased = false;
 };
+
+// The volume line draws a fade as one shaped segment instead of many points:
+// its curvature (the clip volume line's own bend, kCurvatureStrength 1.5
+// included) giving each shape exactly or nearly.
+void specFadeSegment(MixHouseFadeShape shape, bool falling, float& curvature, bool& eased)
+{
+    constexpr float kStrength = 1.5f;   // clipautomation::kCurvatureStrength
+    curvature = 0.0f;
+    eased = false;
+    switch (shape) {
+    case MixHouseFadeShape::Linear:
+        break;
+    case MixHouseFadeShape::SCurve:
+        eased = true;
+        break;
+    case MixHouseFadeShape::EqualPower:
+        // sin / cos bulge above the straight line: 0.707 at the middle, as
+        // the bend reaches with 0.828 (within 1% elsewhere).
+        curvature = 0.828f / kStrength;
+        break;
+    case MixHouseFadeShape::Early:
+        // 1-(1-u)^2 rising (above), (1-u)^2 falling (below): exact.
+        curvature = (falling ? -1.0f : 1.0f) / kStrength;
+        break;
+    case MixHouseFadeShape::Late:
+        curvature = (falling ? 1.0f : -1.0f) / kStrength;
+        break;
+    }
+}
 
 double specDb(double amplitude)
 {
@@ -62,11 +93,20 @@ double specFadeShape(MixHouseFadeShape shape, double u, bool falling)
 }
 
 // One track's line for one lane. `outgoing` picks which of the two tracks it is.
-std::vector<SpecPoint> specLine(const MixHouseTransitionLane& lane, double length, bool outgoing)
+// `shaped`: the volume line, which takes a fade as one shaped segment; the EQ
+// lanes are sampled.
+std::vector<SpecPoint> specLine(const MixHouseTransitionLane& lane, double length, bool outgoing, bool shaped = false)
 {
     std::vector<SpecPoint> line;
     const double strength = std::clamp(lane.strength, 0.0, 1.0);
     const auto fade = [&](bool fallingLine) {
+        if (shaped) {
+            SpecPoint first { 0.0, 1.0 - strength * (1.0 - specFadeShape(lane.shape, 0.0, fallingLine)) };
+            specFadeSegment(lane.shape, fallingLine, first.curvature, first.eased);
+            line.push_back(first);
+            specAdd(line, length, 1.0 - strength * (1.0 - specFadeShape(lane.shape, 1.0, fallingLine)));
+            return;
+        }
         for (int i = 0; i <= kSpecCurveSteps; ++i) {
             const double u = double(i) / kSpecCurveSteps;
             const double shape = specFadeShape(lane.shape, u, fallingLine);
@@ -115,6 +155,7 @@ MixHouseTransitionSpec makeSpec(const char* name, double lengthBeats, MixHouseCu
     spec.name = name;
     spec.lengthBeats = lengthBeats;
     spec.volume.curve = volume;
+    spec.volume.shape = MixHouseFadeShape::SCurve;   // GlideMix: the built-ins fade like a DJ's hand
     spec.bass.curve = bass;
     spec.bass.crossing = crossing;
     spec.bass.leaveOutBeats = leaveOutBeats;
@@ -214,11 +255,11 @@ MixHouseTransitionPreset presetFromSpec(const MixHouseTransitionSpec& spec)
     preset.name = spec.name;
     preset.beatmix = true;   // offsets are in beats
     const double length = std::max(1.0, spec.lengthBeats);
-    for (const SpecPoint& p : specLine(spec.volume, length, true)) {
-        preset.outro.push_back({ p.offset, specDb(p.value) });
+    for (const SpecPoint& p : specLine(spec.volume, length, true, true)) {
+        preset.outro.push_back({ p.offset, specDb(p.value), p.curvature, p.eased });
     }
-    for (const SpecPoint& p : specLine(spec.volume, length, false)) {
-        preset.intro.push_back({ p.offset, specDb(p.value) });
+    for (const SpecPoint& p : specLine(spec.volume, length, false, true)) {
+        preset.intro.push_back({ p.offset, specDb(p.value), p.curvature, p.eased });
     }
     for (const SpecPoint& p : specLine(spec.bass, length, true)) {
         preset.bassOutro.push_back({ p.offset, p.value });

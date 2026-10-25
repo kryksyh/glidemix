@@ -49,6 +49,9 @@ public:
     /// Removes the point, joining its two segments (one undoable edit). The
     /// clip's first and last points can't be removed.
     Q_INVOKABLE bool deletePoint(int node);
+    /// GlideMix: the line from point `node` to the next -- S-curve or straight.
+    Q_INVOKABLE bool isSCurve(int node) const;
+    Q_INVOKABLE bool setSCurve(int node, bool sCurve);
     /// The point stays highlighted while its menu is open.
     Q_INVOKABLE void clearPointHighlight();
 signals:

@@ -130,6 +130,24 @@ void EffectsHost::ConfigureAutomation(const WaveTrack& track)
 
 void EffectsHost::MeasureLatencies(Arrangement& arrangement)
 {
+    // GlideMix: the master effects too, as Audacity's AudioIO discards their
+    // latency from the master buffers.
+    arrangement.masterLatencyFrames = 0;
+    if (const auto project = mProject.lock()) {
+        auto& master = RealtimeEffectList::Get(*project);
+        if (master.IsActive()) {
+            for (size_t e = 0; e < master.GetStatesCount(); ++e) {
+                const auto state = master.GetStateAt(e);
+                if (!state || !state->IsActive()) {
+                    continue;
+                }
+                if (const auto instance = state->GetInstance()) {
+                    arrangement.masterLatencyFrames
+                        += static_cast<size_t>(instance->GetLatency(state->GetSettings(), mRate));
+                }
+            }
+        }
+    }
     for (TrackSnapshot& track : arrangement.tracks) {
         track.latencyFrames = 0;
         if (!track.track || !mGroups.count(track.track.get())) {

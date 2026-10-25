@@ -23,6 +23,9 @@ MixtapeSliderToolBarItem::MixtapeSliderToolBarItem(const muse::ui::UiAction& act
                                                    QObject* parent)
     : muse::uicomponents::ToolBarItem(action, type, parent), m_isTimeZoom(action.code == "mixtape-zoom-slider")
 {
+    m_heightTimer.setSingleShot(true);
+    m_heightTimer.setInterval(16);
+    connect(&m_heightTimer, &QTimer::timeout, this, &MixtapeSliderToolBarItem::applyTrackHeight);
     globalContext()->currentProjectChanged().onNotify(this, [this]() {
         onProjectChanged();
     });
@@ -52,15 +55,30 @@ void MixtapeSliderToolBarItem::setValue(double value)
         const double pxPerSec = kMinPxPerSec * std::pow(kMaxPxPerSec / kMinPxPerSec, value);
         actionsDispatcher()->dispatch("mixtape-zoom-set", muse::actions::ActionData::make_arg1<double>(pxPerSec));
     } else {
-        const int height = static_cast<int>(std::lround(kMinTrackHeight + value * (kMaxTrackHeight - kMinTrackHeight)));
-        for (const trackedit::TrackId& id : project->trackIdList()) {
-            vs->setTrackHeight(id, height);
+        m_pendingHeight = static_cast<int>(std::lround(kMinTrackHeight + value * (kMaxTrackHeight - kMinTrackHeight)));
+        if (!m_heightTimer.isActive()) {
+            applyTrackHeight();
+            m_heightTimer.start();   // later moves within this frame wait for it
         }
     }
 
     if (!qFuzzyCompare(m_value + 1.0, value + 1.0)) {
         m_value = value;
         emit valueChanged();
+    }
+}
+
+void MixtapeSliderToolBarItem::applyTrackHeight()
+{
+    if (m_pendingHeight < 0) {
+        return;
+    }
+    const int height = m_pendingHeight;
+    m_pendingHeight = -1;
+    auto vs = viewState();
+    auto project = globalContext()->currentTrackeditProject();
+    if (vs && project) {
+        vs->setTracksHeight(project->trackIdList(), height);
     }
 }
 
@@ -117,6 +135,9 @@ void MixtapeSliderToolBarItem::updateValue()
             value = std::log(zoom / kMinPxPerSec) / std::log(kMaxPxPerSec / kMinPxPerSec);
         }
     } else {
+        if (m_pendingHeight >= 0 || m_heightTimer.isActive()) {
+            return;   // our own move: the handle already shows it
+        }
         auto project = globalContext()->currentTrackeditProject();
         const auto ids = project ? project->trackIdList() : std::vector<trackedit::TrackId> {};
         if (!ids.empty()) {

@@ -627,8 +627,11 @@ AutomationSegments Au3ClipGainInteraction::clipGainSegments(const trackedit::Cli
     AutomationSegments result;
     result.reserve(points.size() - 1);
     for (size_t i = 0; i + 1 < points.size(); ++i) {
+        // GlideMix: a level held flat turns into an S-curve once a point on it moves.
+        const bool flat = points[i].GetVal() == points[i + 1].GetVal() && points[i].GetCurvature() == 0.0f;
         result.push_back({{offset + points[i].GetT(), points[i].GetVal()},
-            {offset + points[i + 1].GetT(), points[i + 1].GetVal()}, points[i].GetCurvature()});
+            {offset + points[i + 1].GetT(), points[i + 1].GetVal()}, points[i].GetCurvature(),
+            points[i].IsEased() || flat});
     }
     return result;
 }
@@ -664,7 +667,7 @@ bool Au3ClipGainInteraction::setClipGainSegments(
     const double offset = env.GetOffset();
     for (const auto& s : segments) {
         env.Insert(static_cast<int>(env.GetNumberOfPoints()),
-            EnvPoint{s.start.xValue - offset, s.start.yValue, s.curvature});
+            EnvPoint{s.start.xValue - offset, s.start.yValue, s.curvature, s.eased && s.curvature == 0.0f});
     }
     const auto& last = segments.back().end;
     env.Insert(static_cast<int>(env.GetNumberOfPoints()), EnvPoint{last.xValue - offset, last.yValue});

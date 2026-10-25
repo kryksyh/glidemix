@@ -16,7 +16,6 @@ namespace {
 // its neighbour).
 constexpr double kMinOverlapSec = 0.25;
 // Sampled equal-power curve; the clip envelope interpolates between points.
-constexpr int kCurveSteps = 16;
 // The clip envelope's floor (WaveClip: Envelope(true, 1e-7, 4.0, 1.0)).
 constexpr double kSilent = 1e-7;
 }
@@ -92,6 +91,7 @@ std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
             if (zone.crossfaded && applied != m_applied.end()) {
                 zone.preset = applied->second;
             }
+            zone.disabled = m_disabled.count({ a.key, b.key }) > 0;
             result.push_back(zone);
         }
     }
@@ -137,7 +137,7 @@ bool MixHouseTransitions::replaceGain(const trackedit::ClipKey& clip, double fro
     // The line as points (each carrying the curvature of the segment after it).
     std::vector<GainPoint> line;
     for (const auto& s : current) {
-        line.push_back({ s.start.xValue, s.start.yValue, s.curvature });
+        line.push_back({ s.start.xValue, s.start.yValue, s.curvature, s.eased });
     }
     line.push_back({ current.back().end.xValue, current.back().end.yValue, 0.0f });
 
@@ -166,11 +166,24 @@ bool MixHouseTransitions::replaceGain(const trackedit::ClipKey& clip, double fro
     if (merged.back().time < clipEnd) {
         merged.push_back({ clipEnd, merged.back().value, 0.0f });
     }
+    // GlideMix: a point on a flat stretch, at the level of both neighbours,
+    // changes nothing but shows as a stray dot (a transition switched off left
+    // one where its fade began). Drop it.
+    for (size_t i = 1; i + 1 < merged.size();) {
+        const GainPoint& prev = merged[i - 1];
+        const GainPoint& p = merged[i];
+        if (prev.value == p.value && p.value == merged[i + 1].value && prev.curvature == 0.0f
+            && p.curvature == 0.0f) {
+            merged.erase(merged.begin() + static_cast<std::ptrdiff_t>(i));
+        } else {
+            ++i;
+        }
+    }
 
     automation::AutomationSegments segments;
     for (size_t i = 0; i + 1 < merged.size(); ++i) {
         segments.push_back({ { merged[i].time, merged[i].value }, { merged[i + 1].time, merged[i + 1].value },
-                             merged[i].curvature });
+                             merged[i].curvature, merged[i].eased });
     }
     if (segments.empty()) {
         return false;
@@ -309,7 +322,7 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
     double outFrom = outClip.endTime;
     if (!preset.outro.empty()) {
         for (const auto& m : preset.outro) {
-            fadeOut.push_back({ anchor + m.offset * unit, gain(m.gainDb), 0.0f });
+            fadeOut.push_back({ anchor + m.offset * unit, gain(m.gainDb), m.curvature, m.eased });
         }
         fadeOut.push_back({ outClip.endTime, gain(preset.outro.back().gainDb), 0.0f });
         outFrom = std::max(outClip.startTime, fadeOut.front().time);
@@ -331,7 +344,7 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
         }
         fadeIn.push_back({ inClip.startTime, gain(preset.intro.front().gainDb), 0.0f });
         for (const auto& m : preset.intro) {
-            fadeIn.push_back({ anchor + (m.offset - introShift) * unit, gain(m.gainDb), 0.0f });
+            fadeIn.push_back({ anchor + (m.offset - introShift) * unit, gain(m.gainDb), m.curvature, m.eased });
         }
         inTo = std::min(inClip.endTime, fadeIn.back().time);
         fadeIn = clipped(fadeIn, inClip);
@@ -383,24 +396,12 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
     }
     bool ok = true;
     // The effect lines (filter sweeps, noise, echo / reverb out): whatever an
-    // earlier transition here wrote goes first, then this one's, each on the
-    // track's own DJ effect. No history of their own either. Added on top
-    // (ADD FX in the transition panel): the other lanes stay as they are.
-    if (m_effectsOnly) {
-        for (const MixHouseEffectLine& fx : preset.effects) {
-            const std::string effectId = mixxxEffectIds() ? mixxxEffectIds()->effectIdForMixxxId(fx.mixxxId).toStdString()
-                                         : std::string();
-            const trackedit::ClipKey& key = fx.outgoing ? outgoing : incoming;
-            ok = !effectId.empty()
-                 && clipGain()->setClipEffectPoints(key, effectId, fx.parameterId,
-                                                    bassLine(fx.markers, fx.outgoing ? outClip : inClip)) && ok;
-        }
-        projectHistory()->pushHistoryState("Added " + preset.name + " to the transition", "Transition effect");
-        m_zonesChanged.notify();
-        return ok;
-    }
+    // earlier transition here wrote goes first (ADD FX ones too), then this
+    // one's, each on the track's own DJ effect. No history of their own either.
     clearTransitionEffects(outgoing);
     clearTransitionEffects(incoming);
+    m_effects.erase({ outgoing, incoming });
+    m_disabled.erase({ outgoing, incoming });
     for (const MixHouseEffectLine& fx : preset.effects) {
         const std::string effectId = mixxxEffectIds() ? mixxxEffectIds()->effectIdForMixxxId(fx.mixxxId).toStdString() : std::string();
         if (effectId.empty()) {
@@ -447,6 +448,7 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
 
 bool MixHouseTransitions::applyCrossfade(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming)
 {
+    m_disabled.erase({ outgoing, incoming });
     return crossfadeFrom(outgoing, incoming, -1.0);
 }
 
@@ -474,13 +476,12 @@ bool MixHouseTransitions::crossfadeFrom(const trackedit::ClipKey& outgoing, cons
 
     std::vector<GainPoint> fadeOut;
     std::vector<GainPoint> fadeIn;
-    for (int i = 0; i <= kCurveSteps; ++i) {
-        const double u = double(i) / kCurveSteps;
-        const double t = zone.start + u * len;
-        // Equal power: out^2 + in^2 = 1 across the overlap.
-        fadeOut.push_back({ t, std::max(kSilent, std::cos(u * M_PI_2)), 0.0f });
-        fadeIn.push_back({ t, std::max(kSilent, std::sin(u * M_PI_2)), 0.0f });
-    }
+    // GlideMix: one S-curve each, as a DJ rides the faders -- two points a
+    // line instead of a sampled curve.
+    fadeOut.push_back({ zone.start, 1.0, 0.0f, true });
+    fadeOut.push_back({ zone.start + len, kSilent, 0.0f });
+    fadeIn.push_back({ zone.start, kSilent, 0.0f, true });
+    fadeIn.push_back({ zone.start + len, 1.0, 0.0f });
 
     // Outgoing owns [zone start, its end]: after the fade it stays silent
     // (MixMeister's figures 11/12/21). Incoming owns [its start, zone end].
@@ -511,6 +512,7 @@ bool MixHouseTransitions::removeCrossfade(const trackedit::ClipKey& outgoing, co
     const trackedit::Clip inClip = project ? project->clip(incoming) : trackedit::Clip {};
 
     m_applied.erase({ outgoing, incoming });
+    m_effects.erase({ outgoing, incoming });
     // A bass swap belongs to the transition, so it goes with it, and so do its effects.
     for (int band = 0; band < 3; ++band) {
         clipGain()->setClipBandPoints(outgoing, band, {});
@@ -518,10 +520,15 @@ bool MixHouseTransitions::removeCrossfade(const trackedit::ClipKey& outgoing, co
     }
     clearTransitionEffects(outgoing);
     clearTransitionEffects(incoming);
-    const bool ok = replaceGain(outgoing, outClip.startTime, outClip.endTime,
-                                { { outClip.startTime, 1.0, 0.0f }, { outClip.endTime, 1.0, 0.0f } }, false)
-                    && replaceGain(incoming, inClip.startTime, inClip.endTime,
-                                   { { inClip.startTime, 1.0, 0.0f }, { inClip.endTime, 1.0, 0.0f } }, true);
+    // GlideMix: the volume only where the transition owns it -- the outgoing
+    // song from the overlap on, the incoming one up to the overlap's end -- so
+    // volume drawn elsewhere in the songs stays.
+    const double outFrom = std::clamp(zone.start, outClip.startTime, outClip.endTime);
+    const double inTo = std::clamp(zone.end, inClip.startTime, inClip.endTime);
+    const bool ok = replaceGain(outgoing, outFrom, outClip.endTime,
+                                { { outFrom, 1.0, 0.0f }, { outClip.endTime, 1.0, 0.0f } }, false)
+                    && replaceGain(incoming, inClip.startTime, inTo,
+                                   { { inClip.startTime, 1.0, 0.0f }, { inTo, 1.0, 0.0f } }, true);
     m_zonesChanged.notify();
     return ok;
 }
@@ -917,10 +924,10 @@ bool MixHouseTransitions::addEffect(const trackedit::ClipKey& outgoing, const tr
     spec.lengthBeats = std::max(1.0, std::floor((zone.end - anchor) / beat + 1e-6));
     if (kind == "filter-out") {
         spec.filter = MixHouseFilterSweep::OutHighPass;
-        spec.name = "Filter";
+        spec.name = "Filter out";
     } else if (kind == "filter-in") {
         spec.filter = MixHouseFilterSweep::InHighPass;
-        spec.name = "Filter";
+        spec.name = "Filter in";
     } else if (kind == "echo") {
         spec.effectOut = MixHouseEffectOut::Echo;
         spec.name = "Echo out";
@@ -956,11 +963,179 @@ bool MixHouseTransitions::addEffect(const trackedit::ClipKey& outgoing, const tr
                                    { { length - 2.0 - kStep, 0.0 }, { length - 2.0, 1.0 }, { length, 1.0 },
                                      { length + kStep, 0.0 } } });
     }
-    preset.outro.clear();
-    preset.intro.clear();
-    preset.beatmix = true;
-    m_effectsOnly = true;
-    const bool ok = writePreset(outgoing, incoming, preset, anchor);
-    m_effectsOnly = false;
+    if (preset.effects.empty() || !clipGain()) {
+        return false;
+    }
+    // GlideMix: kept per transition, so the panel can list it, turn it down
+    // and take it off again. Adding the same kind again replaces it.
+    const ZoneKey key { outgoing, incoming };
+    EffectEntry entry;
+    entry.info.kind = kind;
+    entry.info.name = preset.name;
+    entry.lines = preset.effects;
+    entry.anchor = anchor;
+    entry.unit = beat;
+    auto& list = m_effects[key];
+    list.erase(std::remove_if(list.begin(), list.end(), [&](const EffectEntry& e) { return e.info.kind == kind; }),
+               list.end());
+    const bool ok = writeEffectLines(key, entry, entry.info.amount);
+    list.push_back(entry);
+    projectHistory()->pushHistoryState("Added " + preset.name + " to the transition", "Transition effect");
+    m_zonesChanged.notify();
     return ok;
+}
+
+bool MixHouseTransitions::writeEffectLines(const ZoneKey& zone, const EffectEntry& entry, double amount)
+{
+    const auto project = globalContext()->currentTrackeditProject();
+    if (!project || !clipGain() || !mixxxEffectIds()) {
+        return false;
+    }
+    constexpr double kEdge = 0.001;   // a step a millisecond long, not a vertical one
+    bool ok = true;
+    for (const MixHouseEffectLine& fx : entry.lines) {
+        const std::string effectId = mixxxEffectIds()->effectIdForMixxxId(fx.mixxxId).toStdString();
+        if (effectId.empty() || fx.markers.empty()) {
+            ok = false;
+            continue;
+        }
+        double neutral = fx.markers.front().value;   // a setting, not a sweep (the roll's length)
+        for (const MixHouseTransitionEffectParameter& p : transitionEffectParameters()) {
+            if (p.mixxxId == fx.mixxxId && p.parameterId == fx.parameterId) {
+                neutral = p.neutral;
+            }
+        }
+        const trackedit::ClipKey& key = fx.outgoing ? zone.first : zone.second;
+        const trackedit::Clip clip = project->clip(key);
+        automation::AutomationPoints line;
+        const auto add = [&](double t, double v) {
+            if (t < clip.startTime - 1e-9 || t > clip.endTime + 1e-9) {
+                return;
+            }
+            t = std::clamp(t, clip.startTime, clip.endTime);
+            if (!line.empty() && t <= line.back().xValue + 1e-9) {
+                line.back().yValue = v;   // same moment: the later value wins
+                return;
+            }
+            line.push_back({ t, v });
+        };
+        const double first = entry.anchor + fx.markers.front().offset * entry.unit;
+        const double last = entry.anchor + fx.markers.back().offset * entry.unit;
+        add(clip.startTime, neutral);
+        add(first - kEdge, neutral);
+        for (const MixHouseBassMarker& m : fx.markers) {
+            add(entry.anchor + m.offset * entry.unit, neutral + std::clamp(amount, 0.0, 1.0) * (m.value - neutral));
+        }
+        add(last + kEdge, neutral);
+        add(clip.endTime, neutral);
+        ok = clipGain()->setClipEffectPoints(key, effectId, fx.parameterId, line) && ok;
+    }
+    return ok;
+}
+
+std::vector<IMixHouseTransitions::AddedEffect> MixHouseTransitions::addedEffects(const trackedit::ClipKey& outgoing,
+                                                                                 const trackedit::ClipKey& incoming) const
+{
+    std::vector<AddedEffect> result;
+    const auto it = m_effects.find({ outgoing, incoming });
+    if (it != m_effects.end()) {
+        for (const EffectEntry& e : it->second) {
+            result.push_back(e.info);
+        }
+    }
+    return result;
+}
+
+bool MixHouseTransitions::setEffectAmount(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                          const std::string& kind, double amount)
+{
+    const auto it = m_effects.find({ outgoing, incoming });
+    if (it == m_effects.end()) {
+        return false;
+    }
+    for (EffectEntry& e : it->second) {
+        if (e.info.kind == kind) {
+            e.info.amount = std::clamp(amount, 0.0, 1.0);
+            const bool ok = writeEffectLines(it->first, e, e.info.enabled ? e.info.amount : 0.0);
+            projectHistory()->pushHistoryState("Changed " + e.info.name + " in the transition", "Transition effect");
+            m_zonesChanged.notify();
+            return ok;
+        }
+    }
+    return false;
+}
+
+bool MixHouseTransitions::setEffectEnabled(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                           const std::string& kind, bool enabled)
+{
+    const auto it = m_effects.find({ outgoing, incoming });
+    if (it == m_effects.end()) {
+        return false;
+    }
+    for (EffectEntry& e : it->second) {
+        if (e.info.kind == kind) {
+            e.info.enabled = enabled;
+            const bool ok = writeEffectLines(it->first, e, enabled ? e.info.amount : 0.0);
+            projectHistory()->pushHistoryState((enabled ? "Switched on " : "Switched off ") + e.info.name,
+                                               "Transition effect");
+            m_zonesChanged.notify();
+            return ok;
+        }
+    }
+    return false;
+}
+
+bool MixHouseTransitions::removeEffect(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                       const std::string& kind)
+{
+    const auto it = m_effects.find({ outgoing, incoming });
+    if (it == m_effects.end()) {
+        return false;
+    }
+    auto& list = it->second;
+    for (auto e = list.begin(); e != list.end(); ++e) {
+        if (e->info.kind == kind) {
+            const std::string name = e->info.name;
+            const bool ok = writeEffectLines(it->first, *e, 0.0);   // neutral all along
+            list.erase(e);
+            projectHistory()->pushHistoryState("Removed " + name + " from the transition", "Transition effect");
+            m_zonesChanged.notify();
+            return ok;
+        }
+    }
+    return false;
+}
+
+bool MixHouseTransitions::setTransitionEnabled(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                               bool enabled)
+{
+    const ZoneKey key { outgoing, incoming };
+    if (!enabled) {
+        if (m_disabled.count(key)) {
+            return true;
+        }
+        const auto applied = m_applied.find(key);
+        const std::string name = applied != m_applied.end() ? applied->second : std::string();
+        const bool ok = removeCrossfade(outgoing, incoming);
+        m_disabled[key] = name;
+        m_zonesChanged.notify();
+        return ok;
+    }
+    const auto it = m_disabled.find(key);
+    if (it == m_disabled.end()) {
+        return true;
+    }
+    const std::string name = it->second;
+    m_disabled.erase(it);
+    if (!name.empty()) {
+        for (const MixHouseTransitionPreset& preset : presets()) {
+            if (preset.name == name) {
+                return applyPresetValue(outgoing, incoming, preset);
+            }
+        }
+        if (applyTransition(outgoing, incoming, name)) {
+            return true;
+        }
+    }
+    return applyCrossfade(outgoing, incoming);
 }

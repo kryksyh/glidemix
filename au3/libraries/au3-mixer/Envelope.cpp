@@ -244,9 +244,9 @@ void Envelope::SetRange(double minValue, double maxValue)
 
 // This is used only during construction of an Envelope by complete or partial
 // copy of another, or when truncating a track.
-void Envelope::AddPointAtEnd(double t, double val, float curvature)
+void Envelope::AddPointAtEnd(double t, double val, float curvature, bool eased)
 {
-    mEnv.push_back(EnvPoint { t, val, curvature });
+    mEnv.push_back(EnvPoint { t, val, curvature, eased });
 
     // Assume copied points were stored by nondecreasing time.
     // Allow no more than two points at exactly the same time.
@@ -302,7 +302,7 @@ void Envelope::CopyRange(const Envelope& orig, size_t begin, size_t end)
     for (; i < end; ++i) {
         const EnvPoint& point = orig[i];
         const double when = point.GetT() + (orig.mOffset - mOffset);
-        AddPointAtEnd(when, point.GetVal(), point.GetCurvature());
+        AddPointAtEnd(when, point.GetVal(), point.GetCurvature(), point.IsEased());
     }
 
     // Create the final point if it needs interpolated representation
@@ -380,6 +380,9 @@ void Envelope::WriteXML(XMLWriter& xmlFile) const
         xmlFile.WriteAttr(wxT("val"), point.GetVal(), 12);
         if (point.GetCurvature() != 0.0f) {
             xmlFile.WriteAttr(wxT("curve"), point.GetCurvature(), 7);
+        }
+        if (point.IsEased()) {
+            xmlFile.WriteAttr(wxT("ease"), true);
         }
         xmlFile.EndTag(wxT("controlpoint"));
     }
@@ -1043,6 +1046,16 @@ const noexcept
 
     double tprev, vprev, tnext = 0, vnext, vstep = 0;
     float curvature = 0.0f;
+    bool eased = false;
+    // GlideMix: the shape between two points -- S-curve, bent or straight.
+    const auto shaped = [&](double u) {
+        if (eased) {
+            return vprev + u * u * (3.0 - 2.0 * u) * (vnext - vprev);
+        }
+        // The same bend the automation lane draws (clipautomation::kCurvatureStrength).
+        constexpr double kCurvatureStrength = 1.5;
+        return vprev + u * (vnext - vprev) + kCurvatureStrength * curvature * std::abs(vnext - vprev) * u * (1.0 - u);
+    };
 
     for (int b = 0; b < bufferLen; b++) {
         // Get easiest cases out the way first...
@@ -1108,15 +1121,14 @@ const noexcept
             vprev = GetInterpolationStartValueAtPoint(lo);
             vnext = GetInterpolationStartValueAtPoint(hi);
             curvature = mEnv[lo].GetCurvature();
+            eased = mEnv[lo].IsEased() && vprev != vnext;
 
             // Interpolate, either linear or log depending on mDB.
             double dt = (tnext - tprev);
             double to = t - tprev;
             double v;
             if (dt > 0.0) {
-                const double u = to / dt;
-                v = vprev + u * (vnext - vprev)
-                    + curvature * std::abs(vnext - vprev) * u * (1.0 - u);
+                v = shaped(to / dt);
                 vstep = (vnext - vprev) * tstep / dt;
             } else {
                 v = vnext;
@@ -1131,11 +1143,9 @@ const noexcept
 
             buffer[b] = v;
         } else {
-            if (curvature != 0.0f) {
+            if (curvature != 0.0f || eased) {
                 const double dt = tnext - tprev;
-                const double u = dt > 0.0 ? (t - tprev) / dt : 1.0;
-                double v = vprev + u * (vnext - vprev)
-                    + curvature * std::abs(vnext - vprev) * u * (1.0 - u);
+                const double v = shaped(dt > 0.0 ? (t - tprev) / dt : 1.0);
                 buffer[b] = mDB ? pow(10.0, v) : v;
             } else if (mDB) {
                 buffer[b] = buffer[b - 1] * vstep;

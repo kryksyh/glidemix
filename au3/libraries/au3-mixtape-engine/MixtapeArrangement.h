@@ -98,6 +98,9 @@ struct Arrangement {
     std::vector<TrackSnapshot> tracks;
     uint64_t generation = 0;
     bool anySolo = false;
+    //! GlideMix: the master effects' latency (a look-ahead limiter ...), in
+    //! output frames; the whole mix comes out that much later.
+    size_t masterLatencyFrames = 0;
 };
 
 ClipSnapshot SnapshotClip(const WaveClip& clip);

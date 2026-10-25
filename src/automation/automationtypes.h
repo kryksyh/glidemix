@@ -28,6 +28,7 @@ struct AutomationSegment
     AutomationPoint start;
     AutomationPoint end;
     float curvature = 0.0f;
+    bool eased = false;   ///< GlideMix: an S-curve
 };
 using AutomationSegments = std::vector<AutomationSegment>;
 

@@ -111,7 +111,8 @@ QVariantList ClipGainModel::segments() const
     out.reserve(static_cast<qsizetype>(source.size()));
     for (const auto& s : source) {
         out.push_back(QVariantMap{{"startTime", s.start.xValue}, {"startValue", normalizedFromGain(s.start.yValue)},
-            {"endTime", s.end.xValue}, {"endValue", normalizedFromGain(s.end.yValue)}, {"curvature", s.curvature}});
+            {"endTime", s.end.xValue}, {"endValue", normalizedFromGain(s.end.yValue)}, {"curvature", s.curvature},
+            {"eased", s.eased}});
     }
     return out;
 }
@@ -125,7 +126,7 @@ bool ClipGainModel::commitSegments(const QVariantList& data, bool completed)
         const auto s = entry.toMap();
         segments.push_back({{s.value("startTime", -1).toDouble(), gainFromNormalized(s.value("startValue", -1).toDouble())},
             {s.value("endTime", -1).toDouble(), gainFromNormalized(s.value("endValue", -1).toDouble())},
-            s.value("curvature", 2).toFloat()});
+            s.value("curvature", 2).toFloat(), s.value("eased", false).toBool()});
     }
     return clipGainInteraction()->setClipGainSegments(m_clipKey.key, segments, completed);
 }
@@ -194,6 +195,13 @@ void ClipGainModel::setClipKey(const ClipKey& key)
                 if (clip.key == m_clipKey.key) {
                     clear();
                     m_clipKey = ClipKey {};
+                }
+            }, muse::async::Asyncable::Mode::SetReplace);
+            // GlideMix: trimmed, moved, stretched or its envelope rewritten --
+            // reload, so the line never shows points the clip no longer has.
+            prj->clipList(m_clipKey.key.trackId).onItemChanged(this, [this](const trackedit::Clip& clip) {
+                if (clip.key == m_clipKey.key) {
+                    reload();
                 }
             }, muse::async::Asyncable::Mode::SetReplace);
         }

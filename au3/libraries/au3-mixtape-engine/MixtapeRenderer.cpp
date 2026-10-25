@@ -291,7 +291,9 @@ std::pair<double, double> Renderer::Render(float* const* out, size_t frames)
         for (const TrackSnapshot& track : tracks) {
             maxLatency = std::max(maxLatency, track.latencyFrames);
         }
-        mOutputDelay = maxLatency + mLimiter.delay;   // the limiter's look-ahead too
+        // The master effects' latency and the limiter's look-ahead come on top:
+        // the playhead and exports shift by all of it, so nothing starts late.
+        mOutputDelay = maxLatency + mCurrent->masterLatencyFrames + mLimiter.delay;
         mTrackPtrs.resize(mOutputChannels);
         for (const TrackJob& job : mJobs) {
             const TrackSnapshot& track = tracks[job.track];

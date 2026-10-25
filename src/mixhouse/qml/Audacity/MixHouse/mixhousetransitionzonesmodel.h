@@ -50,6 +50,13 @@ public:
     Q_INVOKABLE bool setLanePoints(int row, int lane, bool outgoingSide, const QVariantList& points);
     //! ADD FX: filter-out, filter-in, echo, reverb, riser, downsweep.
     Q_INVOKABLE bool addEffect(int row, const QString& kind);
+    //! The effects ADD FX put on this transition: [{ kind, name, amount }].
+    Q_INVOKABLE QVariantList addedEffects(int row) const;
+    Q_INVOKABLE bool setEffectAmount(int row, const QString& kind, double amount);
+    Q_INVOKABLE bool removeEffect(int row, const QString& kind);
+    Q_INVOKABLE bool setEffectEnabled(int row, const QString& kind, bool enabled);
+    //! Off: everything the transition wrote goes, the pill turns grey. On: back.
+    Q_INVOKABLE bool setTransitionEnabled(int row, bool enabled);
     //! Length of the zone in bars (for the panel's header).
     Q_INVOKABLE double lengthBars(int row) const;
 
@@ -70,6 +77,7 @@ private:
         EndTimeRole,
         CrossfadedRole,
         PresetRole,
+        DisabledRole,
     };
 
     void reload();

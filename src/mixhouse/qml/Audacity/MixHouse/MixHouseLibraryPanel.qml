@@ -3155,7 +3155,13 @@ Item {
                             }
                         }
                     }
-                    onDoubleClicked: {
+                    onDoubleClicked: function(mouse) {
+                        // GlideMix: the rows take the right button too (their
+                        // menu); a quick double right-click must not load the
+                        // song into the mix as a new track.
+                        if (mouse && mouse.button !== Qt.LeftButton) {
+                            return
+                        }
                         // Real mixxx: double-clicking an editable cell starts
                         // editing it in place; double-clicking anywhere else
                         // runs whatever "Music library" Preferences page's

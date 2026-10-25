@@ -41,6 +41,11 @@ void ClipPluginAutomationModel::init()
     clipsInteraction()->clipStartTimeChanged().onReceive(this, [this](const auto& key, auto, bool) {
         if (key == m_key) { emit changed(); }
     }, muse::async::Asyncable::Mode::SetReplace);
+    // GlideMix: a transition (or anything else) writing this clip's lines
+    // without an undo step yet -- redraw now, so no old points stay on screen.
+    clipGainInteraction()->clipGainChanged().onReceive(this, [this](const auto& key, bool) {
+        if (key == m_key.key) { emit changed(); }
+    }, muse::async::Asyncable::Mode::SetReplace);
     emit changed();
 }
 
@@ -137,7 +142,8 @@ QVariantList ClipPluginAutomationModel::otherLines() const
         QVariantList segments;
         for (const auto& s : bezier.segments) {
             segments.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", s.startPoint.value},
-                {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature}});
+                {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature},
+                {"eased", s.eased}});
         }
         out.push_back(QVariantMap{{"segments", segments},
             {"color", QString::fromStdString(projectscene::IProjectViewState::pluginParameterColor(curve.effectInstanceId,
@@ -157,11 +163,12 @@ QVariantList ClipPluginAutomationModel::segments() const
     clipautomation::Curve curve;
     if (stored) { curve = stored->Bezier(); }
     else { curve.segments.push_back({{0, f.defaultValue},
-        {clip->GetSequenceEndTime() - clip->GetSequenceStartTime(), f.defaultValue}, 0}); }
+        {clip->GetSequenceEndTime() - clip->GetSequenceStartTime(), f.defaultValue}, 0, true}); }
     QVariantList out;
     for (const auto& s : curve.segments) {
         out.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", s.startPoint.value},
-            {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature}});
+            {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature},
+                {"eased", s.eased}});
     }
     return out;
 }
@@ -175,7 +182,8 @@ bool ClipPluginAutomationModel::commit(const QVariantList& segments)
     for (const auto& entry : segments) {
         const auto s = entry.toMap();
         shape.segments.push_back({{s.value("startTime", -1).toDouble(), s.value("startValue", -1).toDouble()},
-            {s.value("endTime", -1).toDouble(), s.value("endValue", -1).toDouble()}, s.value("curvature", 2).toFloat()});
+            {s.value("endTime", -1).toDouble(), s.value("endValue", -1).toDouble()}, s.value("curvature", 2).toFloat(),
+            s.value("eased", false).toBool()});
     }
     if (!shape.Valid() || shape.segments.empty()) { return false; }
     const auto f = spec();

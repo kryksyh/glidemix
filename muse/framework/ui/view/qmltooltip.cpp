@@ -46,6 +46,7 @@ void QmlToolTip::show(QQuickItem* item, const QString& title, const QString& des
     m_title = title;
     m_description = description;
     m_shortcut = shortcut;
+    emit hoverChanged(title, description, shortcut);
 
     bool toolTipNotOpened = m_item == nullptr;
     bool openTimerStarted = m_openTimer.isActive();
@@ -69,6 +70,7 @@ void QmlToolTip::hide(QQuickItem* item, bool force)
     if (m_item != item) {
         return;
     }
+    emit hoverChanged(QString(), QString(), QString());
 
     m_shouldBeClosed = true;
 

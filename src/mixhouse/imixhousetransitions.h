@@ -22,6 +22,10 @@ namespace au::mixhouse {
 struct MixHouseTransitionMarker {
     double offset = 0.0;
     double gainDb = 0.0;
+    //! GlideMix: the shape of the line from this marker to the next -- an
+    //! S-curve, or bent (the volume line's curvature, -1..1); else straight.
+    float curvature = 0.0f;
+    bool eased = false;
 };
 
 /// One point of a clip's bass line: `offset` in beats from the anchor, `value`
@@ -79,6 +83,7 @@ public:
         double end = 0.0;
         bool crossfaded = false;
         std::string preset;            ///< name of the transition last applied here ("" = none this session)
+        bool disabled = false;         ///< switched off (right-click on its pill): drawn grey
     };
 
     /// MixMeister's presets (Simple Cut/Crossfade, Beatmix Cut/8/16/32/64 bars)
@@ -141,5 +146,29 @@ public:
     /// reverb, riser, downsweep. One undo step.
     virtual bool addEffect(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                            const std::string& kind) = 0;
+
+    /// GlideMix: an effect ADD FX put on this transition. It acts inside the
+    /// transition only; outside, its line holds the effect's neutral value.
+    struct AddedEffect {
+        std::string kind;       ///< addEffect's kind
+        std::string name;       ///< for the panel
+        double amount = 1.0;    ///< 0..1: how far its line moves from neutral
+        bool enabled = true;    ///< its power button: off holds the line at neutral
+    };
+    virtual std::vector<AddedEffect> addedEffects(const trackedit::ClipKey& outgoing,
+                                                  const trackedit::ClipKey& incoming) const = 0;
+    /// Rewrites the effect's line at `amount` (0..1). One undo step.
+    virtual bool setEffectAmount(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                 const std::string& kind, double amount) = 0;
+    /// Its power button: off holds the lines at neutral, on brings them back. One undo step.
+    virtual bool setEffectEnabled(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                  const std::string& kind, bool enabled) = 0;
+    /// Takes the effect off the transition: its lines go back to neutral. One undo step.
+    virtual bool removeEffect(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                              const std::string& kind) = 0;
+    /// Off: removes everything the transition wrote (volume fades, EQ, effects)
+    /// and keeps the zone grey. On: applies the transition that was there.
+    virtual bool setTransitionEnabled(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                      bool enabled) = 0;
 };
 }

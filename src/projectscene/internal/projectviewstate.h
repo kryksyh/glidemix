@@ -44,6 +44,7 @@ public:
     int trackVerticalPosition(const trackedit::TrackId& trackId) const override;
     void changeTrackHeight(const trackedit::TrackId& trackId, int delta) override;
     void setTrackHeight(const trackedit::TrackId& trackId, int height) override;
+    void setTracksHeight(const trackedit::TrackIdList& trackIds, int height) override;
     void setChannelHeightRatio(const trackedit::TrackId& trackId, double ratio) override;
     trackedit::TrackId trackAtPosition(double y) const override;
     trackedit::TrackIdList tracksInRange(double y1, double y2) const override;
@@ -160,6 +161,7 @@ private:
 
     TrackData& makeTrackData(const trackedit::TrackId& trackId) const;
     void recomputeTotalTrackHeight();
+    bool m_batchingTrackHeights = false;
     bool doSetTrackViewType(const trackedit::TrackId& trackId, trackedit::TrackViewType viewType);
 
     bool eventFilter(QObject* watched, QEvent* event) override;

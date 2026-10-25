@@ -30,14 +30,16 @@ class EnvPoint final : public XMLTagHandler
 {
 public:
     EnvPoint() noexcept {}
-    inline EnvPoint(double t, double val, float curvature = 0.0f) noexcept
-        : mT{t}, mVal{val}, mCurvature{curvature} {}
+    inline EnvPoint(double t, double val, float curvature = 0.0f, bool eased = false) noexcept
+        : mT{t}, mVal{val}, mCurvature{curvature}, mEased{eased} {}
 
     double GetT() const noexcept { return mT; }
     void SetT(double t) noexcept { mT = t; }
     double GetVal() const noexcept { return mVal; }
     float GetCurvature() const noexcept { return mCurvature; }
     void SetCurvature(float value) noexcept { mCurvature = std::clamp(value, -1.0f, 1.0f); }
+    bool IsEased() const noexcept { return mEased; }
+    void SetEased(bool eased) noexcept { mEased = eased; }
     inline void SetVal(Envelope* pEnvelope, double val);
 
     bool HandleXMLTag(const std::string_view& tag, const AttributesList& attrs) override
@@ -53,6 +55,8 @@ public:
                     SetVal(nullptr, value.Get(GetVal()));
                 } else if (attr == "curve") {
                     SetCurvature(value.Get(GetCurvature()));
+                } else if (attr == "ease") {
+                    SetEased(value.Get(IsEased()));
                 }
             }
             return true;
@@ -72,6 +76,8 @@ private:
     // Curvature of the segment beginning at this point. Zero is the legacy
     // linear/exponential interpolation and therefore preserves old projects.
     float mCurvature {};
+    // GlideMix: the segment beginning here is an S-curve (smoothstep).
+    bool mEased {};
 };
 
 typedef std::vector<EnvPoint> EnvArray;
@@ -227,7 +233,7 @@ public:
     void ClearDragPoint();
 
 private:
-    void AddPointAtEnd(double t, double val, float curvature = 0.0f);
+    void AddPointAtEnd(double t, double val, float curvature = 0.0f, bool eased = false);
     void CopyRange(const Envelope& orig, size_t begin, size_t end);
     // relative time
     void BinarySearchForTime(int& Lo, int& Hi, double t) const noexcept;

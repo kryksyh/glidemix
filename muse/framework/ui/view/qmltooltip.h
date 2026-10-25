@@ -58,6 +58,9 @@ private slots:
 signals:
     void showToolTip(QQuickItem* item, const QString& title, const QString& description, const QString& shortcut);
     void hideToolTip();
+    //! GlideMix: at once, without the tooltip's delay, for the status line's
+    //! info text (like Logic's Quick Help); empty title = nothing hovered.
+    void hoverChanged(const QString& title, const QString& description, const QString& shortcut);
 
 private:
     friend class QmlToolTipTests;

@@ -33,10 +33,25 @@
 
 using namespace muse;
 
+#ifndef NO_QT_SUPPORT
+namespace {
+//! GlideMix: without a translation, Qt leaves English plurals as "song(s)";
+//! with a count, make it "1 song" / "2 songs".
+QString englishPlural(QString text, int n)
+{
+    if (n >= 0 && text.contains(QLatin1String("(s)"))) {
+        text.replace(QLatin1String("(s)"), n == 1 ? QString() : QStringLiteral("s"));
+    }
+    return text;
+}
+}
+
+#endif
+
 static String translate(const char* context, const char* key, const char* disambiguation, int n)
 {
 #ifndef NO_QT_SUPPORT
-    return String::fromQString(QCoreApplication::translate(context, key, disambiguation, n));
+    return String::fromQString(englishPlural(QCoreApplication::translate(context, key, disambiguation, n), n));
 #else
     UNUSED(context);
     UNUSED(disambiguation);
@@ -53,20 +68,20 @@ std::string muse::trc(const char* context, const char* key, const char* disambig
 #ifndef NO_QT_SUPPORT
 QString muse::qtrc(const char* context, const char* key, const char* disambiguation, int n)
 {
-    return QCoreApplication::translate(context, key, disambiguation, n);
+    return englishPlural(QCoreApplication::translate(context, key, disambiguation, n), n);
 }
 
 QString muse::qtrc(const char* context, const String& key, const char* disambiguation, int n)
 {
     ByteArray utf8 = key.toUtf8();
-    return QCoreApplication::translate(context, utf8.constChar(), disambiguation, n);
+    return englishPlural(QCoreApplication::translate(context, utf8.constChar(), disambiguation, n), n);
 }
 
 QString muse::qtrc(const char* context, const String& key, const String& disambiguation, int n)
 {
     ByteArray keyutf8 = key.toUtf8();
     ByteArray disutf8 = disambiguation.toUtf8();
-    return QCoreApplication::translate(context, keyutf8.constChar(), disutf8.empty() ? nullptr : disutf8.constChar(), n);
+    return englishPlural(QCoreApplication::translate(context, keyutf8.constChar(), disutf8.empty() ? nullptr : disutf8.constChar(), n), n);
 }
 
 #endif
