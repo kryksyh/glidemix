@@ -4,8 +4,17 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <functional>
 
 namespace BeatThis {
+
+// GlideMix patch: runs one piece of the spectrogram (frames x 128 mel bins,
+// frames <= 1500) through the network somewhere else -- Core ML on the Mac
+// -- and writes `frames` beat and downbeat logits. Returns false to fall
+// back to ONNX Runtime. Set once, before the first analysis.
+using ChunkRunner = std::function<bool(const float* spect, int frames, int bins, float* beat, float* downbeat)>;
+void setChunkRunner(ChunkRunner runner);
+bool hasChunkRunner();
 
 struct BeatResult {
     std::vector<float> beats;

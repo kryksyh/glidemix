@@ -10,6 +10,9 @@
 #include "mixhousephrasedetector.h"
 #include "mixhousephrasemodel.h"
 #include "mixhouseenergy.h"
+#ifdef MIXHOUSE_HAVE_COREML
+#include "mixhousecoremlbeats.h"
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -199,7 +202,15 @@ public:
             // (CPJKU small0, MIT, 2.1M parameters): on 196 collection tracks
             // 1.7x faster, tempo the same 99.5%, beats 76.5% vs 78.4%, bar 1
             // 63.3% vs 64.8%. GLIDEMIX_BEAT_MODEL picks a file, for measuring.
+#ifdef MIXHOUSE_HAVE_COREML
+            // Mac: the full model on the GPU (mixhousecoremlbeats.h); the
+            // ONNX session below is only the fallback, so the small one.
+            static const bool coreMl = installCoreMlBeatThis(
+                mixHouseModelPath(QStringLiteral("beat_this.mlmodelc"), QStringLiteral(MIXHOUSE_BEAT_THIS_COREML_PATH)));
+            const bool small = coreMl || !s_accurateBeatAnalysisFlag.load();
+#else
             const bool small = !s_accurateBeatAnalysisFlag.load();
+#endif
             QString path = qEnvironmentVariable("GLIDEMIX_BEAT_MODEL");
             if (path.isEmpty() && small) {
                 path = mixHouseModelPath(QStringLiteral("beat_this_small.onnx"),

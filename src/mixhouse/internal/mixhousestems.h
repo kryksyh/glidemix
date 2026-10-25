@@ -13,6 +13,7 @@
 #include "framework/interactive/iinteractive.h"
 #include "trackedit/iprojecthistory.h"
 
+#include "mixhouse/imixhouseactivity.h"
 #include "mixhouse/imixhousestems.h"
 #include "mixhouse/imixhouseclipcolors.h"
 #include "mixhouse/imixhouselibraryconfiguration.h"
@@ -26,6 +27,7 @@ class MixHouseStems : public IMixHouseStems, public muse::Contextable
     muse::ContextInject<muse::IInteractive> interactive { this };
     muse::ContextInject<trackedit::IProjectHistory> projectHistory { this };
     muse::ContextInject<IMixHouseClipColors> clipColors { this };
+    muse::ContextInject<IMixHouseActivity> activity { this };
     muse::GlobalInject<IMixHouseLibraryConfiguration> configuration;
 
 public:

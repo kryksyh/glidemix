@@ -28,6 +28,7 @@
 #include "internal/mixhouserekordboxphrases.h"
 #include "internal/mixhouseclipcolors.h"
 #include "internal/mixhousestems.h"
+#include "internal/mixhouseactivity.h"
 #include "internal/mixhouselibraryconfiguration.h"
 #include "internal/mixhouselicence.h"
 #include "internal/mixhousetransitionconfiguration.h"
@@ -126,6 +127,7 @@ void MixHouseModuleContext::registerExports()
 
     // Clip colour intensity and Colour by key, per track (clip menu).
     ioc()->registerExport<IMixHouseClipColors>(mname, std::make_shared<MixHouseClipColors>(iocContext()));
+    ioc()->registerExport<IMixHouseActivity>(mname, std::make_shared<MixHouseActivity>());
     ioc()->registerExport<IMixHouseStems>(mname, std::make_shared<MixHouseStems>(iocContext()));
 
     // The File-menu's "Add to Library" submenu (Add File(s)/Add Folder,

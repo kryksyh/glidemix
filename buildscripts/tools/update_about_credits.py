@@ -237,9 +237,8 @@ def main():
     with open(os.path.join(OUT, "components.json"), "w", encoding="utf-8") as f:
         json.dump(components, f, ensure_ascii=False, indent=1)
         f.write("\n")
-    with open(os.path.join(OUT, "mixxx_credits.json"), "w", encoding="utf-8") as f:
-        json.dump(mixxx_credits(), f, ensure_ascii=False, indent=1)
-        f.write("\n")
+    # Mixxx's ~400 names are no longer listed: the About dialog thanks the
+    # Mixxx team in one line (aboutmodel.cpp).
     print(f"{len(components)} components, {len(by_hash)} license files -> {os.path.relpath(OUT, ROOT)}")
 
 

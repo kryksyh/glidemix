@@ -37,6 +37,9 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseclipcolors.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseclipcolors.h
     ${CMAKE_CURRENT_LIST_DIR}/imixhousestems.h
+    ${CMAKE_CURRENT_LIST_DIR}/imixhouseactivity.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseactivity.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseactivity.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousestems.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousestems.h
     ${CMAKE_CURRENT_LIST_DIR}/imixhouseexternallibrary.h
@@ -203,6 +206,16 @@ if (MIXHOUSE_HAVE_BEAT_THIS)
         install(FILES "${MIXHOUSE_BEAT_THIS_MODEL}" "${CMAKE_CURRENT_LIST_DIR}/models/glidemix_phrases.onnx"
                       "${CMAKE_CURRENT_LIST_DIR}/models/beat_this_small.onnx"
                 DESTINATION bin/models)
+    endif()
+    # Mac: Beat This! on the GPU through Core ML (mixhousecoremlbeats.h).
+    if (APPLE)
+        target_sources(mixhouse PRIVATE ${CMAKE_CURRENT_LIST_DIR}/mixhousecoremlbeats.h
+                                        ${CMAKE_CURRENT_LIST_DIR}/mixhousecoremlbeats.mm)
+        set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/mixhousecoremlbeats.mm PROPERTIES
+            COMPILE_FLAGS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON SKIP_UNITY_BUILD_INCLUSION ON)
+        target_compile_definitions(mixhouse PRIVATE MIXHOUSE_HAVE_COREML
+            MIXHOUSE_BEAT_THIS_COREML_PATH="${CMAKE_SOURCE_DIR}/mixhouse_deps/beat_this/beat_this.mlmodelc")
+        target_link_libraries(mixhouse PRIVATE "-framework CoreML")
     endif()
 endif()
 # Development builds may also use the helpers' developer checkouts in

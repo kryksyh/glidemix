@@ -20,6 +20,7 @@
 #include "trackedit/iprojecthistory.h"
 
 #include "mixhouse/imixhousebeatgrids.h"
+#include "mixhouse/imixhouseactivity.h"
 #include "mixhouse/imixhouselibrary.h"
 #include "mixhouse/imixhouselexicon.h"
 #include "mixhouse/imixhouserekordboxxml.h"
@@ -39,6 +40,7 @@ class MixHouseBeatGrids : public IMixHouseBeatGrids, public muse::Contextable, p
     muse::ContextInject<IMixHouseLexicon> lexicon { this };
     muse::ContextInject<IMixHouseRekordboxXml> rekordboxXml { this };
     muse::ContextInject<IMixHouseRekordboxPhrases> rekordboxPhrases { this };
+    muse::ContextInject<IMixHouseActivity> activity { this };
     muse::GlobalInject<IMixHouseLibraryConfiguration> libraryConfiguration;
 
 public:
@@ -128,6 +130,7 @@ private:
     };
     mutable QHash<QString, ComputedEnergy> m_computedEnergy;   ///< by file path
     mutable bool m_energyJobRunning = false;
+    mutable int m_energyJobsDone = 0;
     QString clipName(const trackedit::ClipKey& clip) const;
     void reseatClipsOf(const Grid& grid);
     double barLockedClipStart(const trackedit::ClipKey& clip, double proposedStart) const;

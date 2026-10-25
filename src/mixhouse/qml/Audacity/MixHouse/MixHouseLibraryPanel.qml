@@ -148,7 +148,7 @@ Item {
         // GlideMix: 1-10, from the analysis (Lexicon's own for its songs).
         { key: "energy",       label: qsTrc("mixhouse", "Energy"),      sort: MixHouseTrackListModel.SortEnergy,           width: 90,  align: Qt.AlignLeft,    visible: true },
         { key: "durationSec",  label: qsTrc("mixhouse", "Duration"),    sort: MixHouseTrackListModel.SortDuration,         width: 90,  align: Qt.AlignRight,   visible: true },
-        { key: "rating",       label: qsTrc("mixhouse", "Rating"),      sort: MixHouseTrackListModel.SortRating,           width: 100, align: Qt.AlignRight,   visible: true },
+        { key: "rating",       label: qsTrc("mixhouse", "Rating"),      sort: MixHouseTrackListModel.SortRating,           width: 120, align: Qt.AlignRight,   visible: true },
         { key: "comment",      label: qsTrc("mixhouse", "Comment"),     sort: MixHouseTrackListModel.SortComment,          width: 220, align: Qt.AlignLeft,    visible: true },
         { key: "dateAdded",    label: qsTrc("mixhouse", "Date Added"),  sort: MixHouseTrackListModel.SortDateAdded,        width: 150, align: Qt.AlignLeft,    visible: true },
         { key: "lastPlayedAt", label: qsTrc("mixhouse", "Last Played"), sort: MixHouseTrackListModel.SortLastPlayedAt,     width: 150, align: Qt.AlignLeft,    visible: true },
@@ -639,7 +639,8 @@ Item {
         case "bpm":         return model.bpm > 0 ? model.bpm.toFixed(tracksModel.bpmPrecision) : "—"
         case "energy":      return model.energy > 0 ? qsTrc("mixhouse", "Energy %1").arg(Math.round(model.energy)) : "—"
         case "musicalKey":  return model.musicalKey.length > 0 ? model.musicalKey : "—"
-        case "rating":      return model.rating > 0 ? "★".repeat(model.rating) : "—"
+        // Five stars, empty ones outlined, like rekordbox.
+        case "rating":      return "★".repeat(Math.max(0, model.rating)) + "☆".repeat(5 - Math.max(0, Math.min(5, model.rating)))
         case "durationSec":
             // -1 = NULL in the DB (header not parsed yet) -- real mixxx
             // shows a blank cell here, not a real 0:00 (basetracktablemodel.
@@ -3790,14 +3791,24 @@ Item {
                     // math -- same real behavior (click position -> star
                     // count), simplified geometry for this port's own
                     // text-based rendering.
+                    TextMetrics {
+                        id: starsMetrics
+                        font: root.libraryFont
+                        text: "★★★★★"
+                    }
                     MouseArea {
                         visible: cell.col && cell.col.key === "rating"
                         anchors.fill: parent
                         onClicked: {
                             root.selectRow(cell.row)   // same as any other plain click on the row
-                            var frac = mouse.x / width
-                            var star = frac < 0.05 ? 0 : Math.ceil(frac * 5)
-                            tracksModel.setTrackRating(cell.row, Math.max(0, Math.min(5, star)))
+                            // The stars start at the text's left margin (15); clicking the
+                            // star the song already has clears the rating.
+                            var starWidth = Math.max(1, starsMetrics.advanceWidth / 5)
+                            var star = mouse.x < 15 ? 0 : Math.min(5, Math.ceil((mouse.x - 15) / starWidth))
+                            if (cell.model && star === cell.model.rating) {
+                                star = 0
+                            }
+                            tracksModel.setTrackRating(cell.row, Math.max(0, star))
                         }
                     }
                 }

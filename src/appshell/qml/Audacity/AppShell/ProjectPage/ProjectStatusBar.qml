@@ -25,6 +25,7 @@ import QtQuick.Layouts
 import Muse.UiComponents
 
 import Audacity.ProjectScene
+import Audacity.MixHouse
 
 Item {
     id: root
@@ -55,6 +56,13 @@ Item {
         anchors.rightMargin: 6
 
         height: parent.height
+
+        // GlideMix: what the app is doing, and what the hovered control does.
+        MixHouseStatusLine {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.rightMargin: 12
+        }
 
         SelectionStatus {
             Layout.alignment: Qt.AlignRight | Qt.AlignVCenter

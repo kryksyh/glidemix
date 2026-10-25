@@ -277,7 +277,6 @@ QVariantList AboutModel::creditList() const
 {
     static const QVariantList cached = [this] {
         const QJsonArray components = QJsonDocument::fromJson(readResource(ABOUT_RESOURCES + "components.json").toUtf8()).array();
-        const QJsonArray mixxx = QJsonDocument::fromJson(readResource(ABOUT_RESOURCES + "mixxx_credits.json").toUtf8()).array();
 
         auto componentsIn = [&components](const QString& group) {
             QVariantList credits;
@@ -311,14 +310,11 @@ QVariantList AboutModel::creditList() const
         creditList.append(makeSection(QStringLiteral("Audacity website and graphics"), buildCredits(sGraphics)));
         creditList.append(makeSection(QStringLiteral("Audacity special thanks"), buildCredits(sThanks)));
 
-        for (const QJsonValue& v : mixxx) {
-            const QJsonObject section = v.toObject();
-            QStringList names;
-            for (const QJsonValue& name : section.value("names").toArray()) {
-                names << name.toString().toHtmlEscaped();
-            }
-            creditList.append(makeRawSection(section.value("title").toString(), names.join(", ")));
-        }
+        // GlideMix: the DJ effects come from Mixxx; one line instead of its
+        // ~400 contributor names (Mixxx stays under "Built on" with its licence).
+        creditList.append(makeRawSection(QStringLiteral("Mixxx"),
+                                         QStringLiteral("The built-in DJ effects come from Mixxx. Thank you to the Mixxx Development Team "
+                                                        "and all its contributors: <a href=\"https://mixxx.org\">mixxx.org</a>")));
 
         /* i18n-hint: Replace this with the names of the translators for your language.
             This will appear in the Translators section of the About dialog.

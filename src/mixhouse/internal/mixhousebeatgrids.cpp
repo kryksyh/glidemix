@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QHash>
+#include <QFileInfo>
 #include <QTimer>
 
 #include <algorithm>
@@ -20,6 +21,7 @@
 #include "project/iaudacityproject.h"
 #include "projectscene/iprojectviewstate.h"
 #include "log.h"
+#include "translation.h"
 
 #include "mixhouseanalyzer.h"
 #include "mixhouseprojectaligner.h"
@@ -572,6 +574,12 @@ void MixHouseBeatGrids::startEnergyJob() const
     }
     m_energyJobRunning = true;
     const EnergyJob job = m_energyQueue.takeFirst();
+    if (activity()) {
+        const QString name = QFileInfo(job.filePath).completeBaseName();
+        activity()->set(QStringLiteral("energy"), m_energyQueue.isEmpty()
+                        ? muse::qtrc("mixhouse", "Working out the energy of %1").arg(name)
+                        : muse::qtrc("mixhouse", "Working out the energy of %1 (%2 more)").arg(name).arg(m_energyQueue.size()));
+    }
     const auto alive = m_alive;
     std::thread([this, alive, job]() {
         // A known tempo skips the beat network; the grid found is not saved.
@@ -596,6 +604,12 @@ void MixHouseBeatGrids::startEnergyJob() const
                 return;
             }
             m_energyJobRunning = false;
+            ++m_energyJobsDone;
+            if (m_energyQueue.isEmpty() && activity()) {
+                activity()->finish(QStringLiteral("energy"),
+                                   muse::qtrc("mixhouse", "Energy worked out for %n song(s)", nullptr, m_energyJobsDone));
+                m_energyJobsDone = 0;
+            }
             if (computed.energy > 0.0) {
                 m_computedEnergy.insert(job.filePath, computed);
                 // Only a song without a rating: Lexicon's own stays.

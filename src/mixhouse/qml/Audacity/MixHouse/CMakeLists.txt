@@ -26,10 +26,13 @@ qt_add_qml_module(mixhouse_qml
         mixhouseperformancemodel.h
         mixhouselicencemodel.cpp
         mixhouselicencemodel.h
+        mixhousestatusmodel.cpp
+        mixhousestatusmodel.h
     QML_FILES
         MixHouseLibraryPanel.qml
         MixHouseGridEditorPanel.qml
         SmartPlaylistEditor.qml
+        MixHouseStatusLine.qml
     RESOURCES
         icons/ic_broadcast.svg
         icons/ic_library_tracks.svg

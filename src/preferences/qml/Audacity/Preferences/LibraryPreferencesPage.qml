@@ -60,6 +60,7 @@ PreferencesPage {
             FilePickerModel {
                 id: musicDirPicker
                 title: qsTrc("preferences", "Choose a music folder to add")
+                dir: mixHouseLibraryModel.musicFolder()
             }
 
             StyledListView {

@@ -1,6 +1,8 @@
 /*
  * Audacity: A Digital Audio Editor
  */
+#include <QDir>
+#include <QStandardPaths>
 #include "mixhouselibrarypreferencesmodel.h"
 
 #include <cmath>
@@ -352,4 +354,11 @@ void MixHouseLibraryPreferencesModel::setShowWaveformMinuteMarkers(bool show)
 QString MixHouseLibraryPreferencesModel::settingsDirectoryPath() const
 {
     return configuration()->settingsDirectoryPath();
+}
+
+QString MixHouseLibraryPreferencesModel::musicFolder() const
+{
+    // Without a folder the Windows chooser opened in System32.
+    const QString music = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
+    return QDir(music).exists() ? music : QDir::homePath();
 }

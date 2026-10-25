@@ -107,6 +107,8 @@ public:
 
     QStringList musicDirectories() const;
     Q_INVOKABLE void addMusicDirectory(const QString& path);
+    //! Where the folder chooser opens: the user's Music folder.
+    Q_INVOKABLE QString musicFolder() const;
     Q_INVOKABLE void removeMusicDirectory(const QString& path);
 
     bool rescanOnStartup() const;

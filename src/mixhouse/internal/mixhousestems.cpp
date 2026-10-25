@@ -414,6 +414,9 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
         }
     }
     LOGI() << "GlideMix stems: separated track " << trackId << " with " << model.toStdString();
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "Stems ready: %1").arg(QString::fromStdString(track->GetName().ToStdString())));
+    }
 }
 
 namespace {
@@ -524,6 +527,10 @@ void MixHouseStems::installEngine()
             const QString line = QString::fromUtf8(m_installer->readLine()).trimmed();
             if (line.startsWith(QStringLiteral("STEP "))) {
                 m_installProgress.send(line.mid(5));
+                if (activity()) {
+                    activity()->set(QStringLiteral("stems-install"),
+                                    muse::qtrc("mixhouse", "Installing the stems engine: %1").arg(line.mid(5)));
+                }
             }
             LOGI() << "GlideMix stems install: " << line;
         }
@@ -537,6 +544,10 @@ void MixHouseStems::installEngine()
         }
         m_installProgress.send(ok ? muse::qtrc("mixhouse", "Installed") : muse::qtrc("mixhouse", "The install did not finish"));
         m_installFinished.send(ok);
+        if (activity()) {
+            activity()->finish(QStringLiteral("stems-install"), ok ? muse::qtrc("mixhouse", "The stems engine is installed")
+                                                                  : muse::qtrc("mixhouse", "The stems engine install did not finish"));
+        }
     });
     m_installProgress.send(muse::qtrc("mixhouse", "Starting"));
 #ifdef Q_OS_WIN

@@ -1,0 +1,45 @@
+diff --git a/beat_this/model/beat_tracker.py b/beat_this/model/beat_tracker.py
+index 28fc630..216e70b 100644
+--- a/beat_this/model/beat_tracker.py
++++ b/beat_this/model/beat_tracker.py
+@@ -6,8 +6,8 @@ import contextlib
+ from collections import OrderedDict
+ 
+ import torch
+-from einops import rearrange
+-from einops.layers.torch import Rearrange
++from einops_shim import rearrange
++from einops_shim import Rearrange
+ from rotary_embedding_torch import RotaryEmbedding
+ from torch import nn
+ 
+@@ -318,15 +318,7 @@ class SumHead(nn.Module):
+         beat, downbeat = rearrange(beat_downbeat, "b t c -> c b t", c=2)
+         # aggregate beats and downbeats prediction
+         # autocast to float16 disabled to avoid numerical issues causing NaNs
+-        if hasattr(
+-            torch.amp, "is_autocast_available"
+-        ) and not torch.amp.is_autocast_available(beat.device.type):
+-            # but do not try disabling if the device does not support autocast
+-            disable_autocast = contextlib.nullcontext()
+-        else:
+-            disable_autocast = torch.autocast(beat.device.type, enabled=False)
+-        with disable_autocast:
+-            beat = beat.float() + downbeat.float()
++        beat = beat.float() + downbeat.float()  # GlideMix export: no autocast branch
+         return {"beat": beat, "downbeat": downbeat}
+ 
+ 
+diff --git a/beat_this/model/roformer.py b/beat_this/model/roformer.py
+index d1cdd3c..e2ba701 100644
+--- a/beat_this/model/roformer.py
++++ b/beat_this/model/roformer.py
+@@ -5,7 +5,7 @@ at https://github.com/lucidrains/BS-RoFormer (under MIT License).
+ 
+ import torch
+ import torch.nn.functional as F
+-from einops import rearrange
++from einops_shim import rearrange
+ from torch import nn
+ from torch.nn import Module, ModuleList
+ 

@@ -1,6 +1,26 @@
 #include "InferenceProcessor.h"
+#include "beat_this_api.h"
 #include <algorithm>
+#include <atomic>
+#include <future>
 #include <numeric>
+#include <thread>
+
+namespace {
+BeatThis::ChunkRunner& chunkRunner()
+{
+    static BeatThis::ChunkRunner runner;
+    return runner;
+}
+// Songs in the network right now: the pieces of one song run side by side
+// on the cores the other songs leave free.
+std::atomic<int> s_activeSongs { 0 };
+}
+
+namespace BeatThis {
+void setChunkRunner(ChunkRunner runner) { chunkRunner() = std::move(runner); }
+bool hasChunkRunner() { return static_cast<bool>(chunkRunner()); }
+}
 
 
 InferenceProcessor::InferenceProcessor(Ort::Session& session, Ort::Env& env)
@@ -166,9 +186,46 @@ std::pair<std::vector<float>, std::vector<float>> InferenceProcessor::process_sp
         starts.back() = len_spect - (chunk_size - border_size);
     }
 
-    for (const auto& chunk : chunks) {
-        pred_chunks.push_back(run_onnx_inference(chunk));
+    // GlideMix patch: Core ML when installed (see setChunkRunner), else
+    // ONNX Runtime with the pieces side by side on the free cores.
+    const auto runOne = [this](const std::vector<std::vector<float>>& chunk) {
+        if (const auto& runner = chunkRunner(); runner && !chunk.empty()) {
+            const int frames = static_cast<int>(chunk.size());
+            const int bins = static_cast<int>(chunk[0].size());
+            std::vector<float> flat(static_cast<size_t>(frames) * bins);
+            for (int i = 0; i < frames; ++i) {
+                std::copy(chunk[i].begin(), chunk[i].end(), flat.begin() + static_cast<size_t>(i) * bins);
+            }
+            std::vector<float> beat(frames), downbeat(frames);
+            if (runner(flat.data(), frames, bins, beat.data(), downbeat.data())) {
+                return std::make_pair(std::move(beat), std::move(downbeat));
+            }
+        }
+        return run_onnx_inference(chunk);
+    };
+    const int active = ++s_activeSongs;
+    const int cores = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+    const int parallel = BeatThis::hasChunkRunner() ? 1 : std::clamp(cores / std::max(1, active), 1, static_cast<int>(chunks.size()));
+    pred_chunks.resize(chunks.size());
+    if (parallel <= 1) {
+        for (size_t i = 0; i < chunks.size(); ++i) {
+            pred_chunks[i] = runOne(chunks[i]);
+        }
+    } else {
+        std::atomic<size_t> next { 0 };
+        std::vector<std::future<void>> workers;
+        for (int w = 0; w < parallel; ++w) {
+            workers.push_back(std::async(std::launch::async, [&]() {
+                for (size_t i = next++; i < chunks.size(); i = next++) {
+                    pred_chunks[i] = runOne(chunks[i]);
+                }
+            }));
+        }
+        for (auto& w : workers) {
+            w.get();
+        }
     }
+    --s_activeSongs;
 
     return aggregate_prediction(pred_chunks, starts, spectrogram.size(), chunk_size, border_size);
 }

@@ -46,6 +46,9 @@ echo "== Analysis models"
 MODELS="$APP/Contents/Resources/models"
 mkdir -p "$MODELS"
 cp "$ROOT/mixhouse_deps/beat_this/beat_this.onnx" "$MODELS/"
+# The same model compiled for Core ML: beat grids on the GPU (mixhousecoremlbeats.h).
+rm -rf "$MODELS/beat_this.mlmodelc"
+cp -R "$ROOT/mixhouse_deps/beat_this/beat_this.mlmodelc" "$MODELS/"
 cp "$ROOT/src/mixhouse/models/glidemix_phrases.onnx" "$ROOT/src/mixhouse/models/beat_this_small.onnx" "$MODELS/"
 ls -la "$MODELS"
 
