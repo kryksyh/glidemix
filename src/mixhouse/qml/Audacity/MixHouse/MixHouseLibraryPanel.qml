@@ -1932,6 +1932,7 @@ Item {
                 // this app's own native file dialog expects -- a bare
                 // "*.xml" glob isn't it).
                 filter: [qsTrc("mixhouse", "Rekordbox XML") + " (*.xml)"]
+                dir: tracksModel.rekordboxXmlFolder()
             }
 
             ContextMenuLoader {

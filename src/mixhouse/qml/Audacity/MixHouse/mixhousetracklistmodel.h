@@ -283,6 +283,8 @@ public:
     Q_INVOKABLE void startExternalDrag(const QVariantList& rows);
     //! GlideMix: where folder pickers start -- the user's Music folder.
     Q_INVOKABLE QString musicFolder() const;
+    /// Where the rekordbox XML chooser opens: the current XML's folder, else Documents.
+    Q_INVOKABLE QString rekordboxXmlFolder() const;
 
     int libraryRowHeight() const;
     bool greyOutPlayedTracks() const;

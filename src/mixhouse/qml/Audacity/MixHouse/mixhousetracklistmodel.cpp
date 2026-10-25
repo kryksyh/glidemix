@@ -2350,6 +2350,21 @@ QString MixHouseTrackListModel::musicFolder() const
     return QDir(music).exists() ? music : QDir::homePath();
 }
 
+QString MixHouseTrackListModel::rekordboxXmlFolder() const
+{
+    // Without a dir the Windows dialog opens in the process's working
+    // folder (System32 when started by a task, the install folder from
+    // the Start menu).
+    if (rekordboxXml() && !rekordboxXml()->path().isEmpty()) {
+        const QString dir = QFileInfo(rekordboxXml()->path()).absolutePath();
+        if (QDir(dir).exists()) {
+            return dir;
+        }
+    }
+    const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    return QDir(docs).exists() ? docs : QDir::homePath();
+}
+
 QPixmap MixHouseTrackListModel::dragPixmap(const QStringList& titles)
 {
     const QString label = titles.size() == 1
