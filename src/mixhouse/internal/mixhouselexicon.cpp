@@ -3,6 +3,7 @@
  */
 #include "mixhouselexicon.h"
 #include "mixhouse/glidemixpaths.h"
+#include "mixhouse/mixhousesearchquery.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -238,6 +239,14 @@ MixHouseTrackList MixHouseLexicon::tracks(int playlistId, const IMixHouseLibrary
         t.bpm = q.value(8).toDouble();
         t.key = q.value(9).toString();
         t.keyId = keyIdForCamelot(t.key);
+        if (t.keyId <= 0) {
+            // Lexicon set to another notation: Open Key in capitals ("8M",
+            // "11D"), traditional ("Am")...
+            t.keyId = keyIdFromText(t.key);
+            if (t.keyId <= 0) {
+                t.keyId = keyIdFromText(t.key.toLower());
+            }
+        }
         t.rating = q.value(10).toInt();
         t.composer = q.value(11).toString();
         t.grouping = q.value(12).toString();

@@ -45,6 +45,8 @@ public:
     bool analyzeNewTracks() const override;
     void setAnalyzeNewTracks(bool analyze) override;
     bool accurateBeatAnalysis() const override;
+    int analysisMode() const override;
+    void setAnalysisMode(int mode) override;
     void setAccurateBeatAnalysis(bool accurate) override;
 
     bool showScanSummaryDialog() const override;
@@ -72,6 +74,8 @@ public:
     int bpmPrecision() const override;
     MixHouseKeyNotation keyNotation() const override;
     void setKeyNotation(MixHouseKeyNotation notation) override;
+    bool keyBadges() const override;
+    void setKeyBadges(bool badges) override;
     MixHouseStemsDevice stemsDevice() const override;
     void setStemsDevice(MixHouseStemsDevice device) override;
     bool stemsHighQuality() const override;

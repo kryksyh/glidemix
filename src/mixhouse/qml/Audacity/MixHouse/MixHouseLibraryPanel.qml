@@ -146,7 +146,7 @@ Item {
         { key: "musicalKey",   label: qsTrc("mixhouse", "Key"),         sort: MixHouseTrackListModel.SortKey,              width: 90,  align: Qt.AlignRight,   visible: true },
         { key: "bpm",          label: qsTrc("mixhouse", "BPM"),         sort: MixHouseTrackListModel.SortBpm,              width: 80,  align: Qt.AlignRight,   visible: true },
         // GlideMix: 1-10, from the analysis (Lexicon's own for its songs).
-        { key: "energy",       label: qsTrc("mixhouse", "Energy"),      sort: MixHouseTrackListModel.SortEnergy,           width: 90,  align: Qt.AlignLeft,    visible: true },
+        { key: "energy",       label: qsTrc("mixhouse", "Energy"),      sort: MixHouseTrackListModel.SortEnergy,           width: 100,  align: Qt.AlignLeft,    visible: true },
         { key: "durationSec",  label: qsTrc("mixhouse", "Duration"),    sort: MixHouseTrackListModel.SortDuration,         width: 90,  align: Qt.AlignRight,   visible: true },
         { key: "rating",       label: qsTrc("mixhouse", "Rating"),      sort: MixHouseTrackListModel.SortRating,           width: 120, align: Qt.AlignRight,   visible: true },
         { key: "comment",      label: qsTrc("mixhouse", "Comment"),     sort: MixHouseTrackListModel.SortComment,          width: 220, align: Qt.AlignLeft,    visible: true },
@@ -637,7 +637,7 @@ Item {
     function cellText(model, key) {
         switch (key) {
         case "bpm":         return model.bpm > 0 ? model.bpm.toFixed(tracksModel.bpmPrecision) : "—"
-        case "energy":      return model.energy > 0 ? qsTrc("mixhouse", "Energy %1").arg(Math.round(model.energy)) : "—"
+        case "energy":      return model.energy > 0 ? String(Math.round(model.energy)) : "—"
         case "musicalKey":  return model.musicalKey.length > 0 ? model.musicalKey : "—"
         // Five stars, empty ones outlined, like rekordbox.
         case "rating":      return "★".repeat(Math.max(0, model.rating)) + "☆".repeat(5 - Math.max(0, Math.min(5, model.rating)))
@@ -2309,6 +2309,54 @@ Item {
                     text: tracksModel.scanning ? tracksModel.scanStatusText : tracksModel.statusMessage
                     opacity: 0.6
                 }
+
+                Item {
+                    Layout.fillWidth: true
+                    visible: !(tracksModel.scanning || !tracksModel.available)
+                }
+
+                // GlideMix: zoom for the list, like rekordbox's Font Size and
+                // Line Space (also in Preferences > Music library).
+                StyledTextLabel {
+                    text: "A"
+                    font.pixelSize: 10
+                    opacity: 0.7
+                }
+                StyledSlider {
+                    id: fontSizeSlider
+                    Layout.preferredWidth: 110
+                    from: 9
+                    to: 20
+                    stepSize: 1
+                    value: tracksModel.libraryFontPointSize > 0 ? tracksModel.libraryFontPointSize : tracksModel.themeFontPointSize()
+                    onMoved: tracksModel.setLibraryFontPointSize(Math.round(value))
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTrc("mixhouse", "Text size")
+                }
+                StyledTextLabel {
+                    text: "A"
+                    font.pixelSize: 16
+                    opacity: 0.7
+                }
+
+                StyledTextLabel {
+                    Layout.leftMargin: 14
+                    text: "☰"
+                    font.pixelSize: 10
+                    opacity: 0.7
+                }
+                StyledSlider {
+                    id: rowHeightSlider
+                    Layout.preferredWidth: 110
+                    Layout.rightMargin: 8
+                    from: 18
+                    to: 60
+                    stepSize: 1
+                    value: tracksModel.libraryRowHeight
+                    onMoved: tracksModel.setLibraryRowHeight(Math.round(value))
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTrc("mixhouse", "Row height")
+                }
             }
 
             // ---- Analysis stats bar -- real mixxx's own DlgAnalysis
@@ -3699,10 +3747,74 @@ Item {
                         }
                     }
 
+                    // GlideMix: the key as a coloured badge with dark text, like
+                    // Lexicon (Preferences > Music library > Show keys as badges).
+                    Rectangle {
+                        id: keyBadge
+                        readonly property string keyText: cell.col && cell.col.key === "musicalKey"
+                                                          ? root.cellText(cell.model, "musicalKey") : ""
+                        readonly property color keyColor: cell.model ? (keyWheel.colorForKeyId(cell.model.keyId) || "transparent")
+                                                                      : "transparent"
+                        visible: tracksModel.keyBadges && keyText !== "" && keyText !== "—"
+                                 && keyColor !== Qt.rgba(0, 0, 0, 0)
+                                 && !(cell.row === root.editingRow && cell.col && cell.col.key === root.editingColumnKey)
+                        anchors.left: parent.left
+                        anchors.leftMargin: 13
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: Math.min(parent.height - 6, badgeText.implicitHeight + 6)
+                        width: Math.max(38, badgeText.implicitWidth + 16)
+                        radius: 4
+                        color: keyColor
+
+                        Text {
+                            id: badgeText
+                            anchors.centerIn: parent
+                            text: keyBadge.keyText
+                            color: "#1E1E24"
+                            font.family: root.libraryFont.family
+                            font.pixelSize: root.libraryFont.pixelSize > 0 ? root.libraryFont.pixelSize : ui.theme.bodyFont.pixelSize
+                            font.bold: true
+                        }
+                    }
+
+                    // GlideMix: energy as LED blocks like a level meter (one per
+                    // point: green, then yellow from 5, red from 8), then the number.
+                    Row {
+                        id: energyBlocks
+                        readonly property int level: cell.model && cell.col && cell.col.key === "energy"
+                                                     ? Math.round(cell.model.energy) : 0
+                        visible: level > 0
+                        anchors.left: parent.left
+                        anchors.leftMargin: 15
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 6
+
+                        Row {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 1
+                            Repeater {
+                                model: energyBlocks.level
+                                Rectangle {
+                                    width: 4
+                                    height: 12
+                                    radius: 1
+                                    color: index >= 7 ? "#EF476F" : (index >= 4 ? "#FFE100" : "#50DF46")
+                                }
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: energyBlocks.level
+                            color: ui.theme.fontPrimaryColor
+                            font: root.libraryFont
+                        }
+                    }
+
                     StyledTextLabel {
                         visible: (!cell.col || (cell.col.key !== "color" && cell.col.key !== "overview"
                                                && cell.col.key !== "coverArt" && cell.col.key !== "analysisProgress"))
                                  && !(cell.row === root.editingRow && cell.col && cell.col.key === root.editingColumnKey)
+                                 && !keyBadge.visible && !energyBlocks.visible
                         anchors.fill: parent
                         // a cell's text starts where its header's label
                         // starts -- just past the six-dot grip (the header

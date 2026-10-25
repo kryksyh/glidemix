@@ -97,6 +97,9 @@ public:
 
     virtual MixHouseKeyNotation keyNotation() const = 0;
     virtual void setKeyNotation(MixHouseKeyNotation notation) = 0;
+    /// GlideMix: the Key column as coloured badges (like Lexicon) or coloured text.
+    virtual bool keyBadges() const = 0;
+    virtual void setKeyBadges(bool badges) = 0;
 
     //! Stem separation (Preferences > Stems).
     virtual MixHouseStemsDevice stemsDevice() const = 0;
@@ -177,6 +180,10 @@ public:
     /// GlideMix: the full Beat This! model instead of the small one -- about
     /// 1.7x slower, beat grids about 2% more exact. Default off (Fast).
     virtual bool accurateBeatAnalysis() const = 0;
+    /// GlideMix: how much of the computer analysis may use, like rekordbox's
+    /// Concurrent Process Mode: 0 Performance, 1 Normal (default), 2 Power saving.
+    virtual int analysisMode() const = 0;
+    virtual void setAnalysisMode(int mode) = 0;
     virtual void setAccurateBeatAnalysis(bool accurate) = 0;
 
     /// Whether addMusicDirectory()'s scan (and a startup rescan) reports

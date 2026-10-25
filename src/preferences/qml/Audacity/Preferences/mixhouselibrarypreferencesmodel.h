@@ -39,6 +39,7 @@ class MixHouseLibraryPreferencesModel : public QObject
     Q_PROPERTY(int libraryFontPointSize READ libraryFontPointSize WRITE setLibraryFontPointSize NOTIFY libraryFontChanged)
     Q_PROPERTY(int bpmPrecision READ bpmPrecision WRITE setBpmPrecision NOTIFY bpmPrecisionChanged)
     Q_PROPERTY(int keyNotation READ keyNotation WRITE setKeyNotation NOTIFY keyNotationChanged)
+    Q_PROPERTY(bool keyBadges READ keyBadges WRITE setKeyBadges NOTIFY keyNotationChanged)
     Q_PROPERTY(
         int trackDoubleClickAction READ trackDoubleClickAction WRITE setTrackDoubleClickAction NOTIFY trackDoubleClickActionChanged)
     Q_PROPERTY(bool greyOutPlayedTracks READ greyOutPlayedTracks WRITE setGreyOutPlayedTracks NOTIFY greyOutPlayedTracksChanged)
@@ -50,6 +51,7 @@ class MixHouseLibraryPreferencesModel : public QObject
     Q_PROPERTY(bool watchMusicDirectories READ watchMusicDirectories WRITE setWatchMusicDirectories NOTIFY watchMusicDirectoriesChanged)
     Q_PROPERTY(bool analyzeNewTracks READ analyzeNewTracks WRITE setAnalyzeNewTracks NOTIFY analyzeNewTracksChanged)
     Q_PROPERTY(bool accurateBeatAnalysis READ accurateBeatAnalysis WRITE setAccurateBeatAnalysis NOTIFY accurateBeatAnalysisChanged)
+    Q_PROPERTY(int analysisMode READ analysisMode WRITE setAnalysisMode NOTIFY accurateBeatAnalysisChanged)
     Q_PROPERTY(
         bool showScanSummaryDialog READ showScanSummaryDialog WRITE setShowScanSummaryDialog NOTIFY showScanSummaryDialogChanged)
     Q_PROPERTY(
@@ -82,6 +84,8 @@ public:
     void setBpmPrecision(int decimals);
     int keyNotation() const;
     void setKeyNotation(int notation);
+    bool keyBadges() const;
+    void setKeyBadges(bool badges);
     void setLibraryRowHeight(int px);
 
     int trackDoubleClickAction() const;
@@ -119,6 +123,8 @@ public:
     void setAnalyzeNewTracks(bool analyze);
     bool accurateBeatAnalysis() const;
     void setAccurateBeatAnalysis(bool accurate);
+    int analysisMode() const;
+    void setAnalysisMode(int mode);
 
     bool showScanSummaryDialog() const;
     void setShowScanSummaryDialog(bool show);

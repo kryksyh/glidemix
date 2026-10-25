@@ -304,6 +304,7 @@ void MixHouseTrackListModel::load()
             }
             emit libraryRowHeightChanged();
             emit greyOutPlayedTracksChanged();
+            emit keyBadgesChanged();
             emit searchDebounceMsChanged();
             emit libraryFontChanged();
             emit bpmPrecisionChanged();
@@ -2410,8 +2411,28 @@ bool MixHouseTrackListModel::greyOutPlayedTracks() const { return libraryConfigu
 int MixHouseTrackListModel::searchDebounceMs() const { return libraryConfiguration()->searchDebounceMs(); }
 QString MixHouseTrackListModel::libraryFontFamily() const { return libraryConfiguration()->libraryFontFamily(); }
 int MixHouseTrackListModel::libraryFontPointSize() const { return libraryConfiguration()->libraryFontPointSize(); }
+
+void MixHouseTrackListModel::setLibraryFontPointSize(int pointSize)
+{
+    if (libraryConfiguration() && pointSize != libraryConfiguration()->libraryFontPointSize()) {
+        libraryConfiguration()->setLibraryFont(libraryConfiguration()->libraryFontFamily(), pointSize);
+    }
+}
+
+void MixHouseTrackListModel::setLibraryRowHeight(int px)
+{
+    if (libraryConfiguration() && px != libraryConfiguration()->libraryRowHeight()) {
+        libraryConfiguration()->setLibraryRowHeight(px);
+    }
+}
+
+int MixHouseTrackListModel::themeFontPointSize() const
+{
+    return QGuiApplication::font().pointSize() > 0 ? QGuiApplication::font().pointSize() : 12;
+}
 int MixHouseTrackListModel::bpmPrecision() const { return libraryConfiguration()->bpmPrecision(); }
 int MixHouseTrackListModel::keyNotation() const { return static_cast<int>(libraryConfiguration()->keyNotation()); }
+bool MixHouseTrackListModel::keyBadges() const { return libraryConfiguration() && libraryConfiguration()->keyBadges(); }
 int MixHouseTrackListModel::waveformOverviewType() const
 {
     return static_cast<int>(libraryConfiguration()->waveformOverviewType());

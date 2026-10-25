@@ -101,7 +101,7 @@ private:
     void refreshEnergy();
     void paintEnergy(QPainter* p);
 
-    static constexpr double kEnergyColumnPx = 3.0;
+    static constexpr double kEnergyColumnPx = 5.0;   // 4 px bars, 1 px gaps
     bool m_showTempo = true;
     bool m_showEnergy = false;
     std::vector<double> m_energy;
@@ -109,7 +109,7 @@ private:
 
     double m_frameStartTime = 0.0;
     double m_zoom = 1.0;
-    QColor m_lineColor { 0x5b, 0xd0, 0x8a };   // parked activeTempoColor() for the master line
+    QColor m_lineColor { 0xb7, 0xff, 0x01 };   // the volume line's yellow (audio_envelope_line)
     QColor m_labelColor { 0xc8, 0xc8, 0xc8 };  // parked kLabelText
     QColor m_backgroundColor { 0x0c, 0x12, 0x18 };
 

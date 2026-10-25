@@ -85,6 +85,20 @@ void MixHouseLibraryPreferencesModel::setKeyNotation(int notation)
     emit keyNotationChanged();
 }
 
+bool MixHouseLibraryPreferencesModel::keyBadges() const
+{
+    return configuration()->keyBadges();
+}
+
+void MixHouseLibraryPreferencesModel::setKeyBadges(bool badges)
+{
+    if (keyBadges() == badges) {
+        return;
+    }
+    configuration()->setKeyBadges(badges);
+    emit keyNotationChanged();
+}
+
 int MixHouseLibraryPreferencesModel::trackDoubleClickAction() const
 {
     return static_cast<int>(configuration()->trackDoubleClickAction());
@@ -180,6 +194,20 @@ void MixHouseLibraryPreferencesModel::setAccurateBeatAnalysis(bool accurate)
         return;
     }
     configuration()->setAccurateBeatAnalysis(accurate);
+    emit accurateBeatAnalysisChanged();
+}
+
+int MixHouseLibraryPreferencesModel::analysisMode() const
+{
+    return configuration()->analysisMode();
+}
+
+void MixHouseLibraryPreferencesModel::setAnalysisMode(int mode)
+{
+    if (analysisMode() == mode) {
+        return;
+    }
+    configuration()->setAnalysisMode(mode);
     emit accurateBeatAnalysisChanged();
 }
 

@@ -85,6 +85,8 @@ private:
     QString m_message;
     QTimer m_messageTimer;
     QTimer m_rekordboxPoll;
+    QTimer m_settleTimer;
+    QElapsedTimer m_lastBusy;
     QTimer m_updateTimer;
     QString m_updateVersion;
     // What is shown

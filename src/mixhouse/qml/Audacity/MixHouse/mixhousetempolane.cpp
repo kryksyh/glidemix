@@ -3,6 +3,8 @@
  */
 #include "mixhousetempolane.h"
 
+#include <QLinearGradient>
+
 #include <algorithm>
 #include <cmath>
 
@@ -92,11 +94,11 @@ void MixHouseTempoLane::refreshEnergy()
 
 QColor MixHouseTempoLane::energyColor(double energy)
 {
-    // Calm blue, steady green, building yellow-orange, peak red.
-    static const QColor stops[] = { QColor(0x3B, 0x6E, 0xF0), QColor(0x22, 0xB8, 0xCF), QColor(0x2F, 0xC4, 0x5A),
-                                    QColor(0xF2, 0xC2, 0x2E), QColor(0xF5, 0x7C, 0x22), QColor(0xE8, 0x30, 0x3A) };
-    const double pos = std::clamp((energy - 1.0) / 9.0, 0.0, 1.0) * 5.0;
-    const int i = std::min(4, static_cast<int>(pos));
+    // The gradient meters' colours: calm green, building yellow, peak red
+    // (meter_gradient_green/yellow, meter_clipped).
+    static const QColor stops[] = { QColor(0x50, 0xDF, 0x46), QColor(0xFF, 0xE1, 0x00), QColor(0xEF, 0x47, 0x6F) };
+    const double pos = std::clamp((energy - 2.0) / 7.0, 0.0, 1.0) * 2.0;   // 2 and below green, 9 and up red
+    const int i = std::min(1, static_cast<int>(pos));
     const double f = pos - i;
     const QColor& a = stops[i];
     const QColor& b = stops[i + 1];
@@ -106,37 +108,31 @@ QColor MixHouseTempoLane::energyColor(double energy)
 
 void MixHouseTempoLane::paintEnergy(QPainter* p)
 {
-    // Energy 1 at the bottom, 10 at the top of the field, behind the line.
+    // Like a row of level meters: one bar per column, as high as the energy
+    // (1 at the bottom, 10 at the top), lit with the meters' gradient --
+    // green low down, yellow in the middle, red at the top -- so a peak
+    // shows red tops and a breakdown short green bars.
     const double top = kInset;
     const double bottom = height() - 2.0;
     const auto yOf = [&](double e) { return bottom - (e - 1.0) / 9.0 * (bottom - top); };
-    // With the tempo line on top it stays a backdrop; alone it is the picture.
-    const double alpha = m_showTempo ? 0.45 : 0.8;
-    QPainterPath edge;
-    bool drawing = false;
+    QLinearGradient meter(0.0, bottom, 0.0, top);
+    meter.setColorAt(0.0, QColor(0x50, 0xDF, 0x46));
+    meter.setColorAt(0.55, QColor(0xFF, 0xE1, 0x00));
+    meter.setColorAt(1.0, QColor(0xEF, 0x47, 0x6F));
+    p->setOpacity(m_showTempo ? 0.85 : 1.0);
+    p->setPen(Qt::NoPen);
+    p->setBrush(meter);
+    const double gap = kEnergyColumnPx >= 4.0 ? 1.0 : 0.0;
     for (size_t i = 0; i < m_energy.size(); ++i) {
         const double e = m_energy[i];
-        const double x = i * kEnergyColumnPx;
         if (e <= 0.0) {
-            drawing = false;
             continue;
         }
-        QColor fill = energyColor(e);
-        fill.setAlphaF(alpha);
+        const double x = i * kEnergyColumnPx;
         const double y = yOf(e);
-        p->fillRect(QRectF(x, y, kEnergyColumnPx, bottom - y), fill);
-        if (!drawing) {
-            edge.moveTo(x, y);
-            drawing = true;
-        } else {
-            edge.lineTo(x + kEnergyColumnPx / 2.0, y);
-        }
+        p->drawRect(QRectF(x, y, kEnergyColumnPx - gap, bottom - y));
     }
-    QColor edgeColor = m_labelColor;
-    edgeColor.setAlphaF(m_showTempo ? 0.35 : 0.8);
-    p->setPen(QPen(edgeColor, 1.2));
-    p->setBrush(Qt::NoBrush);
-    p->drawPath(edge);
+    p->setOpacity(1.0);
     if (!m_showTempo) {
         return;
     }
@@ -145,7 +141,7 @@ void MixHouseTempoLane::paintEnergy(QPainter* p)
     font.setPixelSize(10);
     p->setFont(font);
     QColor legend = m_labelColor;
-    legend.setAlphaF(0.6);
+    legend.setAlphaF(0.7);
     p->setPen(legend);
     p->drawText(QRectF(0, 0, width() - 8.0, height() - 3.0), Qt::AlignRight | Qt::AlignBottom,
                 QStringLiteral("ENERGY"));
@@ -263,8 +259,13 @@ void MixHouseTempoLane::paint(QPainter* p)
         }
     }
     path.lineTo(std::max(width(), timeToX(points.back().time)), bpmToY(points.back().bpm));
-    p->setPen(QPen(m_lineColor, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    // A dark edge keeps the yellow line readable over the energy colours.
     p->setBrush(Qt::NoBrush);
+    if (m_showEnergy) {
+        p->setPen(QPen(QColor(0, 0, 0, 150), 5.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p->drawPath(path);
+    }
+    p->setPen(QPen(m_lineColor, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p->drawPath(path);
 
     // Points with their BPM; the readout flips below a point near the top.

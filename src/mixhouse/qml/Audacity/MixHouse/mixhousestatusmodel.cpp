@@ -16,6 +16,8 @@ constexpr int kMessageMs = 12000;
 // The quiet update check: shortly after start, then every few hours.
 constexpr int kFirstUpdateCheckMs = 15000;
 constexpr int kUpdateCheckEveryMs = 6 * 60 * 60 * 1000;
+// How long the line keeps showing a finished activity before going idle.
+constexpr int kSettleMs = 1500;
 
 QString duration(qint64 ms)
 {
@@ -40,6 +42,8 @@ MixHouseStatusModel::MixHouseStatusModel(QObject* parent)
     });
     m_rekordboxPoll.setInterval(250);
     QObject::connect(&m_rekordboxPoll, &QTimer::timeout, this, [this]() { refresh(); });
+    m_settleTimer.setSingleShot(true);
+    QObject::connect(&m_settleTimer, &QTimer::timeout, this, [this]() { refresh(); });
     m_updateTimer.setSingleShot(true);
     QObject::connect(&m_updateTimer, &QTimer::timeout, this, [this]() { checkForUpdate(); });
 }
@@ -193,10 +197,8 @@ void MixHouseStatusModel::refresh()
         } else {
             text = muse::qtrc("mixhouse", "Analysing");
         }
-        const QString name = trackName(m_currentTrack);
-        if (!name.isEmpty()) {
-            text += QStringLiteral(" · ") + name;
-        }
+        // No song names: several songs are analysed at once, so naming one
+        // made the line flicker. Count, bar and time left only.
         // A rough time left once a few songs are done.
         if (m_analysisClock.isValid() && m_analysed >= 3 && m_analyseTotal > m_analysed) {
             const qint64 left = m_analysisClock.elapsed() / m_analysed * (m_analyseTotal - m_analysed);
@@ -217,6 +219,16 @@ void MixHouseStatusModel::refresh()
         text = m_message.isEmpty() ? idleText() : m_message;
     }
 
+    // Between two batches (watch folders queue new songs as they arrive) the
+    // line stays on the last activity for a moment instead of flashing idle.
+    if (busy) {
+        m_lastBusy.restart();
+    } else if (m_busy && m_lastBusy.isValid() && m_lastBusy.elapsed() < kSettleMs) {
+        if (!m_settleTimer.isActive()) {
+            m_settleTimer.start(kSettleMs - int(m_lastBusy.elapsed()) + 50);
+        }
+        return;
+    }
     if (busy != m_busy || text != m_text || percent != m_percent) {
         m_busy = busy;
         m_text = text;

@@ -28,6 +28,7 @@ static const muse::Settings::Key RESCAN_ON_STARTUP(module_name, "mixhouse/librar
 static const muse::Settings::Key WATCH_MUSIC_DIRECTORIES(module_name, "mixhouse/library/watchMusicDirectories");
 static const muse::Settings::Key ANALYZE_NEW_TRACKS(module_name, "mixhouse/library/analyzeNewTracks");
 static const muse::Settings::Key ACCURATE_BEAT_ANALYSIS(module_name, "mixhouse/library/accurateBeatAnalysis");
+static const muse::Settings::Key ANALYSIS_MODE(module_name, "mixhouse/library/analysisMode");
 static const muse::Settings::Key SHOW_SCAN_SUMMARY_DIALOG(module_name, "mixhouse/library/showScanSummaryDialog");
 static const muse::Settings::Key EDIT_METADATA_AFTER_CLICK(module_name, "mixhouse/library/editMetadataAfterClick");
 static const muse::Settings::Key SEARCH_COMPLETIONS_ENABLED(module_name, "mixhouse/library/searchCompletionsEnabled");
@@ -40,6 +41,7 @@ static const muse::Settings::Key LIBRARY_FONT_FAMILY(module_name, "mixhouse/libr
 static const muse::Settings::Key LIBRARY_FONT_POINT_SIZE(module_name, "mixhouse/library/fontPointSize");
 static const muse::Settings::Key BPM_PRECISION(module_name, "mixhouse/library/bpmPrecision");
 static const muse::Settings::Key KEY_NOTATION(module_name, "mixhouse/library/keyNotation");
+static const muse::Settings::Key KEY_BADGES(module_name, "mixhouse/library/keyBadges");
 static const muse::Settings::Key STEMS_DEVICE(module_name, "mixhouse/stems/device");
 static const muse::Settings::Key STEMS_HIGH_QUALITY(module_name, "mixhouse/stems/highQuality");
 static const muse::Settings::Key STEMS_CACHE_LIMIT_GB(module_name, "mixhouse/stems/cacheLimitGb");
@@ -86,6 +88,7 @@ void MixHouseLibraryConfiguration::init()
     muse::settings()->setDefaultValue(LIBRARY_FONT_POINT_SIZE, muse::Val(kDefaultLibraryFontPointSize));
     muse::settings()->setDefaultValue(BPM_PRECISION, muse::Val(1));   // Mixxx's default
     muse::settings()->setDefaultValue(KEY_NOTATION, muse::Val(static_cast<int>(MixHouseKeyNotation::Lancelot)));
+    muse::settings()->setDefaultValue(KEY_BADGES, muse::Val(true));
     muse::settings()->setDefaultValue(STEMS_DEVICE, muse::Val(static_cast<int>(MixHouseStemsDevice::Automatic)));
     muse::settings()->setDefaultValue(STEMS_HIGH_QUALITY, muse::Val(false));
     muse::settings()->setDefaultValue(STEMS_CACHE_LIMIT_GB, muse::Val(10));
@@ -102,6 +105,7 @@ void MixHouseLibraryConfiguration::init()
     muse::settings()->setDefaultValue(WATCH_MUSIC_DIRECTORIES, muse::Val(true));
     muse::settings()->setDefaultValue(ANALYZE_NEW_TRACKS, muse::Val(true));
     muse::settings()->setDefaultValue(ACCURATE_BEAT_ANALYSIS, muse::Val(false));
+    muse::settings()->setDefaultValue(ANALYSIS_MODE, muse::Val(1));
     muse::settings()->setDefaultValue(SHOW_SCAN_SUMMARY_DIALOG, muse::Val(true));
     muse::settings()->setDefaultValue(EDIT_METADATA_AFTER_CLICK, muse::Val(false));
     muse::settings()->setDefaultValue(SEARCH_COMPLETIONS_ENABLED, muse::Val(false));
@@ -123,7 +127,7 @@ void MixHouseLibraryConfiguration::init()
                                             SYNC_ENABLED, TEMPO_LANE_VISIBLE, TEMPO_LANE_HEIGHT, ENERGY_LANE_VISIBLE,
                                             QUANTIZE_ENABLED, KEYLOCK_ENABLED,
                                             SEARCH_DEBOUNCE_MS, FUZZY_BPM_RELATIVE_RANGE, MUSIC_DIRECTORIES,
-                                            RESCAN_ON_STARTUP, WATCH_MUSIC_DIRECTORIES, ANALYZE_NEW_TRACKS, ACCURATE_BEAT_ANALYSIS, SHOW_SCAN_SUMMARY_DIALOG, EDIT_METADATA_AFTER_CLICK,
+                                            RESCAN_ON_STARTUP, WATCH_MUSIC_DIRECTORIES, ANALYZE_NEW_TRACKS, ACCURATE_BEAT_ANALYSIS, ANALYSIS_MODE, SHOW_SCAN_SUMMARY_DIALOG, EDIT_METADATA_AFTER_CLICK,
                                             SEARCH_COMPLETIONS_ENABLED, SEARCH_HISTORY_SHORTCUTS_ENABLED,
                                             SYNC_METADATA_TO_FILE_TAGS, WAVEFORM_OVERVIEW_TYPE,
                                             SHOW_WAVEFORM_MINUTE_MARKERS }) {
@@ -245,6 +249,16 @@ bool MixHouseLibraryConfiguration::accurateBeatAnalysis() const
 void MixHouseLibraryConfiguration::setAccurateBeatAnalysis(bool accurate)
 {
     muse::settings()->setSharedValue(ACCURATE_BEAT_ANALYSIS, muse::Val(accurate));
+}
+
+int MixHouseLibraryConfiguration::analysisMode() const
+{
+    return std::clamp(muse::settings()->value(ANALYSIS_MODE).toInt(), 0, 2);
+}
+
+void MixHouseLibraryConfiguration::setAnalysisMode(int mode)
+{
+    muse::settings()->setSharedValue(ANALYSIS_MODE, muse::Val(std::clamp(mode, 0, 2)));
 }
 
 bool MixHouseLibraryConfiguration::rescanOnStartup() const
@@ -435,6 +449,17 @@ MixHouseKeyNotation MixHouseLibraryConfiguration::keyNotation() const
 void MixHouseLibraryConfiguration::setKeyNotation(MixHouseKeyNotation notation)
 {
     muse::settings()->setSharedValue(KEY_NOTATION, muse::Val(static_cast<int>(notation)));
+    m_settingsChanged.notify();
+}
+
+bool MixHouseLibraryConfiguration::keyBadges() const
+{
+    return muse::settings()->value(KEY_BADGES).toBool();
+}
+
+void MixHouseLibraryConfiguration::setKeyBadges(bool badges)
+{
+    muse::settings()->setSharedValue(KEY_BADGES, muse::Val(badges));
     m_settingsChanged.notify();
 }
 

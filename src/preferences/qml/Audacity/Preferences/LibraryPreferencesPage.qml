@@ -191,8 +191,30 @@ PreferencesPage {
                 }
             }
 
+            // GlideMix: like rekordbox's Concurrent Process Mode.
+            ComboBoxWithTitle {
+                title: qsTrc("preferences", "Analysis uses:")
+                columnWidth: 208
+                currentIndex: mixHouseLibraryModel.analysisMode
+                model: [
+                    { text: qsTrc("preferences", "Performance (all cores, fastest)"), value: 0 },
+                    { text: qsTrc("preferences", "Normal"), value: 1 },
+                    { text: qsTrc("preferences", "Power saving (half the cores)"), value: 2 }
+                ]
+                textRole: "text"
+                valueRole: "value"
+                onValueEdited: function(newIndex, newValue) {
+                    mixHouseLibraryModel.analysisMode = newValue
+                }
+                navigation.name: "LibraryAnalysisMode"
+                navigation.panel: section0.navigation
+                navigation.row: 5
+            }
+
             CheckBox {
                 width: parent.width
+                // On the Mac the full model always runs on the GPU (Core ML).
+                visible: Qt.platform.os !== "osx"
 
                 // GlideMix: Fast (small model) by default; tracks rekordbox
                 // or Lexicon analysed already use their grid either way.
@@ -476,6 +498,21 @@ PreferencesPage {
                 navigation.name: "LibraryKeyNotation"
                 navigation.panel: section2.navigation
                 navigation.row: 7
+            }
+
+            CheckBox {
+                width: parent.width
+
+                text: qsTrc("preferences", "Show keys as coloured badges")
+                checked: mixHouseLibraryModel.keyBadges
+
+                navigation.name: "LibraryKeyBadges"
+                navigation.panel: section2.navigation
+                navigation.row: 8
+
+                onClicked: {
+                    mixHouseLibraryModel.keyBadges = !checked
+                }
             }
 
             CheckBox {

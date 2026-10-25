@@ -1831,7 +1831,7 @@ muse::async::Channel<IMixHouseLibrary::ScanResult> MixHouseLibrary::scanFinished
 // comment for the real mixxx precedent this ports and why).
 
 namespace {
-int mixhouseAnalyzerThreadCount()
+int mixhouseAnalyzerThreadCount(int mode)
 {
     // Real mixxx: library/analysis/analysisfeature.cpp's own
     // kNumberOfAnalyzerThreads -- "Utilize all available cores for batch
@@ -1843,7 +1843,12 @@ int mixhouseAnalyzerThreadCount()
     // keep half for audio and the interface; four analysis threads there made
     // playback crackle and every track slower.
     const int threads = QThread::idealThreadCount();
-    return threads <= 4 ? std::max(1, threads / 2) : threads;
+    // GlideMix: Power saving (rekordbox's Concurrent Process Mode) keeps
+    // half the cores free; Normal and Performance use them all.
+    if (mode == 2) {
+        return std::max(1, threads / 2);
+    }
+    return threads <= 4 && mode != 0 ? std::max(1, threads / 2) : threads;
 }
 }
 
@@ -1866,7 +1871,8 @@ void MixHouseLibrary::startBackgroundAnalysis(const QList<int>& trackIds)
     // Capped at m_analyzeTotal: no point starting more workers than there
     // are tracks queued -- each extra idle worker would just immediately
     // find nothing to do and tear itself right back down again.
-    const int numThreads = std::min(mixhouseAnalyzerThreadCount(), m_analyzeTotal);
+    const int mode = libraryConfiguration() ? libraryConfiguration()->analysisMode() : 1;
+    const int numThreads = std::min(mixhouseAnalyzerThreadCount(mode), m_analyzeTotal);
 
     m_analyzeWorkers.reserve(numThreads);
     for (int i = 0; i < numThreads; ++i) {
@@ -1906,11 +1912,13 @@ void MixHouseLibrary::startBackgroundAnalysis(const QList<int>& trackIds)
         // GlideMix: below the interface, so the app stays responsive while a
         // library is analysed (each thread now also runs Beat This!); macOS
         // gives these threads every core the interface and audio don't need.
+        // Performance: normal priority, as fast as it goes. Normal: below the
+        // interface and audio. Power saving: only when nothing else wants it.
 #ifdef Q_OS_WIN
         // Windows' LowPriority still competes with audio; idle doesn't.
-        thread->start(QThread::IdlePriority);
+        thread->start(mode == 0 ? QThread::NormalPriority : QThread::IdlePriority);
 #else
-        thread->start(QThread::LowPriority);
+        thread->start(mode == 0 ? QThread::NormalPriority : (mode == 2 ? QThread::IdlePriority : QThread::LowPriority));
 #endif
         m_analyzeWorkers.push_back(AnalyzerWorkerHandle{ thread, worker, false });
     }

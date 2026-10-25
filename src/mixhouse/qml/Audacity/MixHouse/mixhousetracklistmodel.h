@@ -76,6 +76,7 @@ class MixHouseTrackListModel : public QAbstractListModel, public muse::Injectabl
     Q_PROPERTY(int bpmPrecision READ bpmPrecision NOTIFY bpmPrecisionChanged)
     /// MixHouseKeyNotation, for the key wheel's labels.
     Q_PROPERTY(int keyNotation READ keyNotation NOTIFY keyNotationChanged)
+    Q_PROPERTY(bool keyBadges READ keyBadges NOTIFY keyBadgesChanged)
     // DlgPrefWaveform's "Overview Waveforms" group -- see
     // IMixHouseLibraryConfiguration::waveformOverviewType/
     // showWaveformMinuteMarkers's own comments. Same guarded-subscribe/
@@ -291,8 +292,13 @@ public:
     int searchDebounceMs() const;
     QString libraryFontFamily() const;
     int libraryFontPointSize() const;
+    //! The zoom sliders above the list: text size (pt, 0 = theme) and row height (px).
+    Q_INVOKABLE void setLibraryFontPointSize(int pointSize);
+    Q_INVOKABLE void setLibraryRowHeight(int px);
+    Q_INVOKABLE int themeFontPointSize() const;
     int bpmPrecision() const;
     int keyNotation() const;
+    bool keyBadges() const;
     int waveformOverviewType() const;
     int hdWaveRevision() const { return m_hdWaveRevision; }
     bool showWaveformMinuteMarkers() const;
@@ -709,6 +715,7 @@ signals:
     void libraryFontChanged();
     void bpmPrecisionChanged();
     void keyNotationChanged();
+    void keyBadgesChanged();
     void waveformOverviewTypeChanged();
     void showWaveformMinuteMarkersChanged();
     //! The waveform overview data behind the rows changed (e.g. the rekordbox
