@@ -3656,6 +3656,25 @@ bool MixHouseLibrary::setTrackBeatGrid(int trackId, double bpm, double firstBeat
     return setTrackBeatGrids({ edit }) == 1;
 }
 
+bool MixHouseLibrary::setTrackEnergy(int trackId, double energy)
+{
+    if (trackId < 0 || energy <= 0.0 || !ensureWritable()) {
+        return false;
+    }
+    QSqlQuery createTable(m_writeDb);
+    createTable.exec(QString::fromLatin1(kCreateEnergyTableSql));
+    QSqlQuery upd(m_writeDb);
+    upd.prepare(QStringLiteral("INSERT OR REPLACE INTO mixhouse_energy (track_id, energy) VALUES (:id, :energy)"));
+    upd.bindValue(QStringLiteral(":id"), trackId);
+    upd.bindValue(QStringLiteral(":energy"), energy);
+    if (!upd.exec()) {
+        LOGW() << "setTrackEnergy: track " << trackId << ": " << upd.lastError().text();
+        return false;
+    }
+    m_trackAnalysisProgress.send(trackId, -3);
+    return true;
+}
+
 int MixHouseLibrary::setTrackBeatGrids(const std::vector<BeatGridEdit>& edits)
 {
     if (edits.empty() || !ensureWritable()) {

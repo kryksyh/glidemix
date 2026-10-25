@@ -461,7 +461,8 @@ public:
     /// worker (see MixHouseAnalyzerWorker::progress), then exactly one
     /// (trackId, -1) once its result has been written, or (trackId, -2) if
     /// it failed -- the "this track is no longer in flight" signal. Queued-but-not-started
-    /// tracks send nothing; the table model seeds those itself.
+    /// tracks send nothing; the table model seeds those itself. (trackId, -3):
+    /// setTrackEnergy() rated a song outside any analysis batch.
     virtual muse::async::Channel<int, int> trackAnalysisProgress() const = 0;
 
     /// PlaylistDAO::addTracksToAutoDJQueue for a single track: Top inserts at
@@ -515,6 +516,10 @@ public:
     /// setTrackBeatGrid for many tracks in one transaction and one
     /// libraryChanged(); returns how many were written.
     virtual int setTrackBeatGrids(const std::vector<BeatGridEdit>& edits) = 0;
+    /// Stores a song's energy (1-10) without touching its grid or key: for
+    /// songs whose analysis came from rekordbox. No libraryChanged(); sends
+    /// trackAnalysisProgress (trackId, -3).
+    virtual bool setTrackEnergy(int trackId, double energy) = 0;
 
     /// MixMeister's Intro and Outro anchors of a file (seconds into it), where
     /// it mixes in and out. Keyed by the file's location so tracks from

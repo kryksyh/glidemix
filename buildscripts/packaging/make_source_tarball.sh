@@ -14,9 +14,15 @@ trap 'rm -rf "$TMP"' EXIT
 
 git -C "$ROOT" archive --format=tar --prefix="$NAME/" HEAD > "$TMP/main.tar"
 git -C "$ROOT/muse" archive --format=tar --prefix="$NAME/muse/" HEAD > "$TMP/muse.tar"
+DEPS_COMMIT="$(git -C "$ROOT" ls-tree HEAD muse_deps | awk '{print $3}')"
 mkdir -p "$TMP/x"
 tar -xf "$TMP/main.tar" -C "$TMP/x"
 tar -xf "$TMP/muse.tar" -C "$TMP/x"
+# Our own build notes and CI recipes stay out (the GPL asks for the source
+# and the build scripts we use, not a guide): the Windows port handover,
+# Audacity's build guide and CI scripts, and internal review notes.
+( cd "$TMP/x/$NAME" && rm -rf WINDOWS_PORT.md BUILDING.md ci_build.bat ci_build.cmake .github buildscripts/ci muse/.github muse/buildscripts/ci \
+    docs/mixhouse-plugin-automation-review.md )
 cat > "$TMP/x/$NAME/BUILDING-GLIDEMIX.txt" <<TXT
 GlideMix $VERSION - source code
 
@@ -25,7 +31,11 @@ This is the complete source code of GlideMix $VERSION, under the GNU GPL
 
 Building it yourself can be a challenging and complex process, especially
 on macOS and Windows. We don't provide help for this process and can't
-support the end result. If you just want to use GlideMix, the ready-to-run
+support the end result. The third-party build dependencies are not included:
+they come from https://github.com/musescore/muse_deps (commit $DEPS_COMMIT),
+which goes into the muse_deps folder.
+
+If you just want to use GlideMix, the ready-to-run
 version is at https://github.com/cristitm76/glidemix-releases
 
 "GlideMix" and the GlideMix logo are not covered by the GPL: a build you

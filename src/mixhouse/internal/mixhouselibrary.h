@@ -110,6 +110,7 @@ public:
     bool setTrackBeatGrid(int trackId, double bpm, double firstBeatSec, double downbeatSec,
                           const QString& detector = QString()) override;
     int setTrackBeatGrids(const std::vector<BeatGridEdit>& edits) override;
+    bool setTrackEnergy(int trackId, double energy) override;
     std::optional<std::vector<MixHousePhrase> > trackPhraseEdits(int trackId) const override;
     std::vector<MixHousePhrase> detectedPhrases(int trackId) const override;
     std::optional<std::pair<double, double> > trackAnchors(const QString& location) const override;

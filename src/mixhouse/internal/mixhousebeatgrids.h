@@ -7,6 +7,8 @@
 #include <memory>
 
 #include <QHash>
+#include <QList>
+#include <QSet>
 #include <QString>
 
 #include "async/asyncable.h"
@@ -106,6 +108,26 @@ private:
     };
     const SongEnergy& songEnergy(const QString& clipName) const;
     mutable QHash<QString, SongEnergy> m_songEnergy;
+    //! Songs on the timeline without an energy rating or a loudness curve
+    //! (rekordbox imports, Lexicon songs, songs GlideMix never analysed) get
+    //! them in the background.
+    void requestEnergy(int libraryId, const QString& filePath, double bpm, bool storeEnergy) const;
+    void startEnergyJob() const;
+    struct EnergyJob {
+        int libraryId = -1;
+        QString filePath;
+        double bpm = 0.0;
+        bool storeEnergy = false;   ///< the song had no rating: save the new one
+    };
+    mutable QList<EnergyJob> m_energyQueue;
+    mutable QSet<QString> m_energyRequested;       ///< file paths queued, running or done
+    struct ComputedEnergy {
+        double energy = 0.0;
+        double durationSec = 0.0;
+        std::vector<float> power;
+    };
+    mutable QHash<QString, ComputedEnergy> m_computedEnergy;   ///< by file path
+    mutable bool m_energyJobRunning = false;
     QString clipName(const trackedit::ClipKey& clip) const;
     void reseatClipsOf(const Grid& grid);
     double barLockedClipStart(const trackedit::ClipKey& clip, double proposedStart) const;

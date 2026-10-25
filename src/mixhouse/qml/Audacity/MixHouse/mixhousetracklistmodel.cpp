@@ -394,6 +394,20 @@ void MixHouseTrackListModel::load()
             emit analyzeProgressChanged();
         });
         library()->trackAnalysisProgress().onReceive(this, [this](int trackId, int percent) {
+            if (percent == -3) {
+                // Only the energy changed (rated for the ENERGY lane).
+                IMixHouseLibrary::TrackQuery one;
+                one.trackId = trackId;
+                const MixHouseTrackList fresh = library()->tracks(one);
+                for (MixHouseTrack& t : m_tracks) {
+                    if (t.id == trackId && !fresh.empty()) {
+                        t.energy = fresh.front().energy;
+                        emitAnalysisProgressChanged(trackId, true);
+                        break;
+                    }
+                }
+                return;
+            }
             if (percent < 0) {
                 if (!m_analysisProgressByTrack.remove(trackId)) {
                     return;

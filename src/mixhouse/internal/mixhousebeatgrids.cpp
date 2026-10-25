@@ -21,6 +21,7 @@
 #include "projectscene/iprojectviewstate.h"
 #include "log.h"
 
+#include "mixhouseanalyzer.h"
 #include "mixhouseprojectaligner.h"
 
 using namespace au::mixhouse;
@@ -519,15 +520,96 @@ const MixHouseBeatGrids::SongEnergy& MixHouseBeatGrids::songEnergy(const QString
                         const float amp = v / 255.0f;
                         song.power.push_back(amp * amp);
                     }
-                    std::vector<float> sorted = song.power;
-                    const size_t p90 = static_cast<size_t>(0.9 * (sorted.size() - 1));
-                    std::nth_element(sorted.begin(), sorted.begin() + p90, sorted.end());
-                    song.refDb = 10.0 * std::log10(sorted[p90] + 1e-9);
                 }
+            }
+            if ((song.energy <= 0.0 || song.power.empty()) && !t.filePath.isEmpty()) {
+                const auto computed = m_computedEnergy.constFind(t.filePath);
+                if (computed != m_computedEnergy.constEnd()) {
+                    if (song.energy <= 0.0) {
+                        song.energy = computed->energy;
+                    }
+                    if (song.power.empty()) {
+                        song.power = computed->power;
+                    }
+                    if (song.durationSec <= 0.0) {
+                        song.durationSec = computed->durationSec;
+                    }
+                } else {
+                    requestEnergy(libraryId, t.filePath, t.bpm, song.energy <= 0.0);
+                }
+            }
+            if (!song.power.empty()) {
+                std::vector<float> sorted = song.power;
+                const size_t p90 = static_cast<size_t>(0.9 * (sorted.size() - 1));
+                std::nth_element(sorted.begin(), sorted.begin() + p90, sorted.end());
+                song.refDb = 10.0 * std::log10(sorted[p90] + 1e-9);
             }
         }
     }
     return *m_songEnergy.insert(name, song);
+}
+
+void MixHouseBeatGrids::requestEnergy(int libraryId, const QString& filePath, double bpm, bool storeEnergy) const
+{
+    if (m_energyRequested.contains(filePath)) {
+        return;
+    }
+    m_energyRequested.insert(filePath);
+    m_energyQueue.push_back({ libraryId, filePath, bpm, storeEnergy });
+    // Not from inside energyCurve()'s loop: songEnergy() hands out references
+    // into m_songEnergy.
+    QTimer::singleShot(0, qApp, [this, alive = m_alive]() {
+        if (*alive) {
+            startEnergyJob();
+        }
+    });
+}
+
+void MixHouseBeatGrids::startEnergyJob() const
+{
+    if (m_energyJobRunning || m_energyQueue.isEmpty()) {
+        return;
+    }
+    m_energyJobRunning = true;
+    const EnergyJob job = m_energyQueue.takeFirst();
+    const auto alive = m_alive;
+    std::thread([this, alive, job]() {
+        // A known tempo skips the beat network; the grid found is not saved.
+        MixHouseKnownAnalysis known;
+        known.bpm = job.bpm;
+        const MixHouseAnalysisResult analysis = analyzeTrackFile(job.filePath, {}, known);
+        ComputedEnergy computed;
+        if (analysis.valid) {
+            computed.energy = analysis.energy;
+            computed.durationSec = analysis.durationSec;
+            computed.power.reserve(analysis.waveformOverview.size());
+            for (const uint8_t v : analysis.waveformOverview) {
+                const float amp = v / 255.0f;
+                computed.power.push_back(amp * amp);
+            }
+        }
+        if (!*alive) {
+            return;
+        }
+        QTimer::singleShot(0, qApp, [this, alive, job, computed = std::move(computed)]() {
+            if (!*alive) {
+                return;
+            }
+            m_energyJobRunning = false;
+            if (computed.energy > 0.0) {
+                m_computedEnergy.insert(job.filePath, computed);
+                // Only a song without a rating: Lexicon's own stays.
+                if (job.libraryId >= 0 && library() && job.storeEnergy) {
+                    library()->setTrackEnergy(job.libraryId, computed.energy);
+                }
+                m_songEnergy.clear();
+                LOGI() << "GlideMix: energy " << computed.energy << " for " << job.filePath;
+            } else {
+                LOGW() << "GlideMix: no energy for " << job.filePath;
+            }
+            startEnergyJob();
+        });
+    }).detach();
 }
 
 std::vector<double> MixHouseBeatGrids::energyCurve(double t0, double step, size_t count) const
