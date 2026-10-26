@@ -86,6 +86,8 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseenergy.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseenergy.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousegridshifts.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousegridshifts.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseanalyzer.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/openkeyscanclient.cpp

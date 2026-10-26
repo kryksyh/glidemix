@@ -2203,6 +2203,15 @@ bool MixHouseTrackListModel::loadTrackToProject(int row) const
             // The widest pull a drop has (64 bars): the new song's intro and
             // the last song's outro both lie between the two anchors.
             trackAligner()->alignDroppedFiles({ muse::io::path_t(t.filePath.toStdString()) }, { newClips }, false, 1e-6);
+            // A song split at a grid jump is more than one clip now.
+            if (const auto prj = globalContext()->currentTrackeditProject()) {
+                newClips.clear();
+                for (const trackedit::TrackId id : importedTracks) {
+                    for (const trackedit::Clip& c : prj->clipList(id)) {
+                        newClips.push_back(c.key);
+                    }
+                }
+            }
             // Show it the way a drop does: scrolled to, not zoomed.
             if (const auto prj = globalContext()->currentTrackeditProject(); prj && !newClips.empty()) {
                 const trackedit::Clip placed = prj->clip(newClips.front());
@@ -2223,11 +2232,20 @@ bool MixHouseTrackListModel::loadTrackToProject(int row) const
             align.projectWasEmpty = projectWasEmpty;
             align.lockToBars = !libraryConfiguration() || libraryConfiguration()->syncEnabled();
             align.snapBars = 1;
+            align.splitAtGridJumps = true;
             const MixHouseAlignResult aligned = alignImportedTrackToBars(globalContext(), trackeditInteraction(), align);
             if (!aligned.aligned) {
                 LOGI() << "loadTrackToProject: not aligned to bars (" << aligned.reason << "): " << t.title;
-            } else if (tempoMap() && !projectWasEmpty) {
-                tempoMap()->trackPlaced(aligned.stretchRatio);
+            } else {
+                if (tempoMap() && !projectWasEmpty) {
+                    tempoMap()->trackPlaced(aligned.stretchRatio);
+                }
+                // The import's undo step was recorded before the alignment
+                // (as for a drop, MixHouseTrackAligner::alignDroppedFiles):
+                // redo after an undo brought the song back unaligned.
+                if (projectHistory()) {
+                    projectHistory()->modifyState();
+                }
             }
             selectionController()->setSelectedTracks(importedTracks, true);
             // GlideMix: the new song alone is selected -- a clip left selected

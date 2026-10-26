@@ -28,6 +28,7 @@ struct MixHouseAlignRequest {
     bool projectWasEmpty = false; ///< no audio content BEFORE this import
     bool lockToBars = true;       ///< SYNC: place the downbeat on a bar; off keeps the placement (tempo still follows)
     int snapBars = 1;             ///< bar 1 lands on a bar index that is a multiple of this (phrase snap)
+    bool splitAtGridJumps = false;///< a song just added: split it where its beats jump off the grid (SYNC on)
 };
 
 struct MixHouseAlignResult {
@@ -37,6 +38,7 @@ struct MixHouseAlignResult {
     double stretchRatio = 1.0;
     double barSec = 0.0;          ///< project time the downbeat now sits on
     bool usedDetectedDownbeat = false;
+    trackedit::ClipKeyList splitClips;   ///< the later pieces of a song split at grid jumps, left to right
     QString reason;               ///< why nothing was aligned, when aligned == false
 };
 

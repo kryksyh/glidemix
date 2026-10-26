@@ -26,6 +26,7 @@
 #include "mixhouse/imixhouselibraryconfiguration.h"
 #include "mixhouse/imixhousetempomap.h"
 #include "mixhouse/imixhousetrackaligner.h"
+#include "trackedit/iprojecthistory.h"
 #include "mixhouse/mixhousewaveform.h"
 #include "context/iglobalcontext.h"
 #include "framework/interactive/iinteractive.h"
@@ -103,6 +104,7 @@ class MixHouseTrackListModel : public QAbstractListModel, public muse::Injectabl
     muse::Inject<trackedit::ISelectionController> selectionController = { this };
     muse::Inject<trackedit::ITrackNavigationController> trackNavigationController = { this };
     muse::Inject<trackedit::ITrackeditInteraction> trackeditInteraction = { this };
+    muse::Inject<trackedit::IProjectHistory> projectHistory = { this };
     muse::Inject<IMixHouseTempoMap> tempoMap = { this };
     muse::Inject<IMixHouseTrackAligner> trackAligner = { this };
     // Registered via globalIoc() (see IMixHouseLibraryConfiguration's own

@@ -1,6 +1,6 @@
-GlideMix 1.1.16 - source code
+GlideMix 1.1.17 - source code
 
-This is the complete source code of GlideMix 1.1.16, under the GNU GPL
+This is the complete source code of GlideMix 1.1.17, under the GNU GPL
 (see LICENSE.txt). You may build, change and share it under that licence.
 
 Building it yourself can be a challenging and complex process, especially

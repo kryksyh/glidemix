@@ -65,6 +65,7 @@ void MixHouseTrackAligner::alignDroppedFiles(const std::vector<muse::io::path_t>
         request.projectWasEmpty = projectWasEmpty && firstAligned;
         request.lockToBars = !libraryConfiguration() || libraryConfiguration()->syncEnabled();
         request.snapBars = 1;
+        request.splitAtGridJumps = true;
 
         const MixHouseAlignResult result = alignImportedTrackToBars(globalContext(), trackeditInteraction(), request);
         if (result.aligned) {
@@ -84,7 +85,12 @@ void MixHouseTrackAligner::alignDroppedFiles(const std::vector<muse::io::path_t>
                 const double snapped = beatGrids()->magneticClipStart(first, start, std::clamp(pxPerSec > 0.0 ? 80.0 / pxPerSec : 0.0, bar * 16.0, bar * 64.0) + 1e-3);
                 if (std::abs(snapped - start) > 1e-6) {
                     const double offset = snapped - start;
-                    for (const trackedit::ClipKey& clip : request.clips) {
+                    trackedit::ClipKeyList moving = request.clips;
+                    moving.insert(moving.end(), result.splitClips.begin(), result.splitClips.end());
+                    if (offset > 0.0) {
+                        std::reverse(moving.begin(), moving.end());   // rightmost first: no piece onto the next
+                    }
+                    for (const trackedit::ClipKey& clip : moving) {
                         trackeditInteraction()->changeClipStartTime(clip, project->clip(clip).startTime + offset, true);
                     }
                     LOGI() << "GlideMix drop: anchors linked, moved " << offset << " s: " << t.title;

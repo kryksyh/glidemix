@@ -11,6 +11,7 @@
 #include "au3wrap/internal/domaccessor.h"
 #include "au3wrap/internal/domconverter.h"
 #include "project/iaudacityproject.h"
+#include "../mixhousegridshifts.h"
 #include "log.h"
 
 namespace au::mixhouse {
@@ -23,6 +24,65 @@ constexpr double kMinDownbeatConfidence = 0.5;
 // track a whole bar later: it's the MP3 encoder delay/padding before beat 1
 // (Selfie NRG's downbeat sits 9.8ms in), not an intro anyone would miss.
 constexpr double kMaxLeadInTrimSec = 0.05;
+// A grid jump is cut this long (source seconds) before the late section's
+// first beat, so the cut lands in front of its transient.
+constexpr double kJumpCutLeadSec = 0.010;
+
+/// GlideMix: a song whose beats jump off its grid part-way (mixhousegridshifts.h)
+/// is split just before each jump and the later part slid back onto the
+/// grid, so the click and the other songs stay on its kicks. The late part's
+/// first moment of overlap is cut from the end of the earlier part (an early
+/// jump instead lets the earlier part play on into the gap). Returns the new
+/// clips, left to right.
+std::vector<std::shared_ptr<WaveClip> > splitAtGridJumps(WaveTrack* track, const std::shared_ptr<WaveClip>& clip,
+                                                          double bpm, double barOneInFile)
+{
+    std::vector<std::shared_ptr<WaveClip> > added;
+    const double ratio = clip->GetStretchRatio();
+    const size_t count = clip->GetVisibleSampleCount().as_size_t();
+    const size_t channels = clip->NChannels();
+    if (count == 0 || channels == 0 || ratio <= 0.0) {
+        return added;
+    }
+    std::vector<float> mono(count, 0.0f), buf(count);
+    for (size_t ch = 0; ch < channels; ++ch) {
+        if (!clip->GetSamples(ch, reinterpret_cast<samplePtr>(buf.data()), floatSample, sampleCount(0), count, false)) {
+            return added;
+        }
+        for (size_t i = 0; i < count; ++i) {
+            mono[i] += buf[i] / channels;
+        }
+    }
+    // mono[0] is this file second (the trim is in play seconds).
+    const double fileOffset = clip->GetTrimLeft() / ratio;
+    const std::vector<MixHouseGridShift> shifts
+        = detectGridShifts(mono.data(), count, clip->GetRate(), bpm, barOneInFile - fileOffset);
+    // Timeline second of a file second, before anything below moves.
+    const double base = clip->GetPlayStartTime() - clip->GetTrimLeft();
+    std::shared_ptr<WaveClip> current = clip;
+    double moved = 0.0, previous = 0.0;
+    for (const MixHouseGridShift& shift : shifts) {
+        const double fileStart = shift.startSec + fileOffset;
+        const double delta = (shift.shiftSec - previous) * ratio;   // play seconds the rest moves back
+        const double at = base + (fileStart + shift.shiftSec - kJumpCutLeadSec) * ratio - moved;
+        if (at <= current->GetPlayStartTime() + 0.1 || at >= current->GetPlayEndTime() - 0.1) {
+            continue;
+        }
+        auto [left, right] = track->SplitAt(at);
+        if (!left || !right) {
+            continue;
+        }
+        right->ShiftBy(-delta);
+        left->TrimRightTo(left->GetPlayEndTime() - delta);
+        LOGI() << "GlideMix grid jump: " << shift.shiftSec * 1000.0 << " ms from " << fileStart
+               << " s in the file; split at " << at << " s, later part moved " << -delta * 1000.0 << " ms";
+        added.push_back(right);
+        current = right;
+        moved += delta;
+        previous = shift.shiftSec;
+    }
+    return added;
+}
 }
 
 double compatibleTrackBpm(double trackBpm, double projectBpm)
@@ -153,7 +213,7 @@ MixHouseAlignResult alignImportedTrackToBars(const std::shared_ptr<context::IGlo
         downbeatInFile += trackBarSec;
     }
 
-    const ImportedClip& first = clips.front();
+    const ImportedClip first = clips.front();   // a copy: grid jumps add clips below
     result.stretchRatio = first.clip->GetStretchRatio();
     // Source second -> play seconds after the clip's start: a source second a
     // plays at sequenceOffset + a * ratio, and the clip's audible start is
@@ -190,6 +250,21 @@ MixHouseAlignResult alignImportedTrackToBars(const std::shared_ptr<context::IGlo
     // so their relative positions are kept. Computed once: the first clip's
     // start changes as soon as it's moved.
     const double offset = newStart - first.clip->GetPlayStartTime();
+    if (request.splitAtGridJumps && clips.size() == 1) {
+        for (const auto& piece : splitAtGridJumps(first.track, first.clip, request.bpm, downbeatInFile)) {
+            trackeditProject->notifyAboutClipAdded(au::au3::DomConverter::clip(first.track, piece.get()));
+            clips.push_back({ first.trackId, first.track, piece });
+            result.splitClips.push_back(trackedit::ClipKey(first.trackId, piece->GetId()));
+        }
+        if (clips.size() > 1) {
+            trackeditProject->notifyAboutClipChanged(au::au3::DomConverter::clip(first.track, first.clip.get()));
+            // Moving right, the rightmost piece goes first so no piece is
+            // moved onto the next one.
+            if (offset > 0.0) {
+                std::reverse(clips.begin(), clips.end());
+            }
+        }
+    }
     for (const ImportedClip& c : clips) {
         trackeditInteraction->changeClipStartTime(trackedit::ClipKey(c.trackId, c.clip->GetId()),
                                                   c.clip->GetPlayStartTime() + offset, true);
