@@ -273,6 +273,11 @@ bool TrackeditInteraction::duplicateSelectedOnTracks(const TrackIdList& tracksId
     return withPlaybackStop(&ITrackeditInteraction::duplicateSelectedOnTracks, tracksIds, begin, end);
 }
 
+bool TrackeditInteraction::duplicateRangeAfter(const TrackIdList& tracksIds, secs_t begin, secs_t end, secs_t offset)
+{
+    return withPlaybackStop(&ITrackeditInteraction::duplicateRangeAfter, tracksIds, begin, end, offset);
+}
+
 bool TrackeditInteraction::duplicateClip(const ClipKey& clipKey)
 {
     return withPlaybackStop(&ITrackeditInteraction::duplicateClip, clipKey);

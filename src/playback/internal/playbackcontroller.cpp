@@ -850,6 +850,8 @@ void PlaybackController::setLoopRegionToSelection()
     }
 
     player()->setLoopRegion({ start, end });
+    // GlideMix: "Loop" on a selection loops it straight away.
+    player()->setLoopRegionActive(true);
 }
 
 void PlaybackController::setSelectionToLoop()

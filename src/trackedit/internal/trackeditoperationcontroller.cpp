@@ -495,6 +495,15 @@ bool TrackeditOperationController::duplicateSelectedOnTracks(const TrackIdList& 
     return false;
 }
 
+bool TrackeditOperationController::duplicateRangeAfter(const TrackIdList& tracksIds, secs_t begin, secs_t end, secs_t offset)
+{
+    if (tracksInteraction()->duplicateRangeAfter(tracksIds, begin, end, offset)) {
+        pushProjectHistoryDuplicateState();
+        return true;
+    }
+    return false;
+}
+
 bool TrackeditOperationController::duplicateClip(const ClipKey& clipKey)
 {
     return clipsInteraction()->duplicateClip(clipKey);

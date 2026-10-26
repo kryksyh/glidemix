@@ -68,6 +68,9 @@ public:
     virtual bool splitClipsIntoNewTracks(const ClipKeyList& clipKeyList) = 0;
     virtual bool mergeSelectedOnTracks(const TrackIdList& tracksIds, secs_t begin, secs_t end) = 0;
     virtual bool duplicateSelectedOnTracks(const TrackIdList& tracksIds, secs_t begin, secs_t end) = 0;
+    // GlideMix: Logic/Ableton-style duplicate - copies [begin, end) of each
+    // track and places it at begin + offset on the same track, over whatever is there.
+    virtual bool duplicateRangeAfter(const TrackIdList& tracksIds, secs_t begin, secs_t end, secs_t offset) = 0;
     virtual bool duplicateClip(const ClipKey& clipKey) = 0;
     virtual bool duplicateClips(const ClipKeyList& clipKeyList) = 0;
     virtual bool clipSplitCut(const ClipKey& clipKey) = 0;

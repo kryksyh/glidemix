@@ -192,6 +192,11 @@ void Transport::Stop()
     if (mActive.exchange(false)) {
         --s_activeTransports;
     }
+    // The renderer holds the arrangement, and with it the project's tracks and
+    // sample blocks. Kept after a File > New, the old project's blocks were
+    // freed on the next Play, after its database had closed ("Connection to
+    // project file is null").
+    mRenderer.reset();
 }
 
 void Transport::SetPaused(bool paused)

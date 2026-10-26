@@ -46,14 +46,18 @@ void PlayRegionController::startInteraction(double pos, bool ctrlPressed)
     m_lastPos = m_dragStartPos;
     updateSnapGuideline(m_dragStartPos);
 
-    if (playbackController()->isLoopRegionClear()) {
-        m_action = ctrlPressed ? UserInputAction::CreateRegion : UserInputAction::None;
-    } else if (std::abs(startPos() - pos) < RESIZE_AREA_WIDTH_PX) {
-        m_action = UserInputAction::ResizeStart;
-    } else if (std::abs(endPos() - pos) < RESIZE_AREA_WIDTH_PX) {
-        m_action = UserInputAction::ResizeEnd;
-    } else if (pos > startPos() && pos < endPos()) {
-        m_action = UserInputAction::Drag;
+    // GlideMix: Logic-style - a plain drag in the ruler draws a new loop
+    // (stock AU4 wanted Ctrl held, and ignored drags outside an existing loop).
+    // Ctrl still forces a new loop, even over the current one.
+    m_action = UserInputAction::CreateRegion;
+    if (!playbackController()->isLoopRegionClear() && !ctrlPressed) {
+        if (std::abs(startPos() - pos) < RESIZE_AREA_WIDTH_PX) {
+            m_action = UserInputAction::ResizeStart;
+        } else if (std::abs(endPos() - pos) < RESIZE_AREA_WIDTH_PX) {
+            m_action = UserInputAction::ResizeEnd;
+        } else if (pos > startPos() && pos < endPos()) {
+            m_action = UserInputAction::Drag;
+        }
     }
 
     if (m_action == UserInputAction::CreateRegion
@@ -160,17 +164,21 @@ void au::projectscene::PlayRegionController::handleDrag(double pos)
     playbackController()->setLoopRegion({ ctx->positionToTime(snappedStart), ctx->positionToTime(snappedEnd) });
 }
 
-void PlayRegionController::finishInteraction(double pos)
+bool PlayRegionController::finishInteraction(double pos)
 {
     UNUSED(pos);
 
     if (!m_isActive) {
-        return;
+        return false;
     }
 
     if (m_action == UserInputAction::None) {
-        return;
+        return false;
     }
+
+    // GlideMix: a plain click outside the loop changes nothing here; the
+    // ruler then moves the play position as usual.
+    const bool consumed = m_dragStarted || m_action == UserInputAction::Drag;
 
     auto region = playbackController()->loopRegion();
 
@@ -187,6 +195,7 @@ void PlayRegionController::finishInteraction(double pos)
     resetSnapGuideline();
     playbackController()->loopEditingEnd();
     m_action = UserInputAction::None;
+    return consumed;
 }
 
 TimelineContext* PlayRegionController::context() const

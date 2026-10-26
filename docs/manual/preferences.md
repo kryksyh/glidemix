@@ -309,6 +309,15 @@ one that is playing.
 - **Transition** — what Mix Now applies as it pulls the track in. Pick a
   built-in, one of your own, or none to only pull the track without fading.
 
+### Transition controls
+
+- **The transition pill opens** — what the cog on a BEATMATCH / CROSSFADE pill
+  opens: **the transition window** (preset, Song out / Song in, EQ knobs,
+  volume, Color, lanes, Add effect) or **the DJ mixer**, a 2-channel mixer laid
+  out like a Pioneer DJM (CH 1 the song going out, CH 2 the song coming in:
+  HI / MID / LOW with KILL, COLOR, channel faders, a crossfader with Smooth /
+  Constant / Cut curves, BEAT FX and REC). Both work on the same lanes.
+
 ### Transitions
 
 The list shows GlideMix's built-in transitions and, marked **(yours)**, the

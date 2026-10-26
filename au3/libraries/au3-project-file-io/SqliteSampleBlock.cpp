@@ -348,6 +348,12 @@ SqliteSampleBlock::~SqliteSampleBlock()
     }
 
     // See ProjectFileIO::Bypass() for a description of mIO.mBypass
+    // GlideMix: a block outliving its project's database (the project was
+    // closed) has no row left to delete; Conn() would throw and show an error.
+    if (!mpFactory || !mpFactory->mppConnection->mpConnection) {
+        return;
+    }
+
     GuardedCall([this]{
         if (!mLocked && !Conn()->ShouldBypass()) {
             // In case Delete throws, don't let an exception escape a destructor,

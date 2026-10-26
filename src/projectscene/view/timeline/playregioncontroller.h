@@ -40,7 +40,7 @@ public:
     Q_INVOKABLE void init();
 
     Q_INVOKABLE void startInteraction(double pos, bool ctrlPressed);
-    Q_INVOKABLE void finishInteraction(double pos);
+    Q_INVOKABLE bool finishInteraction(double pos);
     Q_INVOKABLE void updatePosition(double pos);
 
     Q_INVOKABLE void beginPreview();

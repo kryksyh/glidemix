@@ -111,7 +111,7 @@ const UiActionList PlaybackUiActions::m_mainActions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Loop playback"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Toggle ‘Loop playback’"),
+             TranslatableString("action_description", "Turn the loop on or off. Draw a new loop by dragging in the top half of the ruler"),
              IconCode::Code::LOOP,
              Checkable::Yes
              ),
@@ -228,7 +228,7 @@ const UiActionList PlaybackUiActions::m_mainActions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Toggle loop region"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Toggle loop region"),
+             TranslatableString("action_description", "Turn the loop on or off. Draw a new loop by dragging in the top half of the ruler"),
              IconCode::Code::LOOP
              ),
     UiAction("clear-loop-region",
@@ -245,7 +245,7 @@ const UiActionList PlaybackUiActions::m_mainActions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Set loop region to selection"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Set loop region to selection")
+             TranslatableString("action_description", "Loop the selected section (also on the selection's right-click menu)")
              ),
     UiAction("set-selection-to-loop",
              au::context::UiCtxAny,

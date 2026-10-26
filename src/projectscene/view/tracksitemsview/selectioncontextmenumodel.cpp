@@ -63,6 +63,9 @@ MenuItemList SelectionContextMenuModel::makeItems()
         makeMenu(muse::TranslatableString("selection", "Paste and…"), pasteAndItems, "menu-paste-and"),
         makeMenu(muse::TranslatableString("selection", "Delete and…"), deleteAndItems, "menu-delete-and"),
         makeSeparator(),
+        // GlideMix: loop the selected section (Logic/Ableton).
+        makeMenuItem("set-loop-region-to-selection",
+                     muse::TranslatableString("selection", "Loop")),
         makeMenuItem("split"),
         makeMenuItem("disjoin",
                      muse::TranslatableString("selection", "Split at silences")),

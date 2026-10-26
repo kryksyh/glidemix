@@ -67,6 +67,7 @@ private:
     bool splitClipsIntoNewTracks(const ClipKeyList& clipKeyList) override;
     bool mergeSelectedOnTracks(const TrackIdList& tracksIds, secs_t begin, secs_t end) override;
     bool duplicateSelectedOnTracks(const TrackIdList& tracksIds, secs_t begin, secs_t end) override;
+    bool duplicateRangeAfter(const TrackIdList& tracksIds, secs_t begin, secs_t end, secs_t offset) override;
     bool duplicateClip(const ClipKey& clipKey) override;
     bool duplicateClips(const ClipKeyList& clipKeyList) override;
     bool clipSplitCut(const ClipKey& clipKey) override;

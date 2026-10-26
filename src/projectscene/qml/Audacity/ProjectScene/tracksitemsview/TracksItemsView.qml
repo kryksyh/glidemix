@@ -313,15 +313,17 @@ Rectangle {
 
             onPressed: function (e) {
                 let position = convertToTimelinePosition(e)
+                playRegionActivated = false
                 if (timeline.isMajorSection(position.y)) {
                     playRegionController.startInteraction(position.x, root.ctrlPressed)
-                    playRegionActivated = true
                 }
             }
 
             onReleased: function (e) {
                 let position = convertToTimelinePosition(e)
-                playRegionController.finishInteraction(position.x)
+                // GlideMix: only a real loop drag (or a click on the loop) keeps
+                // the click from moving the play position.
+                playRegionActivated = playRegionController.finishInteraction(position.x)
             }
 
             onClicked: function (e) {

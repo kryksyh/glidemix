@@ -191,7 +191,7 @@ UiActionList STATIC_ACTIONS = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Duplicate"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Duplicate")
+             TranslatableString("action_description", "Repeat the selection right after itself on the same track (whole bars with SYNC on); press again to keep repeating")
              ),
     // track actions
     UiAction("track-rename",

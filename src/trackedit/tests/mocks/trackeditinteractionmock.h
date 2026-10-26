@@ -53,6 +53,7 @@ public:
     MOCK_METHOD(bool, splitClipsIntoNewTracks, (const ClipKeyList&), (override));
     MOCK_METHOD(bool, mergeSelectedOnTracks, (const TrackIdList&, secs_t, secs_t), (override));
     MOCK_METHOD(bool, duplicateSelectedOnTracks, (const TrackIdList&, secs_t, secs_t), (override));
+    MOCK_METHOD(bool, duplicateRangeAfter, (const TrackIdList&, secs_t, secs_t, secs_t), (override));
     MOCK_METHOD(bool, duplicateClip, (const ClipKey&), (override));
     MOCK_METHOD(bool, duplicateClips, (const ClipKeyList&), (override));
     MOCK_METHOD(bool, clipSplitCut, (const ClipKey&), (override));

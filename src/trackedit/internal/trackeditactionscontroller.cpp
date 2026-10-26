@@ -4,10 +4,13 @@
 #include "trackeditactionscontroller.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
+#include <set>
 
 #include "global/translation.h"
 #include "global/defer.h"
+#include "settings.h"
 
 using namespace muse;
 using namespace au::trackedit;
@@ -1052,6 +1055,22 @@ void TrackeditActionsController::redo()
     trackeditInteraction()->redo();
 }
 
+// GlideMix: with SYNC on, Cmd+D works in whole bars: 0 when SYNC is off or
+// the project has no tempo.
+static double syncBarLength(const ITrackeditProjectPtr& prj)
+{
+    static const muse::Settings::Key SYNC_ENABLED("mixhouse", "mixhouse/arrangement/syncEnabled");
+    const muse::Val sync = muse::settings()->value(SYNC_ENABLED);
+    if (!prj || (!sync.isNull() && !sync.toBool())) {
+        return 0.0;
+    }
+    const TimeSignature ts = prj->timeSignature();
+    if (ts.tempo <= 0.0 || ts.upper <= 0 || ts.lower <= 0) {
+        return 0.0;
+    }
+    return 60.0 / ts.tempo * (4.0 / ts.lower) * ts.upper;
+}
+
 void TrackeditActionsController::doGlobalDuplicate()
 {
     const auto selectedTracks = selectionController()->selectedTracks();
@@ -1063,15 +1082,73 @@ void TrackeditActionsController::doGlobalDuplicate()
             secs_t selectedEndTime = selectionController()->dataSelectedEndTime();
 
             //If no range is selected, duplicate all content of the selected tracks
-            //Otherwise, duplicate only the selected range
-            (selectedStartTime == selectedEndTime)
-            ? dispatcher()->dispatch(TRACK_DUPLICATE_CODE, ActionData::make_arg1<TrackIdList>(selectedTracks))
-            : dispatcher()->dispatch(DUPLICATE_RANGE_SELECTION_CODE,
-                                     ActionData::make_arg3<TrackIdList, secs_t, secs_t>(selectedTracks, selectedStartTime,
-                                                                                        selectedEndTime));
-        } else {
-            dispatcher()->dispatch(DUPLICATE_CLIPS_CODE, ActionData::make_arg1<ClipKeyList>(selectedClips));
+            if (selectedStartTime == selectedEndTime) {
+                dispatcher()->dispatch(TRACK_DUPLICATE_CODE, ActionData::make_arg1<TrackIdList>(selectedTracks));
+                return;
+            }
+
+            // GlideMix: Logic/Ableton - the copy goes right after the
+            // selection on the same tracks, and the selection moves onto it
+            // so pressing Cmd+D again keeps repeating.
+            // With SYNC on the selection snaps to the nearest bar lines first,
+            // so the copies land on the bar grid and butt up exactly.
+            const double bar = syncBarLength(globalContext()->currentTrackeditProject());
+            if (bar > 0.0) {
+                const secs_t snappedStart = std::round(selectedStartTime.to_double() / bar) * bar;
+                const secs_t snappedEnd = std::round(selectedEndTime.to_double() / bar) * bar;
+                if (snappedEnd > snappedStart) {
+                    selectedStartTime = snappedStart;
+                    selectedEndTime = snappedEnd;
+                }
+            }
+            const secs_t length = selectedEndTime - selectedStartTime;
+            if (trackeditInteraction()->duplicateRangeAfter(selectedTracks, selectedStartTime, selectedEndTime, length)) {
+                selectionController()->setDataSelectedStartTime(selectedEndTime, true);
+                selectionController()->setDataSelectedEndTime(selectedEndTime + length, true);
+            }
+            return;
         }
+    }
+
+    const auto selectedClips = clipsForInteraction();
+    if (selectedClips.empty()) {
+        return;
+    }
+
+    // GlideMix: each selected clip is repeated right after itself on its own
+    // track, and the copies become the selection.
+    const ITrackeditProjectPtr prj = globalContext()->currentTrackeditProject();
+    if (!prj) {
+        return;
+    }
+    ClipKeyList newClips;
+    for (const ClipKey& key : selectedClips) {
+        const secs_t start = trackeditInteraction()->clipStartTime(key);
+        const secs_t end = trackeditInteraction()->clipEndTime(key);
+        if (end <= start) {
+            continue;
+        }
+        // With SYNC on the copy goes a whole number of bars later (rounded
+        // up, so it never cuts into the original): it keeps its place in the bar.
+        secs_t offset = end - start;
+        if (const double bar = syncBarLength(prj); bar > 0.0) {
+            offset = std::ceil(offset.to_double() / bar - 1e-6) * bar;
+        }
+        std::set<TrackItemId> before;
+        for (const auto& clip : prj->clipList(key.trackId)) {
+            before.insert(clip.key.itemId);
+        }
+        if (!trackeditInteraction()->duplicateRangeAfter({ key.trackId }, start, end, offset)) {
+            continue;
+        }
+        for (const auto& clip : prj->clipList(key.trackId)) {
+            if (before.find(clip.key.itemId) == before.end()) {
+                newClips.push_back(clip.key);
+            }
+        }
+    }
+    if (!newClips.empty()) {
+        selectionController()->setSelectedClips(newClips);
     }
 }
 

@@ -742,6 +742,71 @@ bool Au3TracksInteraction::duplicateSelectedOnTracks(const TrackIdList& tracksId
     return true;
 }
 
+bool Au3TracksInteraction::duplicateRangeAfter(const TrackIdList& tracksIds, secs_t begin, secs_t end, secs_t offset)
+{
+    if (end <= begin || offset <= 0.0) {
+        return false;
+    }
+
+    trackedit::ITrackeditProjectPtr prj = globalContext()->currentTrackeditProject();
+    auto& tracks = Au3TrackList::Get(projectRef());
+
+    bool changed = false;
+    for (const auto& trackId : tracksIds) {
+        Au3WaveTrack* waveTrack = DomAccessor::findWaveTrack(projectRef(), Au3TrackId(trackId));
+        if (!waveTrack) {
+            continue;
+        }
+
+        // A clipboard copy: its clips get new ids (a backup copy keeps the
+        // originals' ids, and the copy would not show as a new clip).
+        auto copy = std::static_pointer_cast<Au3WaveTrack>(waveTrack->Copy(begin, end, true));
+        if (!copy) {
+            continue;
+        }
+        std::vector<std::shared_ptr<WaveClip> > placeholders;
+        for (const auto& interval : copy->Intervals()) {
+            if (interval->GetIsPlaceholder()) {
+                placeholders.push_back(interval);
+            }
+        }
+        for (const auto& placeholder : placeholders) {
+            copy->RemoveInterval(placeholder);
+        }
+        if (copy->Intervals().empty()) {
+            continue;
+        }
+        std::vector<Au3WaveTrack*> waveCopies { copy.get() };
+        utils::remapCopiedClipGroups(*prj, tracks, waveCopies);
+
+        // The copy starts at 0; it lands at begin + offset, and whatever the
+        // track has there is trimmed away (Logic/Ableton overwrite).
+        copy->MoveTo(begin + offset + copy->GetStartTime());
+
+        std::unordered_set<int> clipIdsBefore;
+        for (const auto& clip : prj->clipList(trackId)) {
+            clipIdsBefore.insert(clip.key.itemId);
+        }
+
+        for (const auto& interval : copy->Intervals()) {
+            makeRoomForDataOnTrack(trackId, interval->GetPlayStartTime(), interval->GetPlayEndTime());
+        }
+        for (const auto& interval : copy->Intervals()) {
+            waveTrack->InsertInterval(interval, false);
+        }
+
+        for (const auto& clip : prj->clipList(trackId)) {
+            if (clipIdsBefore.find(clip.key.itemId) == clipIdsBefore.end()) {
+                prj->notifyAboutClipAdded(clip);
+            }
+        }
+        prj->notifyAboutTrackChanged(DomConverter::track(waveTrack));
+        changed = true;
+    }
+
+    return changed;
+}
+
 std::vector<ITrackDataPtr> Au3TracksInteraction::splitCutSelectedOnTracks(const TrackIdList tracksIds, secs_t begin, secs_t end)
 {
     std::vector<ITrackDataPtr> dataVector;
