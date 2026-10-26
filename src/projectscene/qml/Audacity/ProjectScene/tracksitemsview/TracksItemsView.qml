@@ -1891,7 +1891,8 @@ Rectangle {
                             }
                         }
 
-                        // Opens the transition panel (DropLab's bottom panel).
+                        // Opens the transition panel (DropLab's bottom panel), or
+                        // the two-channel mixer when Preferences says so.
                         StyledIconLabel {
                             anchors.verticalCenter: parent.verticalCenter
                             iconCode: IconCode.SETTINGS_COG
@@ -1902,7 +1903,10 @@ Rectangle {
                                 anchors.fill: parent
                                 anchors.margins: -3
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: transitionPanel.isOpened ? transitionPanel.close() : transitionPanel.open()
+                                onClicked: {
+                                    var panel = transitionZonesModel.mixerView ? transitionMixer : transitionPanel
+                                    panel.isOpened ? panel.close() : panel.open()
+                                }
                             }
                         }
                     }
@@ -1915,6 +1919,23 @@ Rectangle {
                         row: model.index
                         timelineContext: timeline.context
                         playheadX: playCursorController.positionX
+                        zoneStart: model.startTime
+                        zoneEnd: model.endTime
+                        presetName: model.preset
+                        onPresetMenuRequested: {
+                            zoneMenu.toggleOpened(zoneItem.menuItems())
+                        }
+                    }
+
+                    TransitionMixer {
+                        id: transitionMixer
+                        parent: ui.rootItem
+                        zoneItem: zoneItem
+                        zonesModel: transitionZonesModel
+                        row: model.index
+                        timelineContext: timeline.context
+                        playheadX: playCursorController.positionX
+                        isPlaying: playbackState.isPlaying
                         zoneStart: model.startTime
                         zoneEnd: model.endTime
                         presetName: model.preset

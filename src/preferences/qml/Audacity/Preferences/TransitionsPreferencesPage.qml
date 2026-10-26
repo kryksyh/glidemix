@@ -200,12 +200,44 @@ PreferencesPage {
         SeparatorLine {}
 
         BaseSection {
+            id: viewSection
+
+            title: qsTrc("preferences", "Transition controls")
+
+            navigation.section: root.navigationSection
+            navigation.order: mixNowSection.navigationOrderEnd + 1
+
+            ComboBoxWithTitle {
+                title: qsTrc("preferences", "The transition pill opens:")
+                columnWidth: 208
+
+                currentIndex: transitionsModel.panelView
+                model: [
+                    { text: qsTrc("preferences", "The transition window"), value: 0 },
+                    { text: qsTrc("preferences", "The DJ mixer"), value: 1 }
+                ]
+                textRole: "text"
+                valueRole: "value"
+
+                onValueEdited: function(newIndex, newValue) {
+                    transitionsModel.panelView = newValue
+                }
+
+                navigation.name: "TransitionsPanelView"
+                navigation.panel: viewSection.navigation
+                navigation.row: 0
+            }
+        }
+
+        SeparatorLine {}
+
+        BaseSection {
             id: buildSection
 
             title: qsTrc("preferences", "Transitions")
 
             navigation.section: root.navigationSection
-            navigation.order: mixNowSection.navigationOrderEnd + 1
+            navigation.order: viewSection.navigationOrderEnd + 1
 
             onFocusChanged: {
                 if (activeFocus) {

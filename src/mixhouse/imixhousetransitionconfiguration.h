@@ -48,6 +48,11 @@ public:
     virtual MixHouseMixNowLanding mixNowLanding() const = 0;
     virtual void setMixNowLanding(MixHouseMixNowLanding landing) = 0;
 
+    //! GlideMix: which controls the transition pill opens -- the transition window (false) or the
+    //! two-channel mixer (true).
+    virtual bool mixerView() const = 0;
+    virtual void setMixerView(bool mixer) = 0;
+
     virtual muse::async::Notification changed() const = 0;
 };
 }

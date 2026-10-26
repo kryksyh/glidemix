@@ -23,6 +23,8 @@ public:
     void setMixNowTransition(const std::string& name) override;
     MixHouseMixNowLanding mixNowLanding() const override;
     void setMixNowLanding(MixHouseMixNowLanding landing) override;
+    bool mixerView() const override;
+    void setMixerView(bool mixer) override;
     muse::async::Notification changed() const override;
 
     static QString transitionsFilePath();

@@ -12,6 +12,11 @@ MixHouseTransitionZonesModel::MixHouseTransitionZonesModel(QObject* parent)
 {
 }
 
+bool MixHouseTransitionZonesModel::mixerView() const
+{
+    return transitionConfiguration() && transitionConfiguration()->mixerView();
+}
+
 void MixHouseTransitionZonesModel::componentComplete()
 {
     if (transitions()) {
@@ -26,6 +31,9 @@ void MixHouseTransitionZonesModel::componentComplete()
         projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent) {
             emit linesChanged();
         });
+    }
+    if (transitionConfiguration()) {
+        transitionConfiguration()->changed().onNotify(this, [this]() { emit mixerViewChanged(); });
     }
     reload();
 }

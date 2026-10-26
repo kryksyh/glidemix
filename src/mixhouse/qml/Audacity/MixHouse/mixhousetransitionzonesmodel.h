@@ -29,8 +29,13 @@ class MixHouseTransitionZonesModel : public QAbstractListModel, public QQmlParse
     muse::GlobalInject<IMixHouseTransitionConfiguration> transitionConfiguration;
     muse::ContextInject<trackedit::IProjectHistory> projectHistory { this };
 
+    //! GlideMix: the pill opens the two-channel mixer instead of the transition window (Preferences).
+    Q_PROPERTY(bool mixerView READ mixerView NOTIFY mixerViewChanged)
+
 public:
     explicit MixHouseTransitionZonesModel(QObject* parent = nullptr);
+
+    bool mixerView() const;
 
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -63,6 +68,7 @@ public:
 signals:
     //! Clip volume, bass or effect lines may have changed: redraw the lanes.
     void linesChanged();
+    void mixerViewChanged();
 
 public:
 

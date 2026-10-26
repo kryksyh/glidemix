@@ -35,6 +35,8 @@ class TransitionsPreferencesModel : public QObject
     Q_PROPERTY(QString mixNowTransition READ mixNowTransition WRITE setMixNowTransition NOTIFY changed)
     /// 0 = the next bar, 1 = the next phrase.
     Q_PROPERTY(int mixNowLanding READ mixNowLanding WRITE setMixNowLanding NOTIFY changed)
+    /// 0 = the transition window, 1 = the two-channel mixer.
+    Q_PROPERTY(int panelView READ panelView WRITE setPanelView NOTIFY changed)
 
 public:
     explicit TransitionsPreferencesModel(QObject* parent = nullptr);
@@ -45,6 +47,8 @@ public:
     void setMixNowTransition(const QString& name);
     int mixNowLanding() const;
     void setMixNowLanding(int landing);
+    int panelView() const;
+    void setPanelView(int view);
 
     /// A fresh spec to start the builder from.
     Q_INVOKABLE QVariantMap newTransition() const;

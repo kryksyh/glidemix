@@ -24,6 +24,7 @@ namespace {
 const muse::Settings::Key TRANSITIONS_USER("mixhouse", "mixhouse/transitions/user");
 const muse::Settings::Key TRANSITIONS_MIX_NOW("mixhouse", "mixhouse/transitions/mixNow");
 const muse::Settings::Key TRANSITIONS_MIX_NOW_LANDING("mixhouse", "mixhouse/transitions/mixNowLanding");
+const muse::Settings::Key TRANSITIONS_MIXER_VIEW("mixhouse", "mixhouse/transitions/mixerView");
 
 // Stored by name, so reordering the enum never changes what a saved transition means.
 const char* transitionCurveName(MixHouseCurveKind kind)
@@ -164,6 +165,7 @@ void MixHouseTransitionConfiguration::init()
     muse::settings()->setDefaultValue(TRANSITIONS_USER, muse::Val(std::string("[]")));
     muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW, muse::Val(std::string(kDefaultMixNowTransition)));
     muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW_LANDING, muse::Val(static_cast<int>(MixHouseMixNowLanding::NextPhrase)));
+    muse::settings()->setDefaultValue(TRANSITIONS_MIXER_VIEW, muse::Val(false));
 }
 
 //! Your transitions are content, like an effect preset, not preferences. Kept as
@@ -349,6 +351,20 @@ void MixHouseTransitionConfiguration::setMixNowLanding(MixHouseMixNowLanding lan
         return;
     }
     muse::settings()->setSharedValue(TRANSITIONS_MIX_NOW_LANDING, muse::Val(static_cast<int>(landing)));
+    m_changed.notify();
+}
+
+bool MixHouseTransitionConfiguration::mixerView() const
+{
+    return muse::settings()->value(TRANSITIONS_MIXER_VIEW).toBool();
+}
+
+void MixHouseTransitionConfiguration::setMixerView(bool mixer)
+{
+    if (mixerView() == mixer) {
+        return;
+    }
+    muse::settings()->setSharedValue(TRANSITIONS_MIXER_VIEW, muse::Val(mixer));
     m_changed.notify();
 }
 

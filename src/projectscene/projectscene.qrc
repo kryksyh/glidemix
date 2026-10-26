@@ -15,6 +15,11 @@
         <file>qml/Audacity/ProjectScene/qmldir</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/TracksItemsView.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/TransitionPanel.qml</file>
+        <file>qml/Audacity/ProjectScene/tracksitemsview/TransitionMixer.qml</file>
+        <file>qml/Audacity/ProjectScene/tracksitemsview/DjKnob.qml</file>
+        <file>qml/Audacity/ProjectScene/tracksitemsview/DjFader.qml</file>
+        <file>qml/Audacity/ProjectScene/tracksitemsview/DjLitButton.qml</file>
+        <file>qml/Audacity/ProjectScene/tracksitemsview/DjRotarySelector.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/TrackClipsContainer.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/ClipItem.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/Timeline.qml</file>

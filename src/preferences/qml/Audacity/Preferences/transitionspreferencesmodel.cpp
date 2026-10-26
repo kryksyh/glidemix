@@ -213,6 +213,17 @@ void TransitionsPreferencesModel::setMixNowLanding(int landing)
     emit changed();
 }
 
+int TransitionsPreferencesModel::panelView() const
+{
+    return configuration()->mixerView() ? 1 : 0;
+}
+
+void TransitionsPreferencesModel::setPanelView(int view)
+{
+    configuration()->setMixerView(view == 1);
+    emit changed();
+}
+
 QVariantMap TransitionsPreferencesModel::newTransition() const
 {
     MixHouseTransitionSpec spec;
