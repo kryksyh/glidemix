@@ -58,6 +58,17 @@ void MixHouseActionsController::init()
     dispatcher()->reg(this, "mixhouse-grid-faster", [this]() { beatGrids()->adjustSelectedClips(Adjust::Faster); });
     dispatcher()->reg(this, "mixhouse-grid-slower", [this]() { beatGrids()->adjustSelectedClips(Adjust::Slower); });
     dispatcher()->reg(this, "mixhouse-grid-undo", [this]() { beatGrids()->adjustSelectedClips(Adjust::Undo); });
+    // Split by hand only: a song added to the mix is never split by itself.
+    dispatcher()->reg(this, "mixhouse-split-grid-jumps", [this]() {
+        const int cuts = beatGrids()->splitSelectedAtGridJumps();
+        if (cuts > 0) {
+            projectHistory()->pushHistoryState(muse::trc("mixhouse", "Split at grid jumps"),
+                                               muse::trc("mixhouse", "Split at grid jumps"));
+        } else if (interactive()) {
+            interactive()->info(muse::trc("mixhouse", "No grid jumps"),
+                                muse::trc("mixhouse", "The beats of this song stay on its grid: nothing to split."));
+        }
+    });
     dispatcher()->reg(this, "mixhouse-edit-beatgrid", [this]() {
         const int trackId = beatGrids()->selectedLibraryTrackId();
         if (trackId >= 0 && gridEditor()) {

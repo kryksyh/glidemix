@@ -81,6 +81,7 @@ public:
     void moveClipAnchor(const trackedit::ClipKey& clip, int which, double projectTime, bool completed) override;
     void resetClipAnchors(const trackedit::ClipKey& clip) override;
     void adjustSelectedClips(Adjust adjust) override;
+    int splitSelectedAtGridJumps() override;
 
 private:
     struct Grid {
@@ -113,12 +114,15 @@ private:
     //! Songs on the timeline without an energy rating or a loudness curve
     //! (rekordbox imports, Lexicon songs, songs GlideMix never analysed) get
     //! them in the background.
-    void requestEnergy(int libraryId, const QString& filePath, double bpm, bool storeEnergy) const;
+    void requestEnergy(int libraryId, const QString& filePath, double bpm, double firstBeatSec, double downbeatSec,
+                       bool storeEnergy) const;
     void startEnergyJob() const;
     struct EnergyJob {
         int libraryId = -1;
         QString filePath;
         double bpm = 0.0;
+        double firstBeatSec = 0.0;
+        double downbeatSec = -1.0;  ///< the song's own grid: its phrases sit on its bars
         bool storeEnergy = false;   ///< the song had no rating: save the new one
     };
     mutable QList<EnergyJob> m_energyQueue;
@@ -127,6 +131,9 @@ private:
         double energy = 0.0;
         double durationSec = 0.0;
         std::vector<float> power;
+        //! The same analysis' phrases, for a song neither rekordbox nor
+        //! GlideMix's collection has phrases for (a Lexicon song).
+        std::vector<MixHousePhrase> phrases;
     };
     mutable QHash<QString, ComputedEnergy> m_computedEnergy;   ///< by file path
     mutable bool m_energyJobRunning = false;
@@ -134,7 +141,8 @@ private:
     QString clipName(const trackedit::ClipKey& clip) const;
     void reseatClipsOf(const Grid& grid);
     double barLockedClipStart(const trackedit::ClipKey& clip, double proposedStart) const;
-    //! The phrases shown for a grid's file: edited ones, else rekordbox's.
+    //! The phrases shown for a grid's file: edited ones, else rekordbox's,
+    //! else GlideMix's own (a Lexicon song's worked out in the background).
     std::vector<MixHousePhrase> phrasesFor(const Grid& grid) const;
     //! A clip's anchors in seconds into its file, and the clip's mapping.
     struct SourceAnchors {

@@ -34,6 +34,8 @@ class TrackContextMenuModel : public muse::uicomponents::AbstractMenuModel
     Q_PROPERTY(trackedit::TrackId trackId READ trackId WRITE setTrackId NOTIFY trackIdChanged FINAL)
     Q_PROPERTY(QVariantList colorPalette READ colorPalette NOTIFY trackColorChanged FINAL)
     Q_PROPERTY(int currentColorIndex READ currentColorIndex NOTIFY trackColorChanged FINAL)
+    //! GlideMix: Color > Intensity, how strongly the track's clips carry their colour.
+    Q_PROPERTY(int colorIntensity READ colorIntensity WRITE setColorIntensity NOTIFY colorIntensityChanged FINAL)
 
 public:
     TrackContextMenuModel() = default;
@@ -42,6 +44,11 @@ public:
     Q_INVOKABLE void setTrackColor(int colorIndex);
     //! GlideMix: the clip menu's Reset colors (the track's clips, key colour, intensity).
     Q_INVOKABLE void resetColors();
+    //! GlideMix: Color > Clip color from the track menu: every clip on the track.
+    Q_INVOKABLE void setClipsColor(int colorIndex);
+    Q_INVOKABLE void resetClipsColor();
+    int colorIntensity() const;
+    void setColorIntensity(int intensity);
 
     trackedit::TrackId trackId() const;
     void setTrackId(const trackedit::TrackId& newTrackId);
@@ -53,6 +60,9 @@ signals:
     void trackIdChanged();
     void trackRenameRequested();
     void trackColorPickerRequested();
+    void clipsColorPickerRequested();
+    void colorIntensityRequested();
+    void colorIntensityChanged();
     void trackColorChanged();
     void openRequested();
 

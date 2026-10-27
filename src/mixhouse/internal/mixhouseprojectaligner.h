@@ -57,4 +57,12 @@ double compatibleTrackBpm(double trackBpm, double projectBpm);
 MixHouseAlignResult alignImportedTrackToBars(const std::shared_ptr<context::IGlobalContext>& globalContext,
                                              const std::shared_ptr<trackedit::ITrackeditInteraction>& trackeditInteraction,
                                              const MixHouseAlignRequest& request);
+
+/// Right-click "Split at grid jumps": splits one clip of a library song just
+/// before each place its beats jump off its grid (mixhousegridshifts.h) and
+/// slides each later part back onto the grid. `barOneInFile` is the grid's
+/// bar 1 in source seconds. Returns the new clips, left to right; empty when
+/// the song has no jump.
+trackedit::ClipKeyList splitClipAtGridJumps(const std::shared_ptr<context::IGlobalContext>& globalContext,
+                                            const trackedit::ClipKey& clip, double bpm, double barOneInFile);
 }

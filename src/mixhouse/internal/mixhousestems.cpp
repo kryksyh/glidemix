@@ -232,7 +232,7 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
     const std::optional<Launch> launch = findDemucs();
     if (!launch) {
         interactive()->errorSync(muse::trc("mixhouse", "Stem separation is not installed"),
-                                 muse::trc("mixhouse", "GlideMix could not find the stem separation helper (Demucs)."));
+                                 muse::trc("mixhouse", "GlideMix could not find the stems engine."));
         return;
     }
 
@@ -341,7 +341,7 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
                 QFile::remove(temp);
                 if (!progress.Cancelled()) {
                     interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
-                                             muse::trc("mixhouse", "Demucs could not separate this track."));
+                                             muse::trc("mixhouse", "The stems engine could not separate this track."));
                 }
                 return;
             }
@@ -439,18 +439,18 @@ $Tmp = "$Dest.installing"
 if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
-Write-Output "STEP 1/4 Downloading the installer (uv)"
+Write-Output "STEP 1/4 Downloading"
 Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/astral-sh/uv/releases/latest/download/uv-$Arch-pc-windows-msvc.zip" -OutFile "$Tmp\uv.zip"
 Expand-Archive -LiteralPath "$Tmp\uv.zip" -DestinationPath "$Tmp\uv" -Force
 $Uv = (Get-ChildItem -LiteralPath "$Tmp\uv" -Recurse -Filter 'uv.exe' | Select-Object -First 1).FullName
 if (-not $Uv) { Write-Output "ERROR uv.exe not found"; exit 1 }
 $env:UV_CACHE_DIR = "$Tmp\cache"
 $env:UV_PYTHON_INSTALL_DIR = "$Tmp\python"
-Write-Output "STEP 2/4 Downloading Python"
+Write-Output "STEP 2/4 Downloading"
 & $Uv venv --quiet --python 3.12 "$Tmp\.venv"; Check
-Write-Output "STEP 3/4 Downloading Demucs and PyTorch (about 1 GB)"
+Write-Output "STEP 3/4 Downloading (about 1 GB)"
 & $Uv pip install --quiet --python "$Tmp\.venv\Scripts\python.exe" "demucs==4.1.0" "soundfile" "torch"; Check
-Write-Output "STEP 4/4 Downloading the separation model"
+Write-Output "STEP 4/4 Downloading"
 $env:TORCH_HOME = "$Tmp\models"
 $env:HF_HOME = "$Tmp\models"
 $env:HF_HUB_DISABLE_TELEMETRY = '1'
@@ -466,7 +466,8 @@ $Cfg = "$Dest\.venv\pyvenv.cfg"
 Write-Output "DONE"
 )PS";
 #else
-//! The installer, run with bash. Each "STEP" line is shown in Preferences.
+//! The installer, run with bash. Each "STEP" line is shown in Preferences --
+//! a count only: what is downloaded is not named there (Chris, 2026-10-27).
 //! uv (Astral's Python installer) brings its own Python, so nothing on the
 //! Mac is touched outside the one folder.
 const char* kInstallScript = R"SH(
@@ -479,16 +480,16 @@ case "$(uname -m)" in
     arm64) ARCH=aarch64 ;;
     *) ARCH=x86_64 ;;
 esac
-echo "STEP 1/4 Downloading the installer (uv)"
+echo "STEP 1/4 Downloading"
 curl -fsSL "https://github.com/astral-sh/uv/releases/latest/download/uv-$ARCH-apple-darwin.tar.gz" -o "$TMP/uv.tar.gz"
 tar -xzf "$TMP/uv.tar.gz" -C "$TMP" --strip-components 1
 export UV_CACHE_DIR="$TMP/cache"
 export UV_PYTHON_INSTALL_DIR="$TMP/python"
-echo "STEP 2/4 Downloading Python"
+echo "STEP 2/4 Downloading"
 "$TMP/uv" venv --quiet --python 3.12 "$TMP/.venv"
-echo "STEP 3/4 Downloading Demucs and PyTorch (about 1 GB)"
+echo "STEP 3/4 Downloading (about 1 GB)"
 "$TMP/uv" pip install --quiet --python "$TMP/.venv/bin/python" "demucs==4.1.0" "soundfile" "torch"
-echo "STEP 4/4 Downloading the separation model"
+echo "STEP 4/4 Downloading"
 TORCH_HOME="$TMP/models" HF_HOME="$TMP/models" HF_HUB_DISABLE_TELEMETRY=1 "$TMP/.venv/bin/python" -c "from demucs.pretrained import get_model; get_model('htdemucs')" >/dev/null 2>&1
 rm -rf "$TMP/cache" "$TMP/uv.tar.gz"
 rm -rf "$DEST"

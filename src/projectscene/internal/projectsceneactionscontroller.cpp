@@ -2,6 +2,9 @@
 * Audacity: A Digital Audio Editor
 */
 
+#include <QCoreApplication>
+#include <QTimer>
+
 #include "project/iaudacityproject.h"
 
 #include "projectsceneactionscontroller.h"
@@ -26,6 +29,11 @@ static const ActionCode LABEL_OPEN_EDITOR_CODE("open-label-editor");
 static const ActionCode CLIP_GAIN_CODE("clip-gain");
 static const ActionCode BEAT_GRID_CODE("toggle-beat-grid");
 static const ActionCode COLOUR_WAVEFORM_CODE("toggle-colour-waveform");
+// GlideMix: View > Track view, every song at once (IProjectSceneUiState::allTracksView).
+static const ActionCode ALL_TRACKS_VIEW_CODES[] = {
+    "track-view-all-waveform", "track-view-all-single-wave", "track-view-all-half-wave",
+    "track-view-all-spectrogram", "track-view-all-multi",
+};
 
 static const muse::Uri EDIT_PITCH_AND_SPEED_URI("audacity://projectscene/editpitchandspeed");
 
@@ -49,6 +57,30 @@ void ProjectSceneActionsController::init()
     dispatcher()->reg(this, CLIP_GAIN_CODE, this, &ProjectSceneActionsController::toggleAutomation);
     dispatcher()->reg(this, BEAT_GRID_CODE, this, &ProjectSceneActionsController::toggleBeatGrid);
     dispatcher()->reg(this, COLOUR_WAVEFORM_CODE, this, &ProjectSceneActionsController::toggleColourWaveform);
+    for (int view = 0; view < 5; ++view) {
+        dispatcher()->reg(this, ALL_TRACKS_VIEW_CODES[view], [this, view]() { setAllTracksView(view); });
+    }
+    projectSceneUiState()->allTracksViewChanged().onNotify(this, [this]() {
+        for (const ActionCode& code : ALL_TRACKS_VIEW_CODES) {
+            notifyActionCheckedChanged(code);
+        }
+    });
+    // A song added later is drawn the way the rest are.
+    globalContext()->currentProjectChanged().onNotify(this, [this]() {
+        const auto prj = globalContext()->currentTrackeditProject();
+        if (!prj) {
+            return;
+        }
+        prj->trackAdded().onReceive(this, [this](const trackedit::Track& track) {
+            const int view = projectSceneUiState()->allTracksView();
+            if (view < 0) {
+                return;
+            }
+            const trackedit::TrackId id = track.id;
+            // After the import has finished setting the track up.
+            QTimer::singleShot(0, qApp, [this, id, view]() { applyTrackView(id, view); });
+        }, muse::async::Asyncable::Mode::SetReplace);
+    });
 
     projectSceneUiState()->timelineRulerModeChanged().onNotify(this, [this]() {
         notifyActionCheckedChanged(MINUTES_SECONDS_RULER);
@@ -212,8 +244,51 @@ void ProjectSceneActionsController::toggleTrackSingleWave(const muse::actions::A
     notifyActionCheckedChanged(TOGGLE_TRACK_SINGLE_WAVE.toString());
 }
 
+void ProjectSceneActionsController::setAllTracksView(int view)
+{
+    const auto project = globalContext()->currentProject();
+    const auto viewState = project ? project->viewState() : nullptr;
+    projectSceneUiState()->setAllTracksView(view);
+    if (!viewState) {
+        return;
+    }
+    // View > Toggle spectral view would turn the tracks back on its next press.
+    if (view != 3 && viewState->globalSpectrogramToggleIsOn()) {
+        viewState->toggleGlobalSpectrogramView();
+    }
+    for (const trackedit::TrackId trackId : project->trackeditProject()->trackIdList()) {
+        applyTrackView(trackId, view);
+    }
+}
+
+//! 0 Waveform, 1 Single wave, 2 Half-wave, 3 Spectrogram, 4 Multi-view.
+void ProjectSceneActionsController::applyTrackView(trackedit::TrackId trackId, int view)
+{
+    const auto project = globalContext()->currentProject();
+    const auto viewState = project ? project->viewState() : nullptr;
+    const auto track = project ? project->trackeditProject()->track(trackId) : std::nullopt;
+    if (!viewState || !track
+        || (track->type != trackedit::TrackType::Mono && track->type != trackedit::TrackType::Stereo)) {
+        return;
+    }
+    using trackedit::TrackViewType;
+    viewState->setTrackViewType(trackId, view == 3 ? TrackViewType::Spectrogram
+                                : view == 4 ? TrackViewType::WaveformAndSpectrogram : TrackViewType::Waveform);
+    if (viewState->isHalfWave(trackId).val != (view == 2)) {
+        viewState->toggleHalfWave(trackId);
+    }
+    if (track->type == trackedit::TrackType::Stereo && viewState->isSingleWave(trackId).val != (view == 1)) {
+        viewState->toggleSingleWave(trackId);
+    }
+}
+
 bool ProjectSceneActionsController::actionChecked(const ActionCode& actionCode) const
 {
+    for (int view = 0; view < 5; ++view) {
+        if (actionCode == ALL_TRACKS_VIEW_CODES[view]) {
+            return projectSceneUiState()->allTracksView() == view;
+        }
+    }
     QMap<std::string, bool> isChecked {
         { VERTICAL_RULERS_CODE, configuration()->isVerticalRulersVisible() },
         { RMS_IN_WAVEFORM_CODE, configuration()->isRMSInWaveformVisible() },

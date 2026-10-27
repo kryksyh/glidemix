@@ -38,7 +38,7 @@ PreferencesPage {
                 wrapMode: Text.WordWrap
                 text: stemsModel.available
                       ? qsTrc("preferences", "Splits a track into drums, bass, vocals and other, each on its own track under it, in sync with the original. Right-click a track and choose Separate stems.")
-                      : qsTrc("preferences", "The stems engine is not installed yet. It is free (Demucs, from Meta's research team) and downloads once, about 1 GB, into GlideMix's own folder.")
+                      : qsTrc("preferences", "The stems engine is not installed yet. It is free and downloads once, about 1 GB, into GlideMix's own folder.")
             }
 
             Row {

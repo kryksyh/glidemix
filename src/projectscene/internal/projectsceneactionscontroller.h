@@ -54,6 +54,8 @@ private:
     void toggleAutomation();
     void toggleTrackHalfWave(const muse::actions::ActionQuery& q);
     void toggleTrackSingleWave(const muse::actions::ActionQuery& q);
+    void setAllTracksView(int view);
+    void applyTrackView(trackedit::TrackId trackId, int view);
 
     void changeFontForLabels();
 

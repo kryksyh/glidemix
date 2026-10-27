@@ -362,8 +362,8 @@ static UiActionList STATIC_ACTIONS = {
              Checkable::Yes
              ),
     UiAction("action://projectscene/track-view-half-wave",
-             au::context::UiCtxProjectOpened,
-             au::context::CTX_PROJECT_OPENED,
+             au::context::UiCtxAny,
+             au::context::CTX_ANY,
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Half-wave"),
              //: Action description: shown as a tooltip; can be a full sentence
@@ -372,13 +372,63 @@ static UiActionList STATIC_ACTIONS = {
              Checkable::Yes
              ),
     UiAction("action://projectscene/track-view-single-wave",
-             au::context::UiCtxProjectOpened,
-             au::context::CTX_PROJECT_OPENED,
+             au::context::UiCtxAny,
+             au::context::CTX_ANY,
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Single wave"),
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description", "Draw a stereo track as one waveform, in half the height"),
              IconCode::Code::WAVEFORM,
+             Checkable::Yes
+             ),
+    UiAction("track-view-all-waveform",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_OPENED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Waveform"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Draw every track as a waveform"),
+             IconCode::Code::WAVEFORM,
+             Checkable::Yes
+             ),
+    UiAction("track-view-all-single-wave",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_OPENED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Single wave"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Draw every stereo track as one waveform, in half the height"),
+             IconCode::Code::WAVEFORM,
+             Checkable::Yes
+             ),
+    UiAction("track-view-all-half-wave",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_OPENED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Half-wave"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Draw every track as the top half of its waveform"),
+             IconCode::Code::WAVEFORM_HALFWAVE,
+             Checkable::Yes
+             ),
+    UiAction("track-view-all-spectrogram",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_OPENED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Spectrogram"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Draw every track as a spectrogram"),
+             IconCode::Code::SPECTROGRAM,
+             Checkable::Yes
+             ),
+    UiAction("track-view-all-multi",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_OPENED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Multi-view"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Draw every track as a waveform over its spectrogram"),
+             IconCode::Code::WAVEFORM_MULTIVIEW,
              Checkable::Yes
              ),
     UiAction("open-label-editor",

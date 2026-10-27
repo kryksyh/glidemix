@@ -279,4 +279,34 @@ MixHouseAlignResult alignImportedTrackToBars(const std::shared_ptr<context::IGlo
            << ") on bar at " << bar << "s, clip start " << newStart << "s";
     return result;
 }
+
+trackedit::ClipKeyList splitClipAtGridJumps(const std::shared_ptr<context::IGlobalContext>& globalContext,
+                                            const trackedit::ClipKey& key, double bpm, double barOneInFile)
+{
+    trackedit::ClipKeyList added;
+    const auto project = globalContext ? globalContext->currentProject() : nullptr;
+    const auto trackeditProject = globalContext ? globalContext->currentTrackeditProject() : nullptr;
+    if (!project || !trackeditProject || bpm <= 0.0) {
+        return added;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    WaveTrack* track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(key.trackId));
+    const auto clip = track ? au::au3::DomAccessor::findWaveClip(track, key.itemId) : nullptr;
+    if (!clip) {
+        return added;
+    }
+    // A grid's bar 1 may sit before the file starts: the same bar phase, a
+    // whole bar later (as alignImportedTrackToBars).
+    while (barOneInFile < -kMaxLeadInTrimSec) {
+        barOneInFile += 4.0 * 60.0 / bpm;
+    }
+    for (const auto& piece : splitAtGridJumps(track, clip, bpm, barOneInFile)) {
+        trackeditProject->notifyAboutClipAdded(au::au3::DomConverter::clip(track, piece.get()));
+        added.push_back(trackedit::ClipKey(key.trackId, piece->GetId()));
+    }
+    if (!added.empty()) {
+        trackeditProject->notifyAboutClipChanged(au::au3::DomConverter::clip(track, clip.get()));
+    }
+    return added;
+}
 }

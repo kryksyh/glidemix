@@ -24,6 +24,7 @@
 #include "translation.h"
 
 #include "mixhouseanalyzer.h"
+#include "mixhouse/mixhousephrasedetector.h"
 #include "mixhouseprojectaligner.h"
 
 using namespace au::mixhouse;
@@ -537,7 +538,8 @@ const MixHouseBeatGrids::SongEnergy& MixHouseBeatGrids::songEnergy(const QString
                         song.durationSec = computed->durationSec;
                     }
                 } else {
-                    requestEnergy(libraryId, t.filePath, t.bpm, song.energy <= 0.0);
+                    requestEnergy(libraryId, t.filePath, t.bpm, t.beats.valid ? t.beats.firstBeatSec : 0.0, t.downbeatSec,
+                                  song.energy <= 0.0);
                 }
             }
             if (!song.power.empty()) {
@@ -551,13 +553,14 @@ const MixHouseBeatGrids::SongEnergy& MixHouseBeatGrids::songEnergy(const QString
     return *m_songEnergy.insert(name, song);
 }
 
-void MixHouseBeatGrids::requestEnergy(int libraryId, const QString& filePath, double bpm, bool storeEnergy) const
+void MixHouseBeatGrids::requestEnergy(int libraryId, const QString& filePath, double bpm, double firstBeatSec,
+                                      double downbeatSec, bool storeEnergy) const
 {
     if (m_energyRequested.contains(filePath)) {
         return;
     }
     m_energyRequested.insert(filePath);
-    m_energyQueue.push_back({ libraryId, filePath, bpm, storeEnergy });
+    m_energyQueue.push_back({ libraryId, filePath, bpm, firstBeatSec, downbeatSec, storeEnergy });
     // Not from inside energyCurve()'s loop: songEnergy() hands out references
     // into m_songEnergy.
     QTimer::singleShot(0, qApp, [this, alive = m_alive]() {
@@ -582,9 +585,12 @@ void MixHouseBeatGrids::startEnergyJob() const
     }
     const auto alive = m_alive;
     std::thread([this, alive, job]() {
-        // A known tempo skips the beat network; the grid found is not saved.
+        // A known grid skips the beat network and puts the phrases on the
+        // song's own bars; nothing found here is saved to the song.
         MixHouseKnownAnalysis known;
         known.bpm = job.bpm;
+        known.firstBeatSec = job.firstBeatSec;
+        known.downbeatSec = job.downbeatSec;
         const MixHouseAnalysisResult analysis = analyzeTrackFile(job.filePath, {}, known);
         ComputedEnergy computed;
         if (analysis.valid) {
@@ -594,6 +600,14 @@ void MixHouseBeatGrids::startEnergyJob() const
             for (const uint8_t v : analysis.waveformOverview) {
                 const float amp = v / 255.0f;
                 computed.power.push_back(amp * amp);
+            }
+            computed.phrases = analysis.modelPhrases;
+            if (computed.phrases.empty()) {
+                const double downbeat = analysis.downbeatSec >= 0.0 ? analysis.downbeatSec : analysis.firstBeatSec;
+                computed.phrases = detectPhrases(decodeWaveformOverview(qUncompress(encodeWaveformOverview(
+                                                     analysis.waveformOverview, analysis.waveformLow, analysis.waveformMid,
+                                                     analysis.waveformHigh))),
+                                                 analysis.durationSec, analysis.bpm, downbeat);
             }
         }
         if (!*alive) {
@@ -617,7 +631,12 @@ void MixHouseBeatGrids::startEnergyJob() const
                     library()->setTrackEnergy(job.libraryId, computed.energy);
                 }
                 m_songEnergy.clear();
-                LOGI() << "GlideMix: energy " << computed.energy << " for " << job.filePath;
+                LOGI() << "GlideMix: energy " << computed.energy << ", " << computed.phrases.size() << " phrases for "
+                       << job.filePath;
+                if (!computed.phrases.empty()) {
+                    muse::async::Notification changed = m_beatGridsChanged;   // a copy shares the channel
+                    changed.notify();   // the phrase ribbon
+                }
             } else {
                 LOGW() << "GlideMix: no energy for " << job.filePath;
             }
@@ -949,6 +968,16 @@ std::vector<MixHousePhrase> MixHouseBeatGrids::phrasesFor(const Grid& grid) cons
     // Tracks rekordbox never analysed: GlideMix's own.
     if (phrases.empty() && grid.trackId >= 0 && library() && !isExternalLibraryTrack(grid.trackId)) {
         phrases = library()->detectedPhrases(grid.trackId);
+    }
+    // A Lexicon song (no rekordbox analysis on this computer, e.g. Windows):
+    // worked out in the background, like its energy curve.
+    if (phrases.empty() && isExternalLibraryTrack(grid.trackId)) {
+        const auto computed = m_computedEnergy.constFind(grid.filePath);
+        if (computed != m_computedEnergy.constEnd()) {
+            phrases = computed->phrases;
+        } else {
+            requestEnergy(-1, grid.filePath, grid.bpm, grid.firstBeatSec, grid.downbeatSec, false);
+        }
     }
     return phrases;
 }
@@ -1310,12 +1339,23 @@ void MixHouseBeatGrids::insertAtTransition(const trackedit::ClipKey& key, bool r
         double outro = 0.0;
     };
     std::vector<Item> others;
+    // The later pieces of this song when it was split at grid jumps
+    // (mixhouseprojectaligner.cpp): same row, same song, its anchors a few ms
+    // off. Not songs of their own -- taken for the song coming in at this
+    // IN, they were pushed a whole song's length down the row.
+    trackedit::ClipKeyList pieces;
+    const QString myName = clipName(key);
     for (const trackedit::TrackId trackId : project->trackIdList()) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             if (clip.key == key) {
                 continue;
             }
             const Anchors a = clipAnchors(clip.key);
+            if (a.valid && trackId == key.trackId && clip.title.toQString() == myName
+                && std::abs(a.intro - mine.intro) < 0.5) {
+                pieces.push_back(clip.key);
+                continue;
+            }
             others.push_back({ clip.key, clip.startTime, a.valid, a.intro, a.outro });
         }
     }
@@ -1390,7 +1430,15 @@ void MixHouseBeatGrids::insertAtTransition(const trackedit::ClipKey& key, bool r
     }
 
     if (std::abs(selfShift) > 1e-9) {
-        trackeditInteraction()->changeClipStartTime(key, project->clip(key).startTime + selfShift, false);
+        // Its pieces with it; moving right, the rightmost first.
+        trackedit::ClipKeyList self = { key };
+        self.insert(self.end(), pieces.begin(), pieces.end());
+        if (selfShift > 0.0) {
+            std::reverse(self.begin(), self.end());
+        }
+        for (const trackedit::ClipKey& clip : self) {
+            trackeditInteraction()->changeClipStartTime(clip, project->clip(clip).startTime + selfShift, false);
+        }
     }
     const double myOutro = mine.outro + (point - mine.intro);   // its IN is on `point` now
 
@@ -1402,7 +1450,7 @@ void MixHouseBeatGrids::insertAtTransition(const trackedit::ClipKey& key, bool r
         return static_cast<int>(std::distance(rows.begin(), std::find(rows.begin(), rows.end(), id)));
     };
     const auto moveRowTo = [&](int target) {
-        if (!tracksInteraction() || project->clipList(key.trackId).size() != 1) {
+        if (!tracksInteraction() || project->clipList(key.trackId).size() != 1 + pieces.size()) {
             return;
         }
         const int from = rowOf(key.trackId);
@@ -1637,6 +1685,37 @@ void MixHouseBeatGrids::seatBarOneAtProjectStart(const trackedit::ClipKey& key)
     trackeditInteraction()->trimClipsLeft({ key }, leadIn, 0.01, false, trackedit::UndoPushType::NONE);
     trackeditInteraction()->changeClipStartTime(key, 0.0, true);
     LOGI() << "GlideMix grid: trimmed " << leadIn << " s lead-in so bar 1 of " << grid.title << " sits on bar 1";
+}
+
+int MixHouseBeatGrids::splitSelectedAtGridJumps()
+{
+    if (!selectionController()) {
+        return 0;
+    }
+    trackedit::ClipKeyList targets = selectionController()->selectedClips();
+    const auto trackeditProject = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (targets.empty() && trackeditProject) {
+        for (const trackedit::TrackId trackId : selectionController()->selectedTracks()) {
+            for (const trackedit::Clip& clip : trackeditProject->clipList(trackId)) {
+                targets.push_back(clip.key);
+            }
+        }
+    }
+    int cuts = 0;
+    for (const trackedit::ClipKey& key : targets) {
+        const Grid grid = gridForClipName(clipName(key), false);
+        if (!grid.valid()) {
+            continue;
+        }
+        // Bar 1 as a drop places it (alignImportedTrackToBars): the detected
+        // downbeat when it is sure, else the grid's first beat.
+        const double barOne = grid.downbeatSec >= 0.0 && grid.downbeatConfidence >= 0.5 ? grid.downbeatSec : grid.firstBeatSec;
+        cuts += static_cast<int>(splitClipAtGridJumps(globalContext(), key, grid.bpm, barOne).size());
+    }
+    if (cuts > 0) {
+        m_beatGridsChanged.notify();
+    }
+    return cuts;
 }
 
 void MixHouseBeatGrids::adjustSelectedClips(Adjust adjust)

@@ -65,3 +65,27 @@ void ArrangementPreferencesModel::setStereoWaveform(bool stereo)
     uiState()->setClipWaveformStereo(stereo);
     emit changed();
 }
+
+int ArrangementPreferencesModel::trackView() const
+{
+    return uiState() ? uiState()->allTracksView() : -1;
+}
+
+void ArrangementPreferencesModel::setTrackView(int view)
+{
+    static const char* const codes[] = {
+        "track-view-all-waveform", "track-view-all-single-wave", "track-view-all-half-wave",
+        "track-view-all-spectrogram", "track-view-all-multi",
+    };
+    if (view < 0 || view > 4 || view == trackView()) {
+        return;
+    }
+    if (uiState()) {
+        uiState()->setAllTracksView(view);   // kept with no project open too
+    }
+    // The View menu's own action changes the open project's tracks.
+    if (dispatcher()) {
+        dispatcher()->dispatch(codes[view]);
+    }
+    emit changed();
+}

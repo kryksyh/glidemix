@@ -65,7 +65,6 @@ void MixHouseTrackAligner::alignDroppedFiles(const std::vector<muse::io::path_t>
         request.projectWasEmpty = projectWasEmpty && firstAligned;
         request.lockToBars = !libraryConfiguration() || libraryConfiguration()->syncEnabled();
         request.snapBars = 1;
-        request.splitAtGridJumps = true;
 
         const MixHouseAlignResult result = alignImportedTrackToBars(globalContext(), trackeditInteraction(), request);
         if (result.aligned) {

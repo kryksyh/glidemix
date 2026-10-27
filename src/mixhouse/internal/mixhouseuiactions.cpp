@@ -115,6 +115,14 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description", "Undo the last beat grid change")
              ),
+    UiAction("mixhouse-split-grid-jumps",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Split at grid jumps"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Split the song where its beats jump off its grid and put each part back on the bar")
+             ),
     UiAction("mixhouse-edit-beatgrid",
              au::context::UiCtxProjectOpened,
              au::context::CTX_PROJECT_FOCUSED,

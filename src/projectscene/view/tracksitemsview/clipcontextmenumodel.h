@@ -68,6 +68,8 @@ private:
     void updatePitchSpeedModifiedEnabledState(muse::uicomponents::MenuItem& item);
 
     muse::uicomponents::MenuItemList makeClipColourItems();
+    muse::uicomponents::MenuItemList makeTrackVisualizationItems();
+    void updateTrackViewCheckedState();
 
     muse::uicomponents::MenuItem* makeAnchorsMenu();
     muse::uicomponents::MenuItemList makeKeyItems();

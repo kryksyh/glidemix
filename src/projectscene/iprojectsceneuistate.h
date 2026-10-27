@@ -45,6 +45,14 @@ public:
     virtual void setLaneBackground(int mode) = 0;
     virtual muse::async::Notification laneBackgroundChanged() const = 0;
 
+    //! GlideMix: how every song's track is drawn (View > Track view,
+    //! Preferences > Waveforms): 0 Waveform, 1 Single wave, 2 Half-wave,
+    //! 3 Spectrogram, 4 Multi-view; -1 = never chosen (each track keeps its own).
+    //! An app setting; songs added later get it too.
+    virtual int allTracksView() const = 0;
+    virtual void setAllTracksView(int view) = 0;
+    virtual muse::async::Notification allTracksViewChanged() const = 0;
+
     //! What laneBackground() comes out as right now.
     virtual bool blackCanvas() const = 0;
 };

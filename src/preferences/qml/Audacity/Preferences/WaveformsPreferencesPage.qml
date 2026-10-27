@@ -82,6 +82,38 @@ PreferencesPage {
             }
 
             ComboBoxWithTitle {
+                title: qsTrc("preferences", "Track view:")
+
+                columnWidth: 280
+                currentIndex: arrangementModel.trackView
+                model: [
+                    { text: qsTrc("preferences", "Waveform"), value: 0 },
+                    { text: qsTrc("preferences", "Single wave"), value: 1 },
+                    { text: qsTrc("preferences", "Half-wave"), value: 2 },
+                    { text: qsTrc("preferences", "Spectrogram"), value: 3 },
+                    { text: qsTrc("preferences", "Multi-view"), value: 4 }
+                ]
+                textRole: "text"
+                valueRole: "value"
+
+                onValueEdited: function(newIndex, newValue) {
+                    arrangementModel.trackView = newValue
+                }
+
+                navigation.name: "ArrModeTrackViewCombo"
+                navigation.panel: waveformStyleSection.navigation
+                navigation.row: 1
+            }
+
+            StyledTextLabel {
+                width: parent.width
+                horizontalAlignment: Qt.AlignLeft
+                wrapMode: Text.WordWrap
+                opacity: 0.7
+                text: qsTrc("preferences", "Every song on the timeline, and every song you add later. The same choice is in View > Track view; a track's own right-click menu still changes that track alone.")
+            }
+
+            ComboBoxWithTitle {
                 title: qsTrc("preferences", "Lane background:")
 
                 columnWidth: 280

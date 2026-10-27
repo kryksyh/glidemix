@@ -32,6 +32,16 @@ constexpr const char* TRACK_COLOR_ITEM = "mixtape-clip-track-color";
 constexpr const char* RESET_COLORS_ITEM = "mixtape-clip-reset-colors";
 constexpr const char* ANCHOR_ITEM_PREFIX = "mixtape-anchor:";
 constexpr const char* PHRASE_RIBBON_ITEM = "mixtape-toggle-phrase-ribbon";
+// GlideMix: the track menu's Track visualization, here too (Chris, 2026-10-27).
+constexpr const char* TRACK_VIEW_WAVEFORM_ACTION = "action://trackedit/track-view-waveform";
+constexpr const char* TRACK_VIEW_SPECTROGRAM_ACTION = "action://trackedit/track-view-spectrogram";
+constexpr const char* TRACK_VIEW_MULTI_ACTION = "action://trackedit/track-view-multi";
+constexpr const char* TRACK_VIEW_HALF_WAVE_ACTION = "action://projectscene/track-view-half-wave";
+constexpr const char* TRACK_VIEW_SINGLE_WAVE_ACTION = "action://projectscene/track-view-single-wave";
+const char* const TRACK_VIEW_ACTIONS[] = {
+    TRACK_VIEW_WAVEFORM_ACTION, TRACK_VIEW_SPECTROGRAM_ACTION, TRACK_VIEW_MULTI_ACTION,
+    TRACK_VIEW_HALF_WAVE_ACTION, TRACK_VIEW_SINGLE_WAVE_ACTION,
+};
 //! NOTE: can be moved to the framework
 bool containsAny(const ActionCodeList& list, const ActionCodeList& actionCodes)
 {
@@ -129,6 +139,8 @@ void ClipContextMenuModel::load()
             makeSeparator(),
             makeSimpleItem(RESET_COLORS_ITEM, muse::TranslatableString("clip", "Reset colors")),
         }, "menu-clip-color"),
+        makeMenu(muse::TranslatableString("clip", "Track visualization"), makeTrackVisualizationItems(),
+                 "menu-clip-track-visualization"),
         makeSeparator(),
         makeItemWithArg("action://trackedit/cut"),
         makeItemWithArg("action://trackedit/copy"),
@@ -140,6 +152,7 @@ void ClipContextMenuModel::load()
         makeSeparator(),
         makeItemWithArg("split"),
         makeItemWithArg("disjoin", muse::TranslatableString("clip", "Split at silences")),
+        makeMenuItem("mixhouse-split-grid-jumps"),
         makeSeparator(),
         enableStretchItem,
         makeItemWithArg("clip-pitch-speed-open"),
@@ -188,11 +201,6 @@ void ClipContextMenuModel::load()
     if (project && project->viewState()) {
         muse::ValCh<trackedit::TrackViewType> valCh = project->viewState()->trackViewType(m_clipKey.trackId());
 
-        if (valCh.val == trackedit::TrackViewType::Spectrogram || valCh.val == trackedit::TrackViewType::WaveformAndSpectrogram) {
-            items.push_back(makeSeparator());
-            items.push_back(makeMenuItem(spectrogram::TRACK_SPECTROGRAM_SETTINGS_ACTION));
-        }
-
         valCh.ch.onReceive(this, [this](auto) { load(); }, Mode::SetReplace);
     }
 
@@ -213,6 +221,7 @@ void ClipContextMenuModel::load()
 
     setItems(items);
 
+    updateTrackViewCheckedState();
     updateColorCheckedState();
     updateColorMenu();
 
@@ -445,6 +454,55 @@ void ClipContextMenuModel::onActionsStateChanges(const muse::actions::ActionCode
 
     if (containsAny(codes, m_colorChangeActionCodeList)) {
         updateColorCheckedState();
+    }
+
+    for (const char* action : TRACK_VIEW_ACTIONS) {
+        if (containsAction(codes, ActionCode(action))) {
+            updateTrackViewCheckedState();
+            break;
+        }
+    }
+}
+
+//! The same items as the track menu's Track visualization, for the clip's track.
+MenuItemList ClipContextMenuModel::makeTrackVisualizationItems()
+{
+    MenuItemList items;
+    for (const char* action : TRACK_VIEW_ACTIONS) {
+        muse::actions::ActionQuery query(action);
+        query.addParam("trackId", muse::Val { m_clipKey.trackId() });
+        items.push_back(makeMenuItem(query.toString()));
+    }
+    items.push_back(makeSeparator());
+    items.push_back(makeMenuItem(spectrogram::TRACK_SPECTROGRAM_SETTINGS_ACTION));
+    return items;
+}
+
+void ClipContextMenuModel::updateTrackViewCheckedState()
+{
+    const auto prj = globalContext()->currentProject();
+    if (!prj || !prj->viewState()) {
+        return;
+    }
+    const auto trackId = m_clipKey.trackId();
+    const auto viewType = prj->viewState()->trackViewType(trackId).val;
+    for (const char* action : TRACK_VIEW_ACTIONS) {
+        MenuItem& item = findItem(ActionCode(action));
+        if (!item.isValid()) {
+            continue;
+        }
+        const std::string code(action);
+        auto state = item.state();
+        if (code == TRACK_VIEW_HALF_WAVE_ACTION) {
+            state.checked = prj->viewState()->isHalfWave(trackId).val;
+        } else if (code == TRACK_VIEW_SINGLE_WAVE_ACTION) {
+            state.checked = prj->viewState()->isSingleWave(trackId).val;
+        } else {
+            state.checked = (code == TRACK_VIEW_WAVEFORM_ACTION && viewType == trackedit::TrackViewType::Waveform)
+                            || (code == TRACK_VIEW_SPECTROGRAM_ACTION && viewType == trackedit::TrackViewType::Spectrogram)
+                            || (code == TRACK_VIEW_MULTI_ACTION && viewType == trackedit::TrackViewType::WaveformAndSpectrogram);
+        }
+        item.setState(state);
     }
 }
 

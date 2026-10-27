@@ -101,6 +101,15 @@ ListItemBlank {
             Qt.callLater(function () { trackColorPicker.open() })
         }
 
+        // GlideMix: the clip menu's Color items, here too.
+        onClipsColorPickerRequested: {
+            Qt.callLater(function () { clipsColorPicker.open() })
+        }
+
+        onColorIntensityRequested: {
+            Qt.callLater(function () { colorIntensityPopup.open() })
+        }
+
         onOpenRequested: {
             menuButton.toggleMenu(menuButton)
         }
@@ -116,6 +125,100 @@ ListItemBlank {
 
         onColorSelected: function (colorIndex) {
             contextMenuModel.setTrackColor(colorIndex)
+        }
+    }
+
+    // GlideMix: Color > Clip color -- every clip on this track.
+    TrackColorPalettePopup {
+        id: clipsColorPicker
+        parent: ui.rootItem
+        colors: contextMenuModel.colorPalette
+        currentColorIndex: contextMenuModel.currentColorIndex
+        showReset: true
+
+        onColorSelected: function (colorIndex) {
+            contextMenuModel.setClipsColor(colorIndex)
+        }
+        onResetRequested: contextMenuModel.resetClipsColor()
+    }
+
+    // GlideMix: Color > Intensity, the same popup as on a clip.
+    StyledPopupView {
+        id: colorIntensityPopup
+
+        contentWidth: 240
+        contentHeight: intensityColumn.implicitHeight
+        margins: 14
+        closePolicies: PopupView.CloseOnPressOutsideParent
+
+        Column {
+            id: intensityColumn
+
+            width: 240
+            spacing: 12
+
+            Item {
+                width: parent.width
+                height: 20
+
+                StyledTextLabel {
+                    anchors.left: parent.left
+                    anchors.right: resetIntensityButton.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    horizontalAlignment: Text.AlignLeft
+                    text: qsTrc("projectscene", "Color intensity")
+                }
+
+                FlatButton {
+                    id: resetIntensityButton
+                    anchors.right: closeIntensityButton.left
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 20
+                    height: 20
+                    icon: IconCode.UNDO
+                    transparent: true
+                    toolTipTitle: qsTrc("projectscene", "Reset to full")
+                    onClicked: contextMenuModel.colorIntensity = 255
+                }
+
+                // A red dot in the corner closes it.
+                Rectangle {
+                    id: closeIntensityButton
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 14
+                    height: 14
+                    radius: 7
+                    color: closeArea.containsMouse ? "#FF5F57" : "#E0443E"
+
+                    StyledTextLabel {
+                        anchors.centerIn: parent
+                        text: "\u00D7"
+                        color: "#4A0002"
+                        font.pixelSize: 11
+                        font.bold: true
+                        visible: closeArea.containsMouse
+                    }
+
+                    MouseArea {
+                        id: closeArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: colorIntensityPopup.close()
+                    }
+                }
+            }
+
+            StyledSlider {
+                width: parent.width
+                from: 0
+                to: 255
+                stepSize: 1
+                value: contextMenuModel.colorIntensity
+                onMoved: contextMenuModel.colorIntensity = Math.round(value)
+            }
         }
     }
 

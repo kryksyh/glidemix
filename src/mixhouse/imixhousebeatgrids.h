@@ -196,5 +196,11 @@ public:
     /// selected, of every clip on the selected tracks), then re-seats every
     /// clip of those tracks on the bar grid with the corrected beats.
     virtual void adjustSelectedClips(Adjust adjust) = 0;
+
+    /// Right-click "Split at grid jumps": splits the selected clips (or, with
+    /// no clip selected, every clip on the selected tracks) where their
+    /// song's beats jump off its grid, each later part slid back onto the
+    /// grid. Returns how many cuts were made (0: no jump found).
+    virtual int splitSelectedAtGridJumps() = 0;
 };
 }

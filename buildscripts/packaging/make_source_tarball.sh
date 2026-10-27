@@ -20,9 +20,9 @@ tar -xf "$TMP/main.tar" -C "$TMP/x"
 tar -xf "$TMP/muse.tar" -C "$TMP/x"
 # Our own build notes and CI recipes stay out (the GPL asks for the source
 # and the build scripts we use, not a guide): the Windows port handover,
-# Audacity's build guide and CI scripts, and internal review notes.
+# Audacity's build guide and CI scripts, internal review notes and work logs.
 ( cd "$TMP/x/$NAME" && rm -rf WINDOWS_PORT.md BUILDING.md ci_build.bat ci_build.cmake .github buildscripts/ci muse/.github muse/buildscripts/ci \
-    docs/mixhouse-plugin-automation-review.md )
+    docs/mixhouse-plugin-automation-review.md DEVLOG-*.md )
 cat > "$TMP/x/$NAME/BUILDING-GLIDEMIX.txt" <<TXT
 GlideMix $VERSION - source code
 

@@ -390,6 +390,14 @@ MenuItem* AppMenuModel::makeViewMenu()
 #endif
         //! The spectrogram is a way of looking at the track, like the toggles
         //! beside it; the toolbar button is a shortcut, not the only door.
+        // GlideMix: every song's track drawn one way (also Preferences > Waveforms).
+        << makeMenu(TranslatableString("appshell-menu-view", "Track view"), {
+            makeMenuItem("track-view-all-waveform"),
+            makeMenuItem("track-view-all-spectrogram"),
+            makeMenuItem("track-view-all-multi"),
+            makeMenuItem("track-view-all-half-wave"),
+            makeMenuItem("track-view-all-single-wave"),
+        }, "menu-track-view")
         << makeMenuItem("action://trackedit/global-view-spectrogram")
         << makeMenuItem("toggle-clipping-in-waveform")
         << makeMenuItem("toggle-rms-in-waveform")

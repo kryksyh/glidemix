@@ -24,6 +24,8 @@ constexpr const char* TRACK_COLOR_MENU_ID = "trackColorMenu";
 constexpr const char* TRACK_COLOR_PICKER_ACTION = "mixhouse-track-color-picker";
 constexpr const char* TRACK_RESET_COLORS_ACTION = "mixhouse-track-reset-colors";
 constexpr const char* TRACK_COLOR_BY_KEY_ACTION = "mixhouse-track-color-by-key";
+constexpr const char* TRACK_CLIPS_COLOR_ACTION = "mixhouse-track-clips-color";
+constexpr const char* TRACK_COLOR_INTENSITY_ACTION = "mixhouse-track-color-intensity";
 constexpr const char* TRACK_SEPARATE_STEMS_ACTION = "mixhouse-separate-stems";
 constexpr const char* TRACK_FORMAT_MENU_ID = "trackFormatMenu";
 constexpr const char* TRACK_RATE_MENU_ID = "trackRateMenu";
@@ -79,11 +81,19 @@ MenuItem* TrackContextMenuModel::makeSeparateStemsItem()
     return item;
 }
 
-//! GlideMix: every colour setting of the track in one place, the same
-//! submenu as on a clip. Picking a colour turns Color by key off, or the key
-//! colour would keep hiding it.
+//! GlideMix: every colour setting of the track, the same submenu as on a
+//! clip (Chris, 2026-10-27: both menus carry Color and Track visualization).
+//! Clip color here colours the track's clips. Picking a colour turns Color by
+//! key off, or the key colour would keep hiding it.
 MenuItemList TrackContextMenuModel::makeColorItems()
 {
+    auto makeItem = [this](const char* id, const muse::TranslatableString& title) {
+        auto* item = new MenuItem(this);
+        item->setId(QString::fromUtf8(id));
+        item->setTitle(title);
+        item->setEnabled(true);
+        return item;
+    };
     auto* byKey = new MenuItem(this);
     byKey->setId(QString::fromUtf8(TRACK_COLOR_BY_KEY_ACTION));
     byKey->setTitle(muse::TranslatableString("trackcontextmenu", "Color by key"));
@@ -94,7 +104,10 @@ MenuItemList TrackContextMenuModel::makeColorItems()
     return {
         byKey,
         makeSeparator(),
+        makeItem(TRACK_CLIPS_COLOR_ACTION, muse::TranslatableString("trackcontextmenu", "Clip color…")),
         makeTrackColorPickerItem(this),
+        makeItem(TRACK_COLOR_INTENSITY_ACTION, muse::TranslatableString("trackcontextmenu", "Intensity…")),
+        makeSeparator(),
         makeResetColorsItem(this),
     };
 }
@@ -114,6 +127,7 @@ MenuItemList TrackContextMenuModel::makeStereoTrackItems()
         makeItemWithArg("track-delete"),
         makeSeparator(),
         makeMenu(muse::TranslatableString("trackcontextmenu", "Move track"), makeTrackMoveItems()),
+        makeMenu(muse::TranslatableString("trackcontextmenu", "Color"), makeColorItems(), TRACK_COLOR_MENU_ID),
         makeMenu(muse::TranslatableString("trackcontextmenu", "Track visualization"), makeTrackVisualizationItems()),
         makeSeparateStemsItem(),
         makeItemWithArg("toggle-vertical-rulers"),
@@ -139,6 +153,7 @@ MenuItemList TrackContextMenuModel::makeMonoTrackItems()
         makeItemWithArg("track-delete"),
         makeSeparator(),
         makeMenu(muse::TranslatableString("trackcontextmenu", "Move track"), makeTrackMoveItems()),
+        makeMenu(muse::TranslatableString("trackcontextmenu", "Color"), makeColorItems(), TRACK_COLOR_MENU_ID),
         makeMenu(muse::TranslatableString("trackcontextmenu", "Track visualization"), makeTrackVisualizationItems()),
         makeSeparateStemsItem(),
         makeItemWithArg("toggle-vertical-rulers"),
@@ -264,6 +279,10 @@ void TrackContextMenuModel::handleMenuItem(const QString& itemId)
         emit trackRenameRequested();
     } else if (itemId == TRACK_COLOR_PICKER_ACTION) {
         emit trackColorPickerRequested();
+    } else if (itemId == TRACK_CLIPS_COLOR_ACTION) {
+        emit clipsColorPickerRequested();
+    } else if (itemId == TRACK_COLOR_INTENSITY_ACTION) {
+        emit colorIntensityRequested();
     } else if (itemId == TRACK_RESET_COLORS_ACTION) {
         muse::async::Async::call(this, [this] { resetTrackColors(); });
     } else if (itemId == TRACK_SEPARATE_STEMS_ACTION) {
@@ -348,6 +367,47 @@ int TrackContextMenuModel::currentColorIndex() const
     const auto project = globalContext()->currentTrackeditProject();
     const auto track = project ? project->track(m_trackId) : std::nullopt;
     return track ? track->colorIndex : 1;
+}
+
+//! GlideMix: Color > Clip color from the track menu -- every clip on the track.
+void TrackContextMenuModel::setClipsColor(int colorIndex)
+{
+    const auto project = globalContext()->currentTrackeditProject();
+    if (!project || !trackeditInteraction() || m_trackId == trackedit::INVALID_TRACK) {
+        return;
+    }
+    if (colorIndex != trackedit::CLIP_COLOR_INDEX_NONE && (colorIndex < 1 || colorIndex > 96)) {
+        return;
+    }
+    bool changed = false;
+    for (const trackedit::Clip& clip : project->clipList(m_trackId)) {
+        changed |= trackeditInteraction()->changeClipColor(clip.key, colorIndex);
+    }
+    if (clipColors()) {
+        clipColors()->setColorByKey(m_trackId, false);   // show the colour just picked
+    }
+    if (changed) {
+        projectHistory()->pushHistoryState(muse::trc("trackcontextmenu", "Changed clip color"),
+                                           muse::trc("trackcontextmenu", "Clip color"));
+    }
+}
+
+void TrackContextMenuModel::resetClipsColor()
+{
+    setClipsColor(trackedit::CLIP_COLOR_INDEX_NONE);
+}
+
+int TrackContextMenuModel::colorIntensity() const
+{
+    return clipColors() ? clipColors()->intensity(m_trackId) : mixhouse::IMixHouseClipColors::kFullIntensity;
+}
+
+void TrackContextMenuModel::setColorIntensity(int intensity)
+{
+    if (clipColors() && colorIntensity() != intensity) {
+        clipColors()->setIntensity(m_trackId, intensity);
+        emit colorIntensityChanged();
+    }
 }
 
 void TrackContextMenuModel::setTrackColor(int colorIndex)

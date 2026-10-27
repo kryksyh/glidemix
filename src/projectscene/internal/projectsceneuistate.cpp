@@ -19,6 +19,7 @@ static const QString CLIP_WAVEFORM_STEREO_KEY("projectscene/clipWaveformStereo")
 static const muse::Settings::Key WAVEFORM_RGB_SETTING("projectscene", "projectscene/colorWaveform");
 static const muse::Settings::Key WAVEFORM_STEREO_SETTING("projectscene", "projectscene/colorWaveformStereo");
 static const QString LANE_BACKGROUND_KEY("projectscene/laneBackground");
+static const muse::Settings::Key ALL_TRACKS_VIEW_SETTING("projectscene", "projectscene/allTracksView");
 
 void ProjectSceneUiState::init()
 {
@@ -26,6 +27,10 @@ void ProjectSceneUiState::init()
     // colour waveform is the option (View > Color waveform, Preferences > Waveforms).
     muse::settings()->setDefaultValue(WAVEFORM_RGB_SETTING, muse::Val(false));
     muse::settings()->setDefaultValue(WAVEFORM_STEREO_SETTING, muse::Val(false));
+    muse::settings()->setDefaultValue(ALL_TRACKS_VIEW_SETTING, muse::Val(-1));
+    muse::settings()->valueChanged(ALL_TRACKS_VIEW_SETTING).onReceive(this, [this](const muse::Val&) {
+        m_allTracksViewChanged.notify();
+    });
     muse::settings()->valueChanged(WAVEFORM_RGB_SETTING).onReceive(this, [this](const muse::Val&) {
         m_clipWaveformRgbChanged.notify();
         m_laneBackgroundChanged.notify();
@@ -117,6 +122,24 @@ void ProjectSceneUiState::setClipWaveformStereo(bool stereo)
     if (clipWaveformStereo() != stereo) {
         muse::settings()->setSharedValue(WAVEFORM_STEREO_SETTING, muse::Val(stereo));
     }
+}
+
+int ProjectSceneUiState::allTracksView() const
+{
+    return std::clamp(muse::settings()->value(ALL_TRACKS_VIEW_SETTING).toInt(), -1, 4);
+}
+
+void ProjectSceneUiState::setAllTracksView(int view)
+{
+    view = std::clamp(view, -1, 4);
+    if (allTracksView() != view) {
+        muse::settings()->setSharedValue(ALL_TRACKS_VIEW_SETTING, muse::Val(view));
+    }
+}
+
+muse::async::Notification ProjectSceneUiState::allTracksViewChanged() const
+{
+    return m_allTracksViewChanged;
 }
 
 muse::async::Notification ProjectSceneUiState::clipWaveformRgbChanged() const

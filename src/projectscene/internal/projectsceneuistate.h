@@ -38,11 +38,15 @@ public:
     void setLaneBackground(int mode) override;
     muse::async::Notification laneBackgroundChanged() const override;
     bool blackCanvas() const override;
+    int allTracksView() const override;
+    void setAllTracksView(int view) override;
+    muse::async::Notification allTracksViewChanged() const override;
 
 private:
     muse::async::Notification m_timelineRulerModeChanged;
     muse::async::Notification m_gridLinesVisibleChanged;
     muse::async::Notification m_clipWaveformRgbChanged;
     muse::async::Notification m_laneBackgroundChanged;
+    muse::async::Notification m_allTracksViewChanged;
 };
 }

@@ -2232,7 +2232,6 @@ bool MixHouseTrackListModel::loadTrackToProject(int row) const
             align.projectWasEmpty = projectWasEmpty;
             align.lockToBars = !libraryConfiguration() || libraryConfiguration()->syncEnabled();
             align.snapBars = 1;
-            align.splitAtGridJumps = true;
             const MixHouseAlignResult aligned = alignImportedTrackToBars(globalContext(), trackeditInteraction(), align);
             if (!aligned.aligned) {
                 LOGI() << "loadTrackToProject: not aligned to bars (" << aligned.reason << "): " << t.title;
