@@ -92,14 +92,34 @@ StyledDialogView {
         return s[s.length - 1][1]
     }
 
+    // GlideMix: each lane's lines, read from the model once per change. Read
+    // per knob per frame, they took most of the CPU during playback.
+    property var linesCache: ({})
+    onRevisionChanged: linesCache = ({})
+    onRowChanged: linesCache = ({})
+    onZoneStartChanged: linesCache = ({})
+    onZoneEndChanged: linesCache = ({})
+    function cachedLines(lane) {
+        var cache = root.linesCache
+        if (!(lane in cache)) {
+            cache[lane] = zonesModel.laneLines(row, lane)
+        }
+        return cache[lane]
+    }
+
     // The lane's value for one song ("out" / "in") at the playhead.
     function valueAt(lane, side) {
+        // A closed mixer does not follow the playhead: every transition has
+        // one, and each re-read its knobs on every frame.
+        if (!root.isOpened) {
+            return 0
+        }
         root.revision  // re-read when the lines change
         root.playheadX
         if (!zonesModel || row < 0) {
             return 0
         }
-        var lines = zonesModel.laneLines(row, lane)
+        var lines = cachedLines(lane)
         return lineValue(side === "out" ? lines.out : lines.in, playheadTime())
     }
 

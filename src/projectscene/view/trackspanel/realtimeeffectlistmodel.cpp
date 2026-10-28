@@ -73,9 +73,18 @@ void RealtimeEffectListModel::load()
 {
     trackSelection()->selectedTrackIdChanged().onNotify(this, [this]
     {
-        beginResetModel();
-        endResetModel();
-        onSelectedTrackIdChanged();
+        // GlideMix: the master list does not depend on the selected track.
+        if (m_isMasterTrack) {
+            return;
+        }
+        // GlideMix: on the next turn of the event loop. Closing an effect
+        // window moves the focus back to a track while the window is being
+        // destroyed; rebuilding the rows right then crashed in QML.
+        QMetaObject::invokeMethod(this, [this] {
+            beginResetModel();
+            endResetModel();
+            onSelectedTrackIdChanged();
+        }, Qt::QueuedConnection);
     });
 
     //! Note: we listen to the individual effect-list changes because `onChanged` and its layout change reset the scrollbar position. Unless ...

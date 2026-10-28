@@ -614,9 +614,13 @@ bool Importer::Import(
         wxLogMessage(wxT("Opening with %s"), plugin->GetPluginStringID());
 
 #ifdef __WXMAC__
+        // GlideMix: fn_str(), not data(): data() converts through the C
+        // locale, which some plugins (master FX) reset to "C". Then every
+        // path with an accent, emoji or no-break space failed stat() and the
+        // song never imported.
         struct stat s;
         memset(&s, 0, sizeof(struct stat));
-        auto err = stat(fName.data(), &s);
+        auto err = stat(fName.fn_str(), &s);
         if (err != 0 || (S_ISREG(s.st_mode) && s.st_blocks == 0)) {
             int dialogStyle = BasicUI::ProgressCanAbort | BasicUI::ProgressAppModal | BasicUI::ProgressShowElapsedTime
                               | BasicUI::ProgressSmooth;
@@ -632,7 +636,7 @@ bool Importer::Import(
                     return false;
                 }
                 memset(&s, 0, sizeof(struct stat));
-                err = stat(fName.data(), &s);
+                err = stat(fName.fn_str(), &s);
             }
         }
 #endif
