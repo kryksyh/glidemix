@@ -13,6 +13,7 @@ KnobControl {
     id: root
 
     isPanKnob: true
+    djStyle: true
     from: -100
     to: 100
     stepSize: 1

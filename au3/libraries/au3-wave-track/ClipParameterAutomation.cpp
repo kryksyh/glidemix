@@ -245,10 +245,15 @@ bool ClipParameterAutomation::HandleXMLTag(const std::string_view& tag, const At
         const auto count = envelope.GetNumberOfPoints();
         if (!std::isfinite(time) || time < 0.0 || !IsNormalized(normalized)
             || count >= MaxPointsPerCurve
-            || (count && time < envelope[count - 1].GetT())
-            // Two equal-time points represent the limits at a discontinuity.
-            || (count > 1 && time == envelope[count - 2].GetT())) {
+            || (count && time < envelope[count - 1].GetT())) {
             return fail();
+        }
+        // Two equal-time points represent the limits at a discontinuity.
+        // GlideMix: a third one there (written by earlier builds) takes the
+        // second's place, instead of failing the whole clip's automation --
+        // that made every later save throw, and the app quit.
+        if (count > 1 && time == envelope[count - 2].GetT()) {
+            envelope.Delete(static_cast<int>(count) - 1);
         }
         envelope.Insert(time, normalized);
         return true;

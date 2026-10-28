@@ -170,6 +170,26 @@ AutomationPoints Au3ClipGainInteraction::clipGainPoints(const trackedit::ClipKey
 }
 
 namespace {
+// The points of a clip's EQ or effect line into its envelope, kept inside the
+// clip and in order. At most two points share a time (the two sides of a
+// jump): points before the clip start all clamp to 0, and a third one there
+// made the line one the project loader refuses -- after which every save
+// failed and the app quit. A third takes the second one's place instead.
+void insertClipLinePoints(Envelope& envelope, const AutomationPoints& points, double offset, double length)
+{
+    double last = 0.0;
+    for (const AutomationPoint& p : points) {
+        const double t = std::clamp(p.xValue - offset, last, std::max(last, length));
+        const double v = std::clamp(p.yValue, 0.0, 1.0);
+        const int n = static_cast<int>(envelope.GetNumberOfPoints());
+        if (n > 1 && envelope[n - 1].GetT() == t && envelope[n - 2].GetT() == t) {
+            envelope.Delete(n - 1);
+        }
+        envelope.Insert(t, v);
+        last = t;
+    }
+}
+
 const char* bandParameter(int band)
 {
     switch (band) {
@@ -253,13 +273,7 @@ bool Au3ClipGainInteraction::setClipBandPoints(const trackedit::ClipKey& clipKey
         curve->envelope.Clear();
         // Kept inside the clip: its start in project seconds can round to a
         // hair before the sequence start, and the engine refuses a negative time.
-        const double length = clip->GetSequenceEndTime() - offset;
-        double last = 0.0;
-        for (const AutomationPoint& p : points) {
-            const double t = std::clamp(p.xValue - offset, last, std::max(last, length));
-            curve->envelope.Insert(t, std::clamp(p.yValue, 0.0, 1.0));
-            last = t;
-        }
+        insertClipLinePoints(curve->envelope, points, offset, clip->GetSequenceEndTime() - offset);
     }
     clip->GetParameterAutomation() = std::move(data);
     return true;
@@ -358,13 +372,7 @@ bool Au3ClipGainInteraction::setClipEffectPoints(const trackedit::ClipKey& clipK
         curve->envelope.Clear();
         // Kept inside the clip: its start in project seconds can round to a
         // hair before the sequence start, and the engine refuses a negative time.
-        const double length = clip->GetSequenceEndTime() - offset;
-        double last = 0.0;
-        for (const AutomationPoint& p : points) {
-            const double t = std::clamp(p.xValue - offset, last, std::max(last, length));
-            curve->envelope.Insert(t, std::clamp(p.yValue, 0.0, 1.0));
-            last = t;
-        }
+        insertClipLinePoints(curve->envelope, points, offset, clip->GetSequenceEndTime() - offset);
     }
     clip->GetParameterAutomation() = std::move(data);
 

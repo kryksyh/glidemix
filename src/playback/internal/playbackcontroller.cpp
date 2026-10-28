@@ -557,7 +557,11 @@ void PlaybackController::onSeekAction(const muse::actions::ActionQuery& q)
     const muse::secs_t secs = q.param("seekTime").toDouble();
     const bool triggerPlay = q.param("triggerPlay").toBool();
 
-    const bool isSeekStartPositionValid = isSeekPositionValid(secs);
+    // GlideMix: while playing, a jump anywhere in the mix keeps playing. The
+    // play range (a selection, say) used to make a drop past its end
+    // "invalid", and the music stopped when the playhead was dragged there.
+    const bool isSeekStartPositionValid = (triggerPlay && isPlaying() && secs <= totalPlayTime())
+                                          || isSeekPositionValid(secs);
 
     if (isPaused() || (!isSeekStartPositionValid)) {
         player()->stop();

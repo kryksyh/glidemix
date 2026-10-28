@@ -1531,12 +1531,23 @@ Rectangle {
                         zoneMenu.toggleOpened(menuItems())
                     }
                 }
-                // tracksVerticalOffset and tracksLayoutRevision are read so the zone
-                // follows vertical scrolling and tracks changing height or place.
-                readonly property int scrollY: tracksViewState.tracksVerticalOffset
+                // GlideMix: placed from the list's own contentY, the scroll the
+                // clips are drawn with. The view state's saved offset can lag
+                // it (after a vertical zoom it stayed at the old scroll, and
+                // the pills floated above their transitions for good).
+                // trackVerticalPosition() + tracksVerticalOffset is the track's
+                // top in the whole list, whatever the scroll; tracksLayoutRevision
+                // is read so it follows tracks changing height or place.
                 readonly property int layout: tracksViewState.tracksLayoutRevision
-                readonly property int outTop: scrollY * 0 + layout * 0 + tracksViewState.trackVerticalPosition(model.outgoingTrackId) + prv.listHeaderHeight
-                readonly property int inTop: scrollY * 0 + layout * 0 + tracksViewState.trackVerticalPosition(model.incomingTrackId) + prv.listHeaderHeight
+                // contentY less originY: the list moves its origin when rows
+                // above shrink (zooming the tracks back out), and the clips are
+                // drawn from it.
+                readonly property real listY: tracksItemsView.contentY - tracksItemsView.originY
+                function contentTop(trackId) {
+                    return layout * 0 + tracksViewState.trackVerticalPosition(trackId) + tracksViewState.tracksVerticalOffset
+                }
+                readonly property int outTop: contentTop(model.outgoingTrackId) - listY
+                readonly property int inTop: contentTop(model.incomingTrackId) - listY
                 readonly property int outBottom: outTop + layout * 0 + tracksViewState.trackHeight(model.outgoingTrackId)
                 readonly property int inBottom: inTop + layout * 0 + tracksViewState.trackHeight(model.incomingTrackId)
 
@@ -1921,6 +1932,7 @@ Rectangle {
                         row: model.index
                         timelineContext: timeline.context
                         playheadX: playCursorController.positionX
+                        isPlaying: playbackState.isPlaying
                         zoneStart: model.startTime
                         zoneEnd: model.endTime
                         presetName: model.preset

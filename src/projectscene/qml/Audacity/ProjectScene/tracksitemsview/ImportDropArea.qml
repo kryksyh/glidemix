@@ -39,6 +39,11 @@ DropArea {
         id: prv
 
         property var lastProbedUrls: null
+        // GlideMix: a drop being imported. The library's drag is an OS drag;
+        // while the import ran inside the drop, macOS sent the timeline the
+        // drag again, which drew the preview clip, the guideline and an empty
+        // lane back -- and no exit ever cleared them (the song showed twice).
+        property bool dropping: false
     }
 
     DropController {
@@ -83,6 +88,9 @@ DropArea {
     }
 
     function handleOnEntered(drop, externalDrop) {
+        if (prv.dropping) {
+            return
+        }
         clearPreviewClipsTimer.stop()
 
         let urls = drop.urls
@@ -125,15 +133,32 @@ DropArea {
             dropY -= root.headerHeight
         }
 
+        if (prv.dropping) {
+            return
+        }
         let trackId = tracksViewState.trackAtPosition(dropX, dropY)
         let trackCount = dropController.requiredTracksCount()
         let tracksIds = dropController.draggedTracksIds(trackId, trackCount);
+        const dropTime = timeline.context.positionToTime(dropX)
+        clearPreviewClipsTimer.stop()
+        drop.acceptProposedAction()
+
+        // GlideMix: the drop is accepted at once and imported on the next
+        // turn of the event loop, so the OS drag ends before the import runs.
+        prv.dropping = true
+        tracksItemsView.clearPreviewImportClip([])
+        root.setGuidelineRequested(-1, false)
+        Qt.callLater(function() { root.importDropped(tracksIds, dropTime) })
+    }
+
+    function importDropped(tracksIds, dropTime) {
+        // Started here too, so a failed import cannot leave drops ignored.
+        droppingTimer.restart()
         // by this time, url list is already inside dropController
         dropController.pxPerSec = timeline.context.zoom   // GlideMix: the drop's magnet reach follows the zoom
-        dropController.handleDroppedFiles(tracksIds, timeline.context.positionToTime(dropX))
+        dropController.handleDroppedFiles(tracksIds, dropTime)
 
         dropController.endImportSession()
-        drop.acceptProposedAction()
 
         // The drag's preview clip: the lanes are no longer rebuilt after a
         // drop, which used to wipe it.
@@ -148,5 +173,13 @@ DropArea {
 
         root.setGuidelineRequested(-1, false)
         prv.lastProbedUrls = null
+        // Any drag event the OS still had queued for this drop is ignored.
+        droppingTimer.restart()
+    }
+
+    Timer {
+        id: droppingTimer
+        interval: 300
+        onTriggered: prv.dropping = false
     }
 }

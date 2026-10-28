@@ -196,7 +196,8 @@ QVariantMap MixHouseTransitionZonesModel::laneLines(int row, int lane) const
     return result;
 }
 
-bool MixHouseTransitionZonesModel::setLanePoints(int row, int lane, bool outgoingSide, const QVariantList& points)
+bool MixHouseTransitionZonesModel::setLanePoints(int row, int lane, bool outgoingSide, const QVariantList& points,
+                                                 bool consolidate)
 {
     if (row < 0 || row >= rowCount() || !transitions()) {
         return false;
@@ -210,7 +211,8 @@ bool MixHouseTransitionZonesModel::setLanePoints(int row, int lane, bool outgoin
         }
     }
     return transitions()->setLanePoints(zone.outgoing, zone.incoming,
-                                        static_cast<IMixHouseTransitions::Lane>(std::clamp(lane, 0, 4)), outgoingSide, list);
+                                        static_cast<IMixHouseTransitions::Lane>(std::clamp(lane, 0, 4)), outgoingSide, list,
+                                        consolidate);
 }
 
 bool MixHouseTransitionZonesModel::addEffect(int row, const QString& kind)

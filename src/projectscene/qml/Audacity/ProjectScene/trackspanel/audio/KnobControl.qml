@@ -16,6 +16,10 @@ Dial {
     property real backgroundHeight: radius + radius * Math.sin(prv.startAngle)
 
     property bool isPanKnob: false
+    // GlideMix: the DJ knob (mock A, Chris 2026-10-28): a value ring from the
+    // start (from the middle on a pan knob), a ridged rubber skirt that turns,
+    // a cap and a white pointer.
+    property bool djStyle: false
 
     property bool accentControl: true
 
@@ -140,6 +144,10 @@ Dial {
             }
 
             ctx.clearRect(0, 0, canvasSize.width, canvasSize.height)
+            if (root.djStyle) {
+                paintDj(ctx)
+                return
+            }
             ctx.lineWidth = prv.outerArcLineWidth
 
             ctx.strokeStyle = prv.outerArcColor
@@ -162,6 +170,55 @@ Dial {
             ctx.arc(width / 2, height / 2, root.radius - (prv.outerArcLineWidth + prv.innerArcLineWidth / 2), 0, Math.PI * 2, false)
             ctx.stroke()
         }
+
+        function paintDj(ctx) {
+            const cx = width / 2, cy = height / 2, r = root.radius
+            const a = root.angle * (Math.PI / 180) - Math.PI / 2
+            const ring = Math.max(2, r * 0.16)
+            const startA = prv.startValueArcAngle * (Math.PI / 180) - Math.PI / 2
+            ctx.lineCap = "butt"
+            ctx.lineWidth = ring
+            ctx.strokeStyle = "#1c1e23"
+            ctx.beginPath()
+            ctx.arc(cx, cy, r - ring / 2, prv.startAngle, prv.endAngle, false)
+            ctx.stroke()
+            ctx.strokeStyle = root.enabled ? prv.valueArcColor : "#5a5d66"
+            ctx.beginPath()
+            ctx.arc(cx, cy, r - ring / 2, Math.min(startA, a), Math.max(startA, a) + 0.001, false)
+            ctx.stroke()
+            // The skirt, its ridges turning with the knob.
+            const skirt = r - ring - 1
+            ctx.fillStyle = "#0f1013"
+            ctx.beginPath()
+            ctx.arc(cx, cy, skirt, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.strokeStyle = "#3a3d44"
+            ctx.lineWidth = 1
+            for (let i = 0; i < 20; ++i) {
+                const t = a + i * Math.PI / 10
+                ctx.beginPath()
+                ctx.moveTo(cx + Math.cos(t) * skirt * 0.78, cy + Math.sin(t) * skirt * 0.78)
+                ctx.lineTo(cx + Math.cos(t) * skirt, cy + Math.sin(t) * skirt)
+                ctx.stroke()
+            }
+            // The cap, lit from the top left.
+            // Lighter than the header behind it, or it disappears.
+            ctx.fillStyle = "#6a6e78"
+            ctx.beginPath()
+            ctx.arc(cx, cy, skirt * 0.66, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.fillStyle = "#7f838d"
+            ctx.beginPath()
+            ctx.arc(cx - skirt * 0.16, cy - skirt * 0.2, skirt * 0.36, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.strokeStyle = "#ffffff"
+            ctx.lineWidth = Math.max(1.5, r * 0.12)
+            ctx.lineCap = "round"
+            ctx.beginPath()
+            ctx.moveTo(cx + Math.cos(a) * skirt * 0.25, cy + Math.sin(a) * skirt * 0.25)
+            ctx.lineTo(cx + Math.cos(a) * skirt * 0.92, cy + Math.sin(a) * skirt * 0.92)
+            ctx.stroke()
+        }
     }
 
     handle: Rectangle {
@@ -174,6 +231,7 @@ Dial {
 
         color: ui.theme.fontPrimaryColor
         antialiasing: true
+        visible: !root.djStyle
 
         transformOrigin: Item.Bottom
         rotation: root.angle
@@ -277,7 +335,11 @@ Dial {
         onWheel: function (wheel) {
             wheel.accepted = false
             Qt.callLater(function () {
-                root.newValueRequested(Math.round(value))
+                // GlideMix: a 0..1 knob (stepSize below 1) rounds to its step;
+                // rounding to whole numbers snapped it to 0 or 1.
+                root.newValueRequested(root.stepSize > 0 && root.stepSize < 1
+                                       ? Math.round(value / root.stepSize) * root.stepSize
+                                       : Math.round(value))
             })
         }
     }

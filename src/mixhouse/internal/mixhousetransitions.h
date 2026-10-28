@@ -61,7 +61,8 @@ public:
     bool laneLines(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, Lane lane,
                    LaneLine& out, LaneLine& in) const override;
     bool setLanePoints(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, Lane lane,
-                       bool outgoingSide, const std::vector<std::pair<double, double> >& points) override;
+                       bool outgoingSide, const std::vector<std::pair<double, double> >& points,
+                       bool consolidate = false) override;
     bool addEffect(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, const std::string& kind) override;
     std::vector<AddedEffect> addedEffects(const trackedit::ClipKey& outgoing,
                                           const trackedit::ClipKey& incoming) const override;

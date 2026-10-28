@@ -45,9 +45,9 @@ void TrackViewTypeAttachment::Reparent(const std::shared_ptr<Au3Track>& parent)
 void TrackViewTypeAttachment::WriteXMLAttributes(XMLWriter& writer) const
 {
     writer.WriteAttr(TrackViewTypeAttr, static_cast<int>(mTrackViewType));
-    if (mSingleWave) {
-        writer.WriteAttr(SingleWaveAttr, 1);
-    }
+    // Always written: Single wave is the default now, so a track switched
+    // back to two channels must say so.
+    writer.WriteAttr(SingleWaveAttr, mSingleWave ? 1 : 0);
     if (!mAutomationLanes.empty()) {
         writer.WriteAttr(AutomationLanesAttr, wxString::FromUTF8(mAutomationLanes));
     }

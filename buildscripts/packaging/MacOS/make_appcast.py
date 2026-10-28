@@ -31,8 +31,19 @@ def signature(dmg_name: str) -> str:
 MIN_MACOS = "13.0"
 
 
+def bold(text: str) -> str:
+    """Escaped text with each **pair** made <b>bold</b>."""
+    text = html.escape(text)
+    while text.count("**") >= 2:
+        text = text.replace("**", "<b>", 1).replace("**", "</b>", 1)
+    return text
+
+
 def notes_html(markdown: str) -> str:
-    """The release notes, as simple HTML: **bold** headings and - lists."""
+    """The release notes, as simple HTML: **bold** headings and - lists.
+    A heading is a line that starts bold; whatever follows the bold part (an
+    emoji, "(Mac and Windows)") stays on it -- before, only a line ending in
+    ** counted, and the rest showed their ** marks in Sparkle's window."""
     out, in_list = [], False
     for raw in markdown.splitlines():
         line = raw.strip()
@@ -40,18 +51,15 @@ def notes_html(markdown: str) -> str:
             if not in_list:
                 out.append("<ul>")
                 in_list = True
-            text = html.escape(line[2:])
-            while "**" in text:
-                text = text.replace("**", "<b>", 1).replace("**", "</b>", 1)
-            out.append(f"<li>{text}</li>")
+            out.append(f"<li>{bold(line[2:])}</li>")
             continue
         if in_list:
             out.append("</ul>")
             in_list = False
-        if line.startswith("**") and line.endswith("**"):
-            out.append(f"<h3>{html.escape(line.strip('*'))}</h3>")
+        if line.startswith("**") and line.count("**") >= 2:
+            out.append(f"<h3>{html.escape(line).replace('**', '')}</h3>")
         elif line:
-            out.append(f"<p>{html.escape(line)}</p>")
+            out.append(f"<p>{bold(line)}</p>")
     if in_list:
         out.append("</ul>")
     return "\n".join(out)

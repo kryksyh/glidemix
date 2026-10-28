@@ -346,6 +346,11 @@ void MixtapePlayer::seek(const muse::secs_t newPosition, bool applyIfPlaying)
     const double pos = std::max(0.0, newPosition.to_double());
     m_regions->seek(pos, false);
     if (applyIfPlaying && m_status.val != PlaybackStatus::Stopped) {
+        // GlideMix: after a jump, play on to the end of the mix -- a range
+        // being played (a selection) would otherwise stop at its old end.
+        // (0 = no end until the next position update sets the mix's end.)
+        m_followTracksEnd = true;
+        m_transport->SetEndTime(0.0);
         m_transport->Seek(pos);
     }
     m_position.set(pos);

@@ -138,9 +138,12 @@ public:
                            LaneLine& out, LaneLine& in) const = 0;
     /// Edits one lane of one side (the outgoing clip, or the incoming one):
     /// `points` (project seconds, 0..1) replace that lane's breakpoints inside
-    /// the overlap; outside it the line is kept. One undo step.
+    /// the overlap; outside it the line is kept. One undo step; with
+    /// `consolidate` the edit joins the previous lane edit's step (the writes
+    /// of one knob turn, made while it turns).
     virtual bool setLanePoints(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, Lane lane,
-                               bool outgoingSide, const std::vector<std::pair<double, double> >& points) = 0;
+                               bool outgoingSide, const std::vector<std::pair<double, double> >& points,
+                               bool consolidate = false) = 0;
     /// ADD FX in the transition panel: one effect over the overlap, on top of
     /// what the transition already does. `kind`: filter-out, filter-in, echo,
     /// reverb, riser, downsweep. One undo step.

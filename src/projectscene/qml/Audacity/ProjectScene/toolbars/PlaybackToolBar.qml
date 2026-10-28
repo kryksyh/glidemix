@@ -463,11 +463,13 @@ Item {
                             + (ui.theme.isDark ? "dark" : "light") + ".svg"
                 }
 
-                StyledSlider {
+                // GlideMix: the DJ fader look (mock A), like the track volume.
+                DjSlider {
                     id: slider
 
                     anchors.verticalCenter: parent.verticalCenter
                     width: 80
+                    height: 20
 
                     from: 0
                     to: 1

@@ -196,7 +196,27 @@ void AppShellConfiguration::revertToFactorySettings(bool keepDefaultSettings, bo
     // the settings are reset and the data folder kept, and only what the
     // reset dialog says goes is deleted: custom workspaces, shortcuts, and
     // the plug-in scan results (so plug-ins are scanned again).
+    //
+    // GlideMix: the licence is not a preference -- a reset used to drop a
+    // paid Pro licence back to Demo (Chris, 2026-10-28). Its settings are
+    // read before the reset and written back after it.
+    static const std::string licenceModule("mixhouse");
+    static const std::vector<Settings::Key> keptKeys {
+        Settings::Key(licenceModule, "mixhouse/licence/key"),
+        Settings::Key(licenceModule, "mixhouse/licence/activationId"),
+        Settings::Key(licenceModule, "mixhouse/licence/tier"),
+        Settings::Key(licenceModule, "mixhouse/licence/lastChecked"),
+    };
+    std::vector<std::pair<Settings::Key, Val> > kept;
+    for (const Settings::Key& key : keptKeys) {
+        kept.emplace_back(key, settings()->value(key));
+    }
     settings()->reset(true, notifyAboutChanges, notifyOtherInstances);
+    for (const auto& [key, value] : kept) {
+        if (!value.isNull()) {
+            settings()->setSharedValue(key, value);
+        }
+    }
     if (keepDefaultSettings) {
         return;
     }

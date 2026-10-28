@@ -392,6 +392,12 @@ ProjectViewState::TrackData& ProjectViewState::makeTrackData(const trackedit::Tr
         if (track) {
             d.channelHeightRatio.val = track->type == trackedit::TrackType::Stereo && !d.isSingleWave.val ? 0.5 : 1.0;
             int defaultHeight = track->type == trackedit::TrackType::Label ? TRACK_LABEL_DEFAULT_HEIGHT : TRACK_DEFAULT_HEIGHT;
+            // GlideMix: a new stereo track opens in Single wave, at the height
+            // the Single wave toggle gives it (half, not below the collapse
+            // height, so its header keeps the knob and fader).
+            if (track->type == trackedit::TrackType::Stereo && d.isSingleWave.val) {
+                defaultHeight = std::max(TRACK_DEFAULT_HEIGHT / 2, TRACK_COLLAPSE_HEIGHT);
+            }
 
             int height = defaultHeight;
 
@@ -402,7 +408,11 @@ ProjectViewState::TrackData& ProjectViewState::makeTrackData(const trackedit::Tr
                 savedHeight = savedHeight <= 0 ? defaultHeight : savedHeight;
                 height = std::max(savedHeight, TRACK_MIN_HEIGHT);
             }
-            d.collapsed.val = height <= TRACK_COLLAPSE_HEIGHT;
+            // GlideMix: the same rule as setTrackHeight(). With <= here, a
+            // track saved at 72 px (the track-height slider's lowest step)
+            // opened collapsed -- no pan knob or volume fader -- while one
+            // set to 72 px in the session kept them.
+            d.collapsed.val = height < TRACK_COLLAPSE_HEIGHT;
             d.height.val = height;
         }
     }

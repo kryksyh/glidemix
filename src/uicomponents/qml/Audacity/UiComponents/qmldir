@@ -11,3 +11,4 @@ BaseSection 1.0 components/BaseSection.qml
 StyledGroupBox 1.0 components/StyledGroupBox.qml
 GridPlot 1.0 components/GridPlot.qml
 ValueTooltip 1.0 components/ValueTooltip.qml
+DjSlider 1.0 components/DjSlider.qml

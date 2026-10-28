@@ -7,7 +7,8 @@ import Muse.UiComponents
 
 import Audacity.UiComponents
 
-StyledSlider {
+// GlideMix: the DJ fader look (mock A).
+DjSlider {
     id: root
 
     Layout.fillWidth: true

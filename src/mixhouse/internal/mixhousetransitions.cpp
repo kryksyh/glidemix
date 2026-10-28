@@ -795,7 +795,8 @@ bool MixHouseTransitions::laneLines(const trackedit::ClipKey& outgoing, const tr
 }
 
 bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, Lane lane,
-                                        bool outgoingSide, const std::vector<std::pair<double, double> >& points)
+                                        bool outgoingSide, const std::vector<std::pair<double, double> >& points,
+                                        bool consolidate)
 {
     Zone zone;
     if (!clipGain() || !findZone(outgoing, incoming, zone)) {
@@ -861,10 +862,11 @@ bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, cons
             gain.push_back({ inside[i].first, std::max(inside[i].second, kSilent), c });
         }
         what = "volume";
-        // Pushes the undo step itself.
-        ok = replaceGain(key, from, to, gain, true);
-        m_zonesChanged.notify();
-        return ok;
+        // GlideMix: the undo step is pushed below, like the other lanes', so
+        // the writes of one fader move join into one (the envelope's own push
+        // made one per write).
+        ok = replaceGain(key, from, to, gain, false);
+        break;
     }
     case Lane::Low:
     case Lane::Mid:
@@ -899,7 +901,8 @@ bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, cons
         break;
     }
     }
-    projectHistory()->pushHistoryState("Edited the transition's " + what, "Transition lane");
+    projectHistory()->pushHistoryState("Edited the transition's " + what, "Transition lane",
+                                       consolidate ? trackedit::UndoPushType::CONSOLIDATE : trackedit::UndoPushType::NONE);
     m_zonesChanged.notify();
     return ok;
 }

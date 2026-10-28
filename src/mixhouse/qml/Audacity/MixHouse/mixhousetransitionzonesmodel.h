@@ -52,7 +52,8 @@ public:
     //! { out: { samples: [[t, v]], points: [[t, v]] }, in: {...} }, t in project seconds.
     Q_INVOKABLE QVariantMap laneLines(int row, int lane) const;
     //! Replaces one side's points of a lane inside the overlap: [[t, v], ...]. One undo step.
-    Q_INVOKABLE bool setLanePoints(int row, int lane, bool outgoingSide, const QVariantList& points);
+    Q_INVOKABLE bool setLanePoints(int row, int lane, bool outgoingSide, const QVariantList& points,
+                                   bool consolidate = false);
     //! ADD FX: filter-out, filter-in, echo, reverb, riser, downsweep.
     Q_INVOKABLE bool addEffect(int row, const QString& kind);
     //! The effects ADD FX put on this transition: [{ kind, name, amount }].

@@ -34,7 +34,9 @@ public:
 private:
     std::weak_ptr<Au3Track> mTrack;
     trackedit::TrackViewType mTrackViewType = trackedit::TrackViewType::Undefined;
-    bool mSingleWave = false;
+    // GlideMix: Single wave is the default view (Chris, 2026-10-28): one
+    // waveform in half the height, more songs on screen.
+    bool mSingleWave = true;
     std::string mAutomationLanes;
 };
 }

@@ -7,7 +7,9 @@
  *
  * The knobs show the lane's value at the playhead; turning one sets a point
  * there (inside the overlap), so a transition can be played by hand: move the
- * playhead, turn, move on. Each turn is one undo step.
+ * playhead, turn, move on. While playing, a turn is recorded as it happens.
+ * The line is written while the control moves (so it is heard), and each
+ * turn is one undo step.
  */
 import QtQuick
 import QtQuick.Controls
@@ -36,6 +38,7 @@ StyledDialogView {
     property int row: -1
     property var timelineContext: null
     property real playheadX: 0
+    property bool isPlaying: false
     property real zoneStart: 0
     property real zoneEnd: 0
     property string presetName: ""
@@ -56,13 +59,16 @@ StyledDialogView {
         function onLinesChanged() { root.revision++ }
     }
 
-    // The playhead in project seconds, kept inside the overlap.
+    // The playhead in project seconds, just inside the overlap: the model
+    // keeps only points strictly inside it, so a point pinned to an edge
+    // (playhead outside) would be lost.
     function playheadTime() {
         if (!timelineContext || !zoneItem) {
             return 0
         }
         var t = timelineContext.frameStartTime + playheadX / timelineContext.zoom
-        return Math.max(zoneStart, Math.min(zoneEnd, t))
+        var inset = Math.min(0.01, (zoneEnd - zoneStart) / 4)
+        return Math.max(zoneStart + inset, Math.min(zoneEnd - inset, t))
     }
 
     function lineValue(line, t) {
@@ -84,6 +90,13 @@ StyledDialogView {
     // The lane's value on the chosen side at the playhead.
     function valueAt(lane) {
         root.revision  // re-read when the lines change
+        root.playheadX
+        root.side
+        // GlideMix: the control being moved shows where the hand is, not the
+        // line (which is only written when it is let go).
+        if (root.live && root.live.lane === lane) {
+            return root.live.value
+        }
         if (!zonesModel || row < 0) {
             return 0
         }
@@ -91,43 +104,125 @@ StyledDialogView {
         return lineValue(side === "out" ? lines.out : lines.in, playheadTime())
     }
 
-    // A point at the playhead with value `v`; a point already within a
-    // tenth of a second of it is replaced.
-    function setAtPlayhead(lane, v) {
+    // Writes `samples` ([[t, v], ...]) into the chosen side's lane: a single
+    // point replaces any within a tenth of a second; a recorded move replaces
+    // the points over the time it covers.
+    function writeSamples(lane, samples, consolidate) {
+        if (!zonesModel || row < 0 || samples.length === 0) {
+            return
+        }
         var lines = zonesModel.laneLines(row, lane)
         var line = side === "out" ? lines.out : lines.in
         if (!line) {
             return
         }
-        var t = playheadTime()
+        var t0 = samples[0][0], t1 = samples[samples.length - 1][0]
+        var tol = samples.length === 1 ? 0.1 : 0.02
         var points = []
         for (var i = 0; i < line.points.length; ++i) {
-            if (Math.abs(line.points[i][0] - t) > 0.1) {
+            var t = line.points[i][0]
+            if (t < t0 - tol || t > t1 + tol) {
                 points.push(line.points[i])
             }
         }
-        points.push([t, v])
+        for (var k = 0; k < samples.length; ++k) {
+            points.push(samples[k])
+        }
         points.sort(function(a, b) { return a[0] - b[0] })
-        zonesModel.setLanePoints(row, lane, side === "out", points)
+        zonesModel.setLanePoints(row, lane, side === "out", points, consolidate === true)
         if (zoneItem) {
             zoneItem.lane = lane
             zonesModel.shownLanes[zoneItem.laneKey] = lane
         }
     }
 
-    // A knob is committed a moment after it stops turning, so one turn is
-    // one undo step.
+    // GlideMix: one move of one control, the mixer view's way: pressed ->
+    // moved -> let go. The knobs used to overwrite their own binding on the
+    // first turn (so they stopped following the playhead and the lines) and
+    // wrote only after a 350 ms pause, one point, wherever the playhead had
+    // got to by then. Now: stopped, one point at the playhead; playing, the
+    // whole move as it was played. Written while it moves, so the change is
+    // heard at once; the writes of one move are one undo step.
+    // live: { lane, value } while a control is held, else null.
+    property var live: null
+    property var samples: []
+    // Writes made for the current move: the first starts its undo step, the
+    // rest join it.
+    property int liveWrites: 0
+
+    function beginMove(lane) {
+        commitTimer.stop()
+        samples = []
+        liveWrites = 0
+        live = { lane: lane, value: valueAt(lane) }
+    }
+    function flushLive() {
+        if (!live || live.wheel || samples.length === 0) {
+            return
+        }
+        writeSamples(live.lane, samples, liveWrites > 0)
+        liveWrites++
+    }
+    // At most ~15 writes a second while a control moves.
+    Timer {
+        id: liveTimer
+        interval: 66
+        onTriggered: root.flushLive()
+    }
+    function moveTo(lane, v) {
+        if (!live || live.lane !== lane) {
+            // Not held (the scroll wheel): one point, a moment after it stops.
+            commitTimer.lane = lane
+            commitTimer.value = v
+            commitTimer.restart()
+            live = { lane: lane, value: v, wheel: true }
+            return
+        }
+        live = { lane: lane, value: v, wheel: live.wheel }
+        var t = playheadTime()
+        if (isPlaying) {
+            // One sample every 30 ms of playback.
+            if (samples.length > 0 && Math.abs(t - samples[samples.length - 1][0]) < 0.03) {
+                samples[samples.length - 1] = [samples[samples.length - 1][0], v]
+            } else {
+                samples.push([t, v])
+            }
+        } else {
+            samples = [[t, v]]
+        }
+        if (!liveTimer.running) {
+            liveTimer.start()
+        }
+    }
+    function endMove() {
+        liveTimer.stop()
+        var l = live
+        var s = samples
+        var joined = liveWrites > 0
+        samples = []
+        liveWrites = 0
+        live = null
+        if (l && !l.wheel && s.length > 0) {
+            writeSamples(l.lane, s, joined)
+        }
+    }
+    // While playing, a control held still keeps being written.
+    Timer {
+        interval: 50
+        repeat: true
+        running: root.live !== null && !root.live.wheel && root.isPlaying
+        onTriggered: if (root.samples.length > 0) root.moveTo(root.live.lane, root.live.value)
+    }
+    // The scroll wheel has no press or release: one point once it stops.
     Timer {
         id: commitTimer
         interval: 350
         property int lane: -1
         property real value: 0
-        onTriggered: if (lane >= 0) root.setAtPlayhead(lane, value)
-    }
-    function turned(lane, v) {
-        commitTimer.lane = lane
-        commitTimer.value = v
-        commitTimer.restart()
+        onTriggered: {
+            root.live = null
+            if (lane >= 0) root.writeSamples(lane, [[root.playheadTime(), value]])
+        }
     }
 
     ColumnLayout {
@@ -217,9 +312,10 @@ StyledDialogView {
                             to: 1
                             stepSize: 0.02
                             value: root.valueAt(modelData.lane)
+                            onMousePressed: root.beginMove(modelData.lane)
+                            onMouseReleased: root.endMove()
                             onNewValueRequested: function(v) {
-                                value = v
-                                root.turned(modelData.lane, v)
+                                root.moveTo(modelData.lane, Math.max(0, Math.min(1, v)))
                             }
                         }
                         StyledTextLabel {
@@ -239,20 +335,21 @@ StyledDialogView {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: qsTrc("mixhouse", "VOL")
                 }
-                Slider {
+                // GlideMix: the mixer view's fader; Qt's bare Slider had only
+                // a small dark square to grab.
+                DjFader {
                     id: volSlider
                     anchors.horizontalCenter: parent.horizontalCenter
-                    orientation: Qt.Vertical
-                    height: 110
-                    from: 0
-                    to: 1
+                    implicitHeight: 120
+                    defaultValue: 1
                     value: root.valueAt(0)
-                    onMoved: root.turned(0, value)
+                    onGrabbed: function(down) { down ? root.beginMove(0) : root.endMove() }
+                    onMoved: function(v) { root.moveTo(0, v) }
                 }
                 StyledTextLabel {
                     anchors.horizontalCenter: parent.horizontalCenter
                     opacity: 0.7
-                    text: Math.round(volSlider.value * 100) + "%"
+                    text: Math.round(volSlider.shown * 100) + "%"
                 }
             }
 
@@ -272,9 +369,10 @@ StyledDialogView {
                     to: 1
                     stepSize: 0.02
                     value: root.valueAt(2)
+                    onMousePressed: root.beginMove(2)
+                    onMouseReleased: root.endMove()
                     onNewValueRequested: function(v) {
-                        value = v
-                        root.turned(2, v)
+                        root.moveTo(2, Math.max(0, Math.min(1, v)))
                     }
                 }
                 StyledTextLabel {
@@ -450,7 +548,7 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 opacity: 0.6
-                text: qsTrc("mixhouse", "Turning a control sets a point at the playhead.")
+                text: qsTrc("mixhouse", "Turning a control sets a point at the playhead; while playing, the move is recorded.")
             }
         }
     }

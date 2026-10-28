@@ -28,6 +28,7 @@ import Muse.UiComponents 1.0
 import Muse.GraphicalEffects
 
 import Audacity.MixHouse
+import Audacity.UiComponents
 
 Item {
     id: root
@@ -2322,7 +2323,7 @@ Item {
                     font.pixelSize: 10
                     opacity: 0.7
                 }
-                StyledSlider {
+                DjSlider {
                     id: fontSizeSlider
                     Layout.preferredWidth: 110
                     from: 9
@@ -2345,7 +2346,7 @@ Item {
                     font.pixelSize: 10
                     opacity: 0.7
                 }
-                StyledSlider {
+                DjSlider {
                     id: rowHeightSlider
                     Layout.preferredWidth: 110
                     Layout.rightMargin: 8
