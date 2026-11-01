@@ -203,7 +203,10 @@ Ret Audacity4Project::doImport(const muse::io::path_t& path, const bool forceMod
     const bool ok = importer()->import(path, detectTempo);
     m_trackeditProject->reload();
 
-    return ok ? muse::make_ret(Ret::Code::Ok) : muse::make_ret(Ret::Code::InternalError);
+    if (ok) {
+        return muse::make_ret(Ret::Code::Ok);
+    }
+    return muse::make_ret(importer()->lastImportCancelled() ? Ret::Code::Cancel : Ret::Code::InternalError);
 }
 
 Ret Audacity4Project::doImportIntoTrack(const muse::io::path_t& path, trackedit::TrackId dstTrackId, muse::secs_t startTime,

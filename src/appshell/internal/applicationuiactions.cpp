@@ -94,6 +94,14 @@ const UiActionList ApplicationUiActions::m_actions = {
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description", "Answers to common questions on glidemix.com")
              ),
+    UiAction("show-whats-new",
+             au::context::UiCtxAny,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "&What's new"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "See what changed in this version of GlideMix")
+             ),
     UiAction("show-licence",
              au::context::UiCtxAny,
              au::context::CTX_ANY,

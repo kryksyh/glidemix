@@ -32,6 +32,7 @@ public:
     FileInfo fileInfo(const muse::io::path_t& filePath) override;
 
     bool import(const muse::io::path_t& filePath, bool detectTempo = true) override;
+    bool lastImportCancelled() const override;
     bool importIntoTrack(const muse::io::path_t& filePath, trackedit::TrackId dstTrackId, muse::secs_t startTime,
                          bool detectTempo = true) override;
     bool importFromSystemClipboard(const std::vector<muse::io::path_t>& filePaths, muse::secs_t startTime) override;
@@ -46,5 +47,6 @@ private:
     void addImportedTracks(const muse::io::path_t& fileName, TrackHolders&& newTracks, std::vector<WaveTrack*>* outWaveTracks = nullptr);
 
     const std::unique_ptr<TempoDetection> m_tempoDetection;
+    bool m_lastImportCancelled = false;
 };
 }

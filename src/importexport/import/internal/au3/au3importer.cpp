@@ -81,6 +81,7 @@ public:
         }
         auto result = mProgressDialog->Poll(progress * ProgressSteps, ProgressSteps);
         if (result == BasicUI::ProgressResult::Cancelled) {
+            mCancelled = true;
             mImportFileHandle->Cancel();
         } else if (result == BasicUI::ProgressResult::Stopped) {
             mImportFileHandle->Stop();
@@ -93,8 +94,14 @@ public:
         UNUSED(result);
     }
 
+    bool wasCancelled() const
+    {
+        return mCancelled;
+    }
+
 private:
 
+    bool mCancelled { false };
     ImportFileHandle* mImportFileHandle { nullptr };
     std::chrono::steady_clock::time_point mStarted { std::chrono::steady_clock::now() };
     std::unique_ptr<BasicUI::ProgressDialog> mProgressDialog;
@@ -139,8 +146,15 @@ au::importexport::FileInfo au::importexport::Au3Importer::fileInfo(const muse::i
     return FileInfo{};
 }
 
+bool au::importexport::Au3Importer::lastImportCancelled() const
+{
+    return m_lastImportCancelled;
+}
+
 bool au::importexport::Au3Importer::import(const muse::io::path_t& filePath, bool detectTempo)
 {
+    m_lastImportCancelled = false;
+
     const std::string ext = suffix(filePath);
     for (const std::string& labelExt : labelsImporter()->supportedExtensions()) {
         if (labelExt == ext) {
@@ -176,6 +190,7 @@ bool au::importexport::Au3Importer::import(const muse::io::path_t& filePath, boo
             newTracks, newTags.get(), acidTags, errorMessage);
 
         if (!success) {
+            m_lastImportCancelled = importProgress.wasCancelled();
             return false;
         }
     } // ImportProgress (and its dialog) destroyed here, before tempo detection

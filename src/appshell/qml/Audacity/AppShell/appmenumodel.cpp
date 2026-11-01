@@ -563,8 +563,15 @@ MenuItem* AppMenuModel::makeHelpMenu()
         makeMenuItem("revert-factory")
     };
 
+    // GlideMix: the What's new window again, under the update check.
+    const muse::Version version = application()->version();
+    const muse::String versionText = muse::String::fromStdString(std::to_string(version.major()) + "."
+                                                                 + std::to_string(version.minor()) + "."
+                                                                 + std::to_string(version.patch()));
+    helpItems.push_front(makeSeparator());
+    helpItems.push_front(AbstractMenuModel::makeMenuItem("show-whats-new",
+                                                         TranslatableString("appshell-menu-help", "&What's new in %1").arg(versionText)));
     if (updateConfiguration()->isAppUpdatable()) {
-        helpItems.push_front(makeSeparator());
         helpItems.push_front(makeMenuItem("check-update"));
     }
 

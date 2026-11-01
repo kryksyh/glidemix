@@ -35,7 +35,10 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.22**\n\n"
+                text: "**GlideMix v1.1.23**\n\n"
+                      + "- **Help > What's new** opens this window whenever you want it.\n"
+                      + "- **Cancel** while loading a range from the library now stops the whole range and keeps the songs already loaded.\n\n"
+                      + "**GlideMix v1.1.22**\n\n"
                       + "**Big mixes stay usable**\n"
                       + "- With 30 songs or more, lanes, track headers and sliders no longer drift apart when you change the track view, zoom or scroll, and you keep your place while the lanes change height.\n"
                       + "- A new **Reset view** button in front of the zoom sliders puts the view back: lanes at their default height, the first songs readable.\n\n"

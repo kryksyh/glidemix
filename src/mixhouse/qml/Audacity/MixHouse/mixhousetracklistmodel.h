@@ -848,7 +848,7 @@ private:
     //! hasn't filled in yet has none (MixHouseLibrary::tracks()), and the
     //! one-track lookup reads it from the file.
     MixHouseTrack withBeatGrid(const MixHouseTrack& t) const;
-    bool loadTrack(const MixHouseTrack& track) const;
+    bool loadTrack(const MixHouseTrack& track, bool* cancelled = nullptr) const;
     void loadNextQueuedTrack();
     std::deque<MixHouseTrack> m_loadQueue;
     size_t m_loadFirstLane = 0;

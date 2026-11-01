@@ -32,6 +32,7 @@ Q_MOC_INCLUDE(< QWindow >)
 #include "uicomponents/qml/Muse/UiComponents/abstractmenumodel.h"
 
 #include "modularity/ioc.h"
+#include "global/iapplication.h"
 #include "ui/imainwindow.h"
 #include "ui/iuiactionsregister.h"
 #include "ui/inavigationcontroller.h"
@@ -66,6 +67,7 @@ public:
     muse::GlobalInject<IAppMenuModelHook> appMenuModelHook;
     muse::GlobalInject<effects::IEffectsProvider> effectsProvider;
     muse::GlobalInject<muse::update::IUpdateConfiguration> updateConfiguration;
+    muse::GlobalInject<muse::IApplication> application;
 
     muse::ContextInject<muse::actions::IActionsDispatcher> actionsDispatcher = { this };
     muse::ContextInject<muse::ui::IMainWindow> mainWindow { this };

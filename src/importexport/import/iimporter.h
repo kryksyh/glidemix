@@ -17,6 +17,8 @@ public:
     virtual FileInfo fileInfo(const muse::io::path_t& filePath) = 0;
     //! detectTempo: see importIntoTrack.
     virtual bool import(const muse::io::path_t& filePath, bool detectTempo = true) = 0;
+    //! GlideMix: the last import() failed because the user pressed Cancel.
+    virtual bool lastImportCancelled() const = 0;
     //! detectTempo: run the import tempo detection (and its dialogs). Off for
     //! files whose tempo is already known -- a library track -- where the
     //! detection's guess would be overwritten anyway.

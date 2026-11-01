@@ -2198,13 +2198,17 @@ void MixHouseTrackListModel::loadNextQueuedTrack()
         }
         return;
     }
-    loadTrack(m_loadQueue.front());
+    bool cancelled = false;
+    loadTrack(m_loadQueue.front(), &cancelled);
     m_loadQueue.pop_front();
+    if (cancelled) {
+        m_loadQueue.clear();   // Cancel means the range; a missing file skips one song
+    }
     // One event loop turn between songs: the lanes and the Project tab catch up.
     QTimer::singleShot(0, this, [this]() { loadNextQueuedTrack(); });
 }
 
-bool MixHouseTrackListModel::loadTrack(const MixHouseTrack& track) const
+bool MixHouseTrackListModel::loadTrack(const MixHouseTrack& track, bool* cancelled) const
 {
     const MixHouseTrack t = withBeatGrid(track);
     if (t.filePath.isEmpty()) {
@@ -2231,6 +2235,9 @@ bool MixHouseTrackListModel::loadTrack(const MixHouseTrack& track) const
     //! would be overwritten -- is skipped.
     const muse::Ret ret = project->import(muse::io::path_t(t.filePath.toStdString()), false, t.bpm <= 0.0);
     if (!ret) {
+        if (cancelled) {
+            *cancelled = ret.code() == static_cast<int>(muse::Ret::Code::Cancel);
+        }
         LOGE() << "loadTrackToProject: import failed for " << t.filePath << ": " << ret.toString();
         return false;
     }
