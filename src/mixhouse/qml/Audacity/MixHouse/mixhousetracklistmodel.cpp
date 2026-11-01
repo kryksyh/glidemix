@@ -14,6 +14,7 @@
 #include "mixhouse/mixhousesearchquery.h"
 #include "global/settings.h"
 
+#include <limits>
 #include <QObject>
 #include <QProcess>
 #include <QFile>
@@ -2138,7 +2139,74 @@ bool MixHouseTrackListModel::loadTrackToProject(int row) const
     if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
         return false;
     }
-    const MixHouseTrack t = withBeatGrid(m_tracks[static_cast<size_t>(row)]);
+    return loadTrack(m_tracks[static_cast<size_t>(row)]);
+}
+
+void MixHouseTrackListModel::loadTracksToProject(const QVariantList& rows)
+{
+    // The tracks, not the rows: the list can re-sort while they load (History).
+    std::vector<int> sorted;
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size())) {
+            sorted.push_back(row);
+        }
+    }
+    std::sort(sorted.begin(), sorted.end());
+    const bool idle = m_loadQueue.empty();
+    if (idle) {
+        const auto project = globalContext()->currentTrackeditProject();
+        m_loadFirstLane = project ? project->trackIdList().size() : 0;
+        m_loadCount = 0;
+    }
+    for (const int row : sorted) {
+        m_loadQueue.push_back(m_tracks[static_cast<size_t>(row)]);
+    }
+    m_loadCount += sorted.size();
+    if (idle) {
+        loadNextQueuedTrack();
+    }
+}
+
+void MixHouseTrackListModel::loadNextQueuedTrack()
+{
+    if (m_loadQueue.empty()) {
+        // The view ends on the first songs of the range, readable: all of
+        // them at once would be slivers.
+        const auto project = globalContext()->currentTrackeditProject();
+        if (project && trackAligner() && m_loadCount > 1) {
+            constexpr size_t kSongsInView = 4;
+            const auto lanes = project->trackIdList();
+            const size_t last = std::min(lanes.size(), m_loadFirstLane + kSongsInView);
+            double start = std::numeric_limits<double>::max();
+            double end = 0.0;
+            for (size_t i = m_loadFirstLane; i < last; ++i) {
+                for (const trackedit::Clip& c : project->clipList(lanes[i])) {
+                    start = std::min(start, c.startTime);
+                    end = std::max(end, c.endTime);
+                }
+            }
+            if (end > start && m_loadFirstLane < lanes.size()) {
+                const trackedit::TrackId first = lanes[m_loadFirstLane];
+                selectionController()->setSelectedTracks({ first }, true);
+                trackNavigationController()->setFocusedTrack(first, false);
+                // After the scroll to the last song's lane, which comes later.
+                QTimer::singleShot(100, this, [this, start, end, first]() {
+                    trackAligner()->requestViewFit(start, end, first);
+                });
+            }
+        }
+        return;
+    }
+    loadTrack(m_loadQueue.front());
+    m_loadQueue.pop_front();
+    // One event loop turn between songs: the lanes and the Project tab catch up.
+    QTimer::singleShot(0, this, [this]() { loadNextQueuedTrack(); });
+}
+
+bool MixHouseTrackListModel::loadTrack(const MixHouseTrack& track) const
+{
+    const MixHouseTrack t = withBeatGrid(track);
     if (t.filePath.isEmpty()) {
         LOGW() << "loadTrackToProject: no file path for track " << t.title;
         return false;

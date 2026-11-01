@@ -256,9 +256,11 @@ void ProjectSceneActionsController::setAllTracksView(int view)
     if (view != 3 && viewState->globalSpectrogramToggleIsOn()) {
         viewState->toggleGlobalSpectrogramView();
     }
+    viewState->beginTracksChange();
     for (const trackedit::TrackId trackId : project->trackeditProject()->trackIdList()) {
         applyTrackView(trackId, view);
     }
+    viewState->endTracksChange();
 }
 
 //! 0 Waveform, 1 Single wave, 2 Half-wave, 3 Spectrogram, 4 Multi-view.

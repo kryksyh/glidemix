@@ -40,6 +40,7 @@ qt_add_qml_module(appshell_qml
         AboutDialogLegalTab.qml
         ShortcutsListDialog.qml
         LicenceDialog.qml
+        WhatsNewDialog.qml
         AppWindow.qml
         DevTools/DevToolsMenu.qml
         DevTools/DevToolsPage.qml

@@ -39,6 +39,7 @@ using namespace au::appshell;
 static const std::string module_name("appshell");
 
 static const Settings::Key HAS_COMPLETED_FIRST_LAUNCH_SETUP(module_name, "application/hasCompletedFirstLaunchSetup");
+static const Settings::Key LAST_RUN_VERSION(module_name, "application/lastRunVersion");
 
 
 static const Settings::Key STARTUP_MODE_TYPE(module_name, "application/startup/modeStart");
@@ -74,6 +75,16 @@ bool AppShellConfiguration::hasCompletedFirstLaunchSetup() const
 void AppShellConfiguration::setHasCompletedFirstLaunchSetup(bool has)
 {
     settings()->setSharedValue(HAS_COMPLETED_FIRST_LAUNCH_SETUP, Val(has));
+}
+
+std::string AppShellConfiguration::lastRunVersion() const
+{
+    return settings()->value(LAST_RUN_VERSION).toString();
+}
+
+void AppShellConfiguration::setLastRunVersion(const std::string& version)
+{
+    settings()->setSharedValue(LAST_RUN_VERSION, Val(version));
 }
 
 StartupModeType AppShellConfiguration::startupModeType() const

@@ -534,7 +534,9 @@ void ProjectViewState::changeTrackHeight(const trackedit::TrackId& trackId, int 
     d->height.set(newHeight);
     d->collapsed.set(newHeight < TRACK_COLLAPSE_HEIGHT);
 
-    recomputeTotalTrackHeight();
+    if (!m_batchingTrackHeights) {
+        recomputeTotalTrackHeight();
+    }
 
     const project::IAudacityProjectPtr prj = globalContext()->currentProject();
     if (prj) {
@@ -551,12 +553,76 @@ void ProjectViewState::setTracksHeight(const trackedit::TrackIdList& trackIds, i
     if (trackIds.empty()) {
         return;
     }
-    m_batchingTrackHeights = true;
+    beginTracksChange();
     for (const trackedit::TrackId& id : trackIds) {
         setTrackHeight(id, height);
     }
+    endTracksChange();
+}
+
+void ProjectViewState::beginTracksChange()
+{
+    m_batchingTrackHeights = true;
+    m_batchViewTypeChanged = false;
+    // Within a slider drag the first move's lane stays the one to keep.
+    if (!m_topTrackTimer.isActive()) {
+        rememberTopTrack();
+    }
+}
+
+void ProjectViewState::endTracksChange()
+{
     m_batchingTrackHeights = false;
     recomputeTotalTrackHeight();
+
+    // The lists lay their rows out later and move the scroll while they do,
+    // so the place is set again once they are done.
+    restoreTopTrack();
+    m_topTrackTimer.setSingleShot(true);
+    m_topTrackTimer.disconnect();
+    m_topTrackTimer.callOnTimeout([this]() { restoreTopTrack(); });
+    m_topTrackTimer.start(60);
+
+    if (m_batchViewTypeChanged) {
+        projectHistory()->modifyState();
+        projectHistory()->markUnsaved();
+    }
+}
+
+void ProjectViewState::rememberTopTrack()
+{
+    m_batchTopTrack = trackedit::INVALID_TRACK;
+    const trackedit::ITrackeditProjectPtr prj = globalContext()->currentTrackeditProject();
+    if (!prj) {
+        return;
+    }
+    int top = 0;
+    for (const trackedit::TrackId& id : prj->trackIdList()) {
+        const int height = trackHeight(id).val;
+        m_batchTopTrack = id;
+        m_batchTopTrackPart = height > 0 ? static_cast<double>(m_tracksVerticalOffset.val - top) / height : 0.0;
+        if (m_tracksVerticalOffset.val < top + height) {
+            break;
+        }
+        top += height;
+    }
+}
+
+void ProjectViewState::restoreTopTrack()
+{
+    const trackedit::ITrackeditProjectPtr prj = globalContext()->currentTrackeditProject();
+    if (!prj || m_batchTopTrack == trackedit::INVALID_TRACK) {
+        return;
+    }
+    int top = 0;
+    for (const trackedit::TrackId& id : prj->trackIdList()) {
+        const int height = trackHeight(id).val;
+        if (id == m_batchTopTrack) {
+            changeTracksVerticalOffset(top + static_cast<int>(std::lround(m_batchTopTrackPart * height)));
+            return;
+        }
+        top += height;
+    }
 }
 
 void ProjectViewState::setTrackHeight(const trackedit::TrackId& trackId, int height)
@@ -1019,6 +1085,10 @@ void ProjectViewState::setTrackViewType(const trackedit::TrackId& trackId, track
     }
 
     if (doSetTrackViewType(trackId, viewType)) {
+        if (m_batchingTrackHeights) {
+            m_batchViewTypeChanged = true;
+            return;
+        }
         projectHistory()->modifyState();
         projectHistory()->markUnsaved();
     }

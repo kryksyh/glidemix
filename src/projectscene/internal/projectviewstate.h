@@ -3,6 +3,8 @@
 */
 #pragma once
 
+#include <QTimer>
+
 #include "framework/global/async/asyncable.h"
 
 #include "modularity/ioc.h"
@@ -45,6 +47,8 @@ public:
     void changeTrackHeight(const trackedit::TrackId& trackId, int delta) override;
     void setTrackHeight(const trackedit::TrackId& trackId, int height) override;
     void setTracksHeight(const trackedit::TrackIdList& trackIds, int height) override;
+    void beginTracksChange() override;
+    void endTracksChange() override;
     void setChannelHeightRatio(const trackedit::TrackId& trackId, double ratio) override;
     trackedit::TrackId trackAtPosition(double y) const override;
     trackedit::TrackIdList tracksInRange(double y1, double y2) const override;
@@ -140,6 +144,8 @@ public:
     int trackDefaultHeight() const override;
 
 private:
+    void rememberTopTrack();
+    void restoreTopTrack();
     friend class ProjectViewStateTests;
 
     int calculateVerticalRulerWidth() const;
@@ -162,6 +168,10 @@ private:
     TrackData& makeTrackData(const trackedit::TrackId& trackId) const;
     void recomputeTotalTrackHeight();
     bool m_batchingTrackHeights = false;
+    trackedit::TrackId m_batchTopTrack = trackedit::INVALID_TRACK;
+    double m_batchTopTrackPart = 0.0;
+    QTimer m_topTrackTimer;
+    bool m_batchViewTypeChanged = false;
     bool doSetTrackViewType(const trackedit::TrackId& trackId, trackedit::TrackViewType viewType);
 
     bool eventFilter(QObject* watched, QEvent* event) override;

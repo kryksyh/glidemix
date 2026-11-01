@@ -116,9 +116,13 @@ Rectangle {
             let totalContentHeight = tracksModel.totalTracksHeight + tracksViewState.tracksVerticalScrollPadding
             timeline.context.onResizeFrameContentHeight(totalContentHeight)
 
-            let maxContentY = Math.max(totalContentHeight - tracksItemsView.height, 0)
-            if (tracksItemsView.contentY > maxContentY) {
-                tracksItemsView.contentY = maxContentY
+            // GlideMix: the scroll is measured from the list's top (originY); the
+            // lanes getting shorter (View > Track view) must not leave it past the
+            // end or above the start, where only empty space shows.
+            let maxOffset = Math.max(totalContentHeight - tracksItemsView.height, 0)
+            let offset = tracksItemsView.contentY - tracksItemsView.originY
+            if (offset > maxOffset || offset < 0) {
+                tracksItemsView.contentY = Math.max(0, Math.min(offset, maxOffset)) + tracksItemsView.originY
             }
         }
 
@@ -168,7 +172,7 @@ Rectangle {
     TracksViewStateModel {
         id: tracksViewState
         onTracksVerticalOffsetChanged: {
-            tracksItemsView.contentY = tracksViewState.tracksVerticalOffset - prv.listHeaderHeight
+            tracksItemsView.contentY = tracksViewState.tracksVerticalOffset + tracksItemsView.originY
         }
     }
 
@@ -237,7 +241,7 @@ Rectangle {
 
         //! NOTE setting verticalY has to be done after tracks are loaded,
         // otherwise project always starts at the very top
-        Qt.callLater(() => tracksItemsView.contentY = tracksViewState.tracksVerticalOffset - prv.listHeaderHeight)
+        Qt.callLater(() => tracksItemsView.contentY = tracksViewState.tracksVerticalOffset + tracksItemsView.originY)
     }
 
     Rectangle {
@@ -898,6 +902,20 @@ Rectangle {
                 property real lockedVerticalScrollPosition
                 property bool verticalScrollLocked: tracksViewState.tracksVerticalScrollLocked
 
+                // GlideMix: every lane stays built, so the list knows its real
+                // height; estimated from the lanes in view, the lanes slid away
+                // from the headers with 30+ songs after View > Track view.
+                cacheBuffer: Math.max(3000, tracksModel.totalTracksHeight)
+
+                // The list moves its origin when lanes above the view change
+                // height. The scroll position is kept from the top of the list,
+                // so it (and the track headers, which sync to it) stay put.
+                onOriginYChanged: {
+                    if (!verticalScrollLocked) {
+                        contentY = tracksViewState.tracksVerticalOffset + originY
+                    }
+                }
+
                 function checkIfAnyTrack(f) {
                     for (let i = 0; i < tracksItemsView.count; i++) {
                         let trackLoader = tracksItemsView.itemAtIndex(i)
@@ -930,7 +948,7 @@ Rectangle {
 
                 function insureVerticallyVisible(item) {
                     var itemViewY = item.mapToItem(tracksItemsView.contentItem, Qt.point(0, 0)).y
-                    tracksViewState.insureVerticallyVisible(tracksItemsView.contentY + prv.listHeaderHeight, tracksItemsView.height, itemViewY + prv.listHeaderHeight, item.height)
+                    tracksViewState.insureVerticallyVisible(tracksItemsView.contentY - tracksItemsView.originY, tracksItemsView.height, itemViewY - tracksItemsView.originY, item.height)
                 }
 
                 signal itemMoveRequested(var itemKey, bool completed)
@@ -962,7 +980,7 @@ Rectangle {
                     if (verticalScrollLocked) {
                         contentY = lockedVerticalScrollPosition
                     } else {
-                        tracksViewState.changeTracksVerticalOffset(tracksItemsView.contentY + prv.listHeaderHeight)
+                        tracksViewState.changeTracksVerticalOffset(tracksItemsView.contentY - tracksItemsView.originY)
                         timeline.context.startVerticalScrollPosition = tracksItemsView.contentY
                     }
                 }
@@ -981,13 +999,15 @@ Rectangle {
                             return
                         }
 
-                        let contentYOffset = tracksItemsView.contentY + delta
+                        // From the list's top: a moved origin must not stop the
+                        // scroll short or push it past either end.
+                        let origin = tracksItemsView.originY
+                        let contentYOffset = tracksItemsView.contentY - origin + delta
 
                         let maxContentY = totalContentHeight - tracksItemsView.height
-                        maxContentY = Math.max(maxContentY, tracksItemsView.contentY)
-                        contentYOffset = Math.max(Math.min(contentYOffset, maxContentY), -prv.headerHeight)
+                        contentYOffset = Math.max(Math.min(contentYOffset, maxContentY), 0)
 
-                        tracksItemsView.contentY = contentYOffset
+                        tracksItemsView.contentY = contentYOffset + origin
                     }
                 }
 

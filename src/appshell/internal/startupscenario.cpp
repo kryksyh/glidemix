@@ -271,9 +271,21 @@ void StartupScenario::showStartupDialogsIfNeed(StartupModeType)
 
     const auto showFirstLaunchSetupIfNeed = [this, scanPlugins]() {
         if (configuration()->hasCompletedFirstLaunchSetup()) {
+            // GlideMix: the first start after an update tells what changed.
+            // Versions before 1.1.22 kept no record, so none means updated.
+            const muse::Version current = application()->version();
+            const std::string last = configuration()->lastRunVersion();
+            configuration()->setLastRunVersion(current.toStdString());
+            if (last.empty() || muse::Version(last) < current) {
+                auto whatsNew = interactive()->open(muse::Uri("audacity://whatsnew"));
+                whatsNew.onResolve(this, [scanPlugins](const muse::Val&) { scanPlugins(); });
+                whatsNew.onReject(this, [scanPlugins](int, const std::string&) { scanPlugins(); });
+                return;
+            }
             scanPlugins();
             return;
         }
+        configuration()->setLastRunVersion(application()->version().toStdString());
         auto setup = interactive()->open(FIRST_LAUNCH_SETUP_URI);
         setup.onResolve(this, [scanPlugins](const muse::Val&) { scanPlugins(); });
         setup.onReject(this, [scanPlugins](int, const std::string&) { scanPlugins(); });

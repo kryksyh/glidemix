@@ -27,7 +27,7 @@ void ProjectSceneUiState::init()
     // colour waveform is the option (View > Color waveform, Preferences > Waveforms).
     muse::settings()->setDefaultValue(WAVEFORM_RGB_SETTING, muse::Val(false));
     muse::settings()->setDefaultValue(WAVEFORM_STEREO_SETTING, muse::Val(false));
-    muse::settings()->setDefaultValue(ALL_TRACKS_VIEW_SETTING, muse::Val(-1));
+    muse::settings()->setDefaultValue(ALL_TRACKS_VIEW_SETTING, muse::Val(1));
     muse::settings()->valueChanged(ALL_TRACKS_VIEW_SETTING).onReceive(this, [this](const muse::Val&) {
         m_allTracksViewChanged.notify();
     });

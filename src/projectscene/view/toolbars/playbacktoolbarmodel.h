@@ -3,6 +3,7 @@
 */
 #pragma once
 
+#include "framework/actions/iactionsdispatcher.h"
 #include "framework/uicomponents/qml/Muse/UiComponents/abstracttoolbarmodel.h"
 
 #include "framework/global/modularity/ioc.h"
@@ -38,6 +39,7 @@ class PlaybackToolBarModel : public muse::uicomponents::AbstractToolBarModel
     muse::GlobalInject<playback::IPlaybackConfiguration> configuration;
 
     muse::ContextInject<muse::ui::IUiState> uiState { this };
+    muse::ContextInject<muse::actions::IActionsDispatcher> viewActions { this };
     muse::ContextInject<muse::ui::IUiActionsRegister> uiActionsRegister{ this };
     muse::ContextInject<context::IGlobalContext> context{ this };
     muse::ContextInject<context::IUiContextResolver> uicontextResolver { this };
@@ -67,6 +69,7 @@ public:
     Q_ENUM(ItemType)
 
     Q_INVOKABLE void load() override;
+    Q_INVOKABLE void resetView();
 
     bool isEnabled() const;
 

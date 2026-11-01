@@ -102,6 +102,10 @@ public:
     virtual void setTrackHeight(const trackedit::TrackId& trackId, int height) = 0;
     //! GlideMix: one height for several tracks, laid out once (smooth track zoom).
     virtual void setTracksHeight(const trackedit::TrackIdList& trackIds, int height) = 0;
+    //! GlideMix: changes to many lanes count as one: the same lanes stay in
+    //! view, and one undo state.
+    virtual void beginTracksChange() = 0;
+    virtual void endTracksChange() = 0;
     virtual void setChannelHeightRatio(const trackedit::TrackId& trackId, double ratio) = 0;
     virtual trackedit::TrackId trackAtPosition(double y) const = 0;
     virtual trackedit::TrackIdList tracksInRange(double y1, double y2) const = 0;

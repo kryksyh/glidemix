@@ -45,6 +45,7 @@ class StartupScenario : public au::appshell::IStartupScenario, public muse::asyn
 {
     muse::GlobalInject<au::mixhouse::IMixHouseLicence> licence;
     muse::GlobalInject<IAppShellConfiguration> configuration;
+    muse::GlobalInject<muse::IApplication> application;
     muse::GlobalInject<muse::mi::IMultiWindowsProvider> multiwindowsProvider;
 
     muse::ContextInject<muse::IInteractive> interactive { this };

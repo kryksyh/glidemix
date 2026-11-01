@@ -12,6 +12,8 @@
 #include <QHash>
 #include <QSet>
 #include <QPixmap>
+#include <deque>
+
 #include <QTimer>
 
 #include <memory>
@@ -265,6 +267,9 @@ public:
     /// editable waveform track. Returns false if there's no open project or the
     /// row is out of range.
     Q_INVOKABLE bool loadTrackToProject(int row) const;
+    //! GlideMix: the rows join the end of the mix one by one, in library order
+    //! (MixMeister: shift-select a range, load it).
+    Q_INVOKABLE void loadTracksToProject(const QVariantList& rows);
     //! GlideMix: opens the row's track in the Beatgrid editor (Beatgrid workspace).
     Q_INVOKABLE bool openInGridEditor(int row) const;
 
@@ -843,6 +848,11 @@ private:
     //! hasn't filled in yet has none (MixHouseLibrary::tracks()), and the
     //! one-track lookup reads it from the file.
     MixHouseTrack withBeatGrid(const MixHouseTrack& t) const;
+    bool loadTrack(const MixHouseTrack& track) const;
+    void loadNextQueuedTrack();
+    std::deque<MixHouseTrack> m_loadQueue;
+    size_t m_loadFirstLane = 0;
+    size_t m_loadCount = 0;
     static void applyTagFields(MixHouseTrack& t, const QVariantMap& fields);
     //! The library id of the same file as an external track, or -1.
     //! The song's phrases for its cue points (rekordbox XML export).

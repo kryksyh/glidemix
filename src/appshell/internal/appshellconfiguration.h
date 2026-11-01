@@ -54,6 +54,9 @@ public:
     bool hasCompletedFirstLaunchSetup() const override;
     void setHasCompletedFirstLaunchSetup(bool has) override;
 
+    std::string lastRunVersion() const override;
+    void setLastRunVersion(const std::string& version) override;
+
 
     StartupModeType startupModeType() const override;
     void setStartupModeType(StartupModeType type) override;

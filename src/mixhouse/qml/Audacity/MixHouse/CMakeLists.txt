@@ -33,6 +33,7 @@ qt_add_qml_module(mixhouse_qml
     QML_FILES
         MixHouseLibraryPanel.qml
         MixHouseProjectPanel.qml
+        MixHouseOverviewPaint.js
         MixHouseGridEditorPanel.qml
         SmartPlaylistEditor.qml
         MixHouseStatusLine.qml

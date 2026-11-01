@@ -144,6 +144,42 @@ void TimelineContext::init(double frameWidth)
         emit userHorizontalScrolled();
     });
 
+    // GlideMix: the toolbar's reset button -- default lane heights, back to
+    // the first lane, the first songs readable (a whole long mix would be
+    // slivers; Zoom to fit project still shows it).
+    dispatcher()->reg(this, "mixtape-view-reset", [this]() {
+        const auto project = trackEditProject();
+        const auto vs = viewState();
+        if (!project || !vs) {
+            return;
+        }
+        vs->changeTracksVerticalOffset(0);
+        vs->setTracksHeight(project->trackIdList(), vs->trackDefaultHeight());
+
+        constexpr size_t kSongsInView = 4;
+        std::vector<std::pair<double, double> > songs;
+        for (const trackedit::TrackId id : project->trackIdList()) {
+            const auto clips = project->clipList(id);
+            if (clips.empty()) {
+                continue;
+            }
+            double start = clips.begin()->startTime;
+            double end = clips.begin()->endTime;
+            for (const trackedit::Clip& clip : clips) {
+                start = std::min(start, clip.startTime);
+                end = std::max(end, clip.endTime);
+            }
+            songs.emplace_back(start, end);
+        }
+        std::sort(songs.begin(), songs.end());
+        if (songs.size() > kSongsInView) {
+            showTimeRange(songs.front().first, songs[kSongsInView - 1].second);
+        } else {
+            fitProjectToWidth();
+            emit userHorizontalScrolled();
+        }
+    });
+
     configuration()->playbackOnRulerClickEnabledChanged().onNotify(this, [this]() {
         emit playbackOnRulerClickEnabledChanged();
     });

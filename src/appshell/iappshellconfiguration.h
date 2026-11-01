@@ -41,6 +41,10 @@ public:
     virtual bool hasCompletedFirstLaunchSetup() const = 0;
     virtual void setHasCompletedFirstLaunchSetup(bool has) = 0;
 
+    //! GlideMix: the version that last finished starting, for "What's new".
+    virtual std::string lastRunVersion() const = 0;
+    virtual void setLastRunVersion(const std::string& version) = 0;
+
     virtual StartupModeType startupModeType() const = 0;
     virtual void setStartupModeType(StartupModeType type) = 0;
 

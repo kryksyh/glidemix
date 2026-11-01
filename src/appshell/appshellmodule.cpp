@@ -80,6 +80,7 @@ void AppShellModule::resolveImports()
         ir->registerQmlUri(muse::Uri("audacity://about/audacity"), "Audacity.AppShell", "AboutDialog");
         ir->registerQmlUri(muse::Uri("audacity://shortcuts-list"), "Audacity.AppShell", "ShortcutsListDialog");
         ir->registerQmlUri(muse::Uri("audacity://licence"), "Audacity.AppShell", "LicenceDialog");
+        ir->registerQmlUri(muse::Uri("audacity://whatsnew"), "Audacity.AppShell", "WhatsNewDialog");
         ir->registerQmlUri(muse::Uri("audacity://firstLaunchSetup"), "Audacity.AppShell", "FirstLaunchSetupDialog");
     }
 }

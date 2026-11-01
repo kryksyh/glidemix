@@ -100,6 +100,11 @@ PlaybackToolBarModel::PlaybackToolBarModel(QObject* parent)
 {
 }
 
+void PlaybackToolBarModel::resetView()
+{
+    viewActions()->dispatch("mixtape-view-reset");
+}
+
 void PlaybackToolBarModel::load()
 {
     if (!m_inited) {

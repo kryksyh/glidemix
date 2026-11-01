@@ -23,6 +23,8 @@
 
 #include "mixhouse/imixhousebeatgrids.h"
 #include "mixhouse/imixhouselibrary.h"
+#include "mixhouse/imixhouselibraryconfiguration.h"
+#include "mixhouse/imixhouserekordboxphrases.h"
 #include "mixhouse/imixhousetrackaligner.h"
 #include "mixhouse/imixhousetransitions.h"
 #include "mixhouse/imixhousetransitionconfiguration.h"
@@ -43,6 +45,8 @@ class MixHouseProjectListModel : public QAbstractListModel, public QQmlParserSta
     muse::ContextInject<IMixHouseBeatGrids> beatGrids { this };
     muse::ContextInject<IMixHouseTransitions> transitions { this };
     muse::ContextInject<IMixHouseLibrary> library { this };
+    muse::GlobalInject<IMixHouseLibraryConfiguration> libraryConfiguration;
+    muse::ContextInject<IMixHouseRekordboxPhrases> rekordboxAnalysis { this };
     muse::ContextInject<IMixHouseTrackAligner> trackAligner { this };
     muse::GlobalInject<IMixHouseTransitionConfiguration> transitionConfiguration;
     muse::ContextInject<trackedit::IProjectHistory> projectHistory { this };
@@ -53,17 +57,24 @@ class MixHouseProjectListModel : public QAbstractListModel, public QQmlParserSta
     Q_PROPERTY(int songCount READ songCount NOTIFY songsChanged)
     //! The transitions a row's drop-down offers (Preferences > Transitions).
     Q_PROPERTY(QStringList transitionNames READ transitionNames NOTIFY transitionNamesChanged)
+    //! The library table's look (Preferences > Music library).
+    Q_PROPERTY(int waveformOverviewType READ waveformOverviewType CONSTANT)
+    Q_PROPERTY(int rowHeight READ rowHeight CONSTANT)
 
 public:
     explicit MixHouseProjectListModel(QObject* parent = nullptr);
 
     int songCount() const;
     QStringList transitionNames() const;
+    int waveformOverviewType() const;
+    int rowHeight() const;
 
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    //! The row's waveform overview, as the library table's column shows it.
+    Q_INVOKABLE QVariantList overviewBuckets(int row, int bucketCount);
     //! Scrolls the timeline to the row's song.
     Q_INVOKABLE void revealRow(int row);
     //! Moves the playhead into the row's song, `fraction` (0..1) of the way through.
@@ -97,6 +108,16 @@ private:
         AnalysingRole,
         ProgressRole,
         PlayingRole,
+        TrackIdRole,
+        FilePathRole,
+        YearRole,
+        GenreRole,
+        KeyIdRole,
+        EnergyRole,
+        DurationRole,
+        RatingRole,
+        CommentRole,
+        DateAddedRole,
     };
 
     //! One song of the mix: the clip with its IN, any later pieces of it
@@ -122,6 +143,15 @@ private:
         QString key;
         double bpm = 0.0;
         int libraryTrackId = -1;
+        QString filePath;
+        QString year;
+        QString genre;
+        int keyId = 0;
+        double energy = 0.0;
+        double durationSec = 0.0;
+        int rating = 0;
+        QString comment;
+        QString dateAdded;
         double stretch = 0.0;     ///< percent faster (+) or slower (-) than the file
         double start = 0.0;
         double end = 0.0;
@@ -161,6 +191,7 @@ private:
     std::vector<Pending> m_pending;
     //! Library rows by file path: one lookup per song, not one per refresh.
     mutable QHash<QString, std::optional<MixHouseTrack> > m_trackCache;
+    QHash<QString, MixHouseWaveformOverview> m_overviewCache;   ///< by file path
     std::vector<int> m_progress;   ///< per row, tenths of a percent (what was last sent)
     bool m_reloadQueued = false;
     bool m_checkChain = false;

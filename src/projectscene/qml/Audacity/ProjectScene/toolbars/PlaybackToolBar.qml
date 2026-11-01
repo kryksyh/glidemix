@@ -534,6 +534,27 @@ Item {
         anchors.verticalCenter: customizeButton.verticalCenter
         spacing: 12
 
+        FlatButton {
+            anchors.verticalCenter: parent.verticalCenter
+
+            width: 28
+            height: width
+
+            icon: IconCode.FIT_PROJECT
+            iconFont: ui.theme.iconsFont
+            //: Tooltip of the toolbar button that resets zoom, lane heights and scrolling
+            toolTipTitle: qsTrc("projectscene", "Reset view")
+            toolTipDescription: qsTrc("projectscene", "Lanes at their default height, the first songs readable")
+
+            enabled: view.model.isEnabled
+
+            navigation.panel: root.navigationPanel
+            navigation.order: 9999
+            navigation.accessible.name: qsTrc("projectscene", "Reset view")
+
+            onClicked: view.model.resetView()
+        }
+
         Repeater {
             model: root.clocksOnly ? [] : view.model.rightItems
 

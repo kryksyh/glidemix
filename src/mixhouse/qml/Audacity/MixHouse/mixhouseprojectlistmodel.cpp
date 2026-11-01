@@ -3,6 +3,8 @@
  */
 #include "mixhouseprojectlistmodel.h"
 
+#include "mixhouse/mixhousewaveform.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -206,6 +208,7 @@ void MixHouseProjectListModel::fillMetadata(Row& row, const trackedit::ClipKey& 
     if (!beatGrids() || !beatGrids()->clipFile(clip, file)) {
         return;
     }
+    row.filePath = file.path;
     auto cached = m_trackCache.find(file.path);
     if (cached == m_trackCache.end() && library() && library()->isAvailable()) {
         IMixHouseLibrary::TrackQuery query;
@@ -222,6 +225,14 @@ void MixHouseProjectListModel::fillMetadata(Row& row, const trackedit::ClipKey& 
             row.artist = t.artist;
             row.libraryTrackId = t.id;
             row.key = t.key;
+            row.year = t.year;
+            row.genre = t.genre;
+            row.keyId = t.keyId;
+            row.energy = t.energy;
+            row.durationSec = t.durationSec;
+            row.rating = t.rating;
+            row.comment = t.comment;
+            row.dateAdded = t.dateAdded;
             row.bpm = t.bpm;
             row.analysing = t.bpm <= 0.0;
         }
@@ -398,6 +409,16 @@ QVariant MixHouseProjectListModel::data(const QModelIndex& index, int role) cons
     case AnalysingRole: return r.analysing;
     case ProgressRole: return m_progress[i] < 0 ? 0.0 : m_progress[i] / 1000.0;
     case PlayingRole: return m_progress[i] > 0 && m_progress[i] < 1000;
+    case TrackIdRole: return r.libraryTrackId;
+    case FilePathRole: return r.filePath;
+    case YearRole: return r.year;
+    case GenreRole: return r.genre;
+    case KeyIdRole: return r.keyId;
+    case EnergyRole: return r.energy;
+    case DurationRole: return r.durationSec;
+    case RatingRole: return r.rating;
+    case CommentRole: return r.comment;
+    case DateAddedRole: return r.dateAdded;
     default: return {};
     }
 }
@@ -417,7 +438,64 @@ QHash<int, QByteArray> MixHouseProjectListModel::roleNames() const
         { AnalysingRole, "analysing" },
         { ProgressRole, "progress" },
         { PlayingRole, "playing" },
+        { TrackIdRole, "trackId" },
+        { FilePathRole, "filePath" },
+        { YearRole, "year" },
+        { GenreRole, "genre" },
+        { KeyIdRole, "keyId" },
+        { EnergyRole, "energy" },
+        { DurationRole, "durationSec" },
+        { RatingRole, "rating" },
+        { CommentRole, "comment" },
+        { DateAddedRole, "dateAdded" },
     };
+}
+
+int MixHouseProjectListModel::waveformOverviewType() const
+{
+    return libraryConfiguration() ? static_cast<int>(libraryConfiguration()->waveformOverviewType()) : 0;
+}
+
+int MixHouseProjectListModel::rowHeight() const
+{
+    return libraryConfiguration() ? libraryConfiguration()->libraryRowHeight() : 28;
+}
+
+QVariantList MixHouseProjectListModel::overviewBuckets(int row, int bucketCount)
+{
+    QVariantList out;
+    if (row < 0 || row >= rowCount() || bucketCount <= 0) {
+        return out;
+    }
+    const Row& r = m_rows[static_cast<size_t>(row)];
+    auto it = m_overviewCache.find(r.filePath);
+    if (it == m_overviewCache.end()) {
+        // The same order as the library table: rekordbox's own, then ours.
+        MixHouseWaveformOverview overview;
+        if (rekordboxAnalysis() && !r.filePath.isEmpty()) {
+            overview = rekordboxAnalysis()->waveformOverview(r.filePath, r.bpm);
+        }
+        if (!overview.valid && r.libraryTrackId >= 0 && library()) {
+            overview = decodeWaveformOverview(library()->overviewAnalysisBlob(r.libraryTrackId));
+        }
+        if (!overview.valid) {
+            return out;   // not analysed yet: asked again on the next refresh
+        }
+        it = m_overviewCache.insert(r.filePath, overview);
+    }
+    const std::vector<MixHouseOverviewBucket> buckets = resampleOverview(*it, bucketCount);
+    out.reserve(static_cast<int>(buckets.size()));
+    for (const MixHouseOverviewBucket& b : buckets) {
+        QVariantMap m;
+        m["low"] = b.low;
+        m["mid"] = b.mid;
+        m["high"] = b.high;
+        m["all"] = b.all;
+        m["hasColor"] = b.hasColor;
+        m["color"] = static_cast<uint>(b.color);
+        out.push_back(m);
+    }
+    return out;
 }
 
 void MixHouseProjectListModel::revealRow(int row)

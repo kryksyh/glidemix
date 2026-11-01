@@ -41,7 +41,7 @@ Item {
     TracksViewStateModel {
         id: tracksViewState
         onTracksVerticalOffsetChanged: {
-            view.contentY = tracksViewState.tracksVerticalOffset - prv.listHeaderHeight
+            view.contentY = tracksViewState.tracksVerticalOffset + view.originY
         }
     }
 
@@ -218,7 +218,8 @@ Item {
                 Layout.fillHeight: true
 
                 spacing: 0
-                cacheBuffer: 3000
+                // GlideMix: every header stays built, like the lanes (TracksItemsView).
+                cacheBuffer: Math.max(3000, view.count * 300)
 
                 ScrollBar.vertical: null
 
@@ -229,11 +230,17 @@ Item {
                     lockedVerticalScrollPosition = contentY
                 }
 
+                onOriginYChanged: {
+                    if (!verticalScrollLocked) {
+                        view.contentY = tracksViewState.tracksVerticalOffset + originY
+                    }
+                }
+
                 onContentYChanged: {
                     if (verticalScrollLocked) {
                         view.contentY = lockedVerticalScrollPosition
                     } else {
-                        tracksViewState.changeTracksVerticalOffset(view.contentY + prv.listHeaderHeight)
+                        tracksViewState.changeTracksVerticalOffset(view.contentY - view.originY)
                     }
                 }
 
@@ -253,7 +260,7 @@ Item {
 
                 function insureVerticallyVisible(item) {
                     var itemViewY = item.mapToItem(view.contentItem, Qt.point(0, 0)).y
-                    tracksViewState.insureVerticallyVisible(view.contentY + prv.listHeaderHeight, view.height, itemViewY + prv.listHeaderHeight, item.height)
+                    tracksViewState.insureVerticallyVisible(view.contentY - view.originY, view.height, itemViewY - view.originY, item.height)
                 }
 
                 delegate: Loader {
@@ -412,15 +419,13 @@ Item {
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
 
                         onWheel: function (wheelEvent) {
-                            let headerHeight = view.headerItem ? view.headerItem.height : 0
                             let delta = wheelEvent.pixelDelta.y !== 0 ? wheelEvent.pixelDelta.y : wheelEvent.angleDelta.y
-                            let offset = view.contentY - delta
+                            let offset = view.contentY - view.originY - delta
 
-                            let maxContentY = view.contentHeight - view.height
-                            maxContentY = Math.max(maxContentY, view.contentY)
-                            offset = Math.max(Math.min(offset, maxContentY), -headerHeight)
+                            let maxOffset = Math.max(view.contentHeight - view.height, 0)
+                            offset = Math.max(Math.min(offset, maxOffset), 0)
 
-                            view.contentY = offset
+                            view.contentY = offset + view.originY
                         }
                     }
                 }
