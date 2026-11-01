@@ -53,6 +53,8 @@ public:
 
 signals:
     void viewFocusRequested(double start, double end, int trackId);
+    //! GlideMix: the Project tab's row click: the song fills the view.
+    void viewFitRequested(double start, double end, int trackId);
 
 private:
     std::vector<au::importexport::FileInfo> m_lastDraggedFilesInfo;

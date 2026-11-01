@@ -116,6 +116,16 @@ void MixHouseTrackAligner::requestViewFocus(double start, double end, au::tracke
     m_viewFocusRequested.send(start, end, track);
 }
 
+void MixHouseTrackAligner::requestViewFit(double start, double end, au::trackedit::TrackId track)
+{
+    m_viewFitRequested.send(start, end, track);
+}
+
+muse::async::Channel<double, double, au::trackedit::TrackId> MixHouseTrackAligner::viewFitRequested() const
+{
+    return m_viewFitRequested;
+}
+
 muse::async::Channel<double, double, au::trackedit::TrackId> MixHouseTrackAligner::viewFocusRequested() const
 {
     return m_viewFocusRequested;

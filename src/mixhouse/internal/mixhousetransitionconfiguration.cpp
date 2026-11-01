@@ -163,7 +163,7 @@ MixHouseTransitionLane transitionLaneFromJson(const QJsonObject& json)
 void MixHouseTransitionConfiguration::init()
 {
     muse::settings()->setDefaultValue(TRANSITIONS_USER, muse::Val(std::string("[]")));
-    muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW, muse::Val(std::string(kDefaultMixNowTransition)));
+    muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW, muse::Val(std::string(kDefaultTransition)));
     muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW_LANDING, muse::Val(static_cast<int>(MixHouseMixNowLanding::NextPhrase)));
     muse::settings()->setDefaultValue(TRANSITIONS_MIXER_VIEW, muse::Val(false));
 }
@@ -305,7 +305,7 @@ bool MixHouseTransitionConfiguration::removeSpec(const std::string& name)
     storeUserSpecs(user);
     // Mix Now must not be left pointing at a transition that no longer exists.
     if (mixNowTransition() == name) {
-        setMixNowTransition(kDefaultMixNowTransition);
+        setMixNowTransition(kDefaultTransition);
     }
     m_changed.notify();
     return true;
@@ -327,7 +327,7 @@ std::string MixHouseTransitionConfiguration::mixNowTransition() const
             return name;
         }
     }
-    return kDefaultMixNowTransition;
+    return kDefaultTransition;
 }
 
 void MixHouseTransitionConfiguration::setMixNowTransition(const std::string& name)

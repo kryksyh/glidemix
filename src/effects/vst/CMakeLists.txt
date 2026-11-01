@@ -11,6 +11,8 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/vsteffectsmodule.cpp
     ${CMAKE_CURRENT_LIST_DIR}/vsteffectsmodule.h
 
+    ${CMAKE_CURRENT_LIST_DIR}/internal/guardedplugview.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/guardedplugview.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/vst3effectloader.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/vst3pluginsscanner.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/vst3pluginsmetareader.cpp

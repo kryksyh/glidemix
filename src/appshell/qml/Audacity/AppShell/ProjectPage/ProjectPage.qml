@@ -136,6 +136,7 @@ DockPage {
     readonly property int horizontalPanelMaxHeight: 520
 
     readonly property string verticalPanelsGroup: "VERTICAL_PANELS"
+    readonly property string bottomPanelsGroup: "BOTTOM_PANELS"
     readonly property string horizontalPanelsGroup: "HORIZONTAL_PANELS"
 
     readonly property var verticalPanelDropDestinations: [
@@ -652,12 +653,44 @@ DockPage {
 
             location: Location.Bottom
 
+            //! GlideMix: shares its tabs with the Project panel below.
+            groupName: root.bottomPanelsGroup
+
             //! GlideMix: open by default -- the library is where a mix starts.
             //! The header's Music library button toggles it.
             visible: true
 
             MixHouseLibraryPanel {
                 navigationSection: mixHouseLibraryPanel.navigationSection
+            }
+        },
+
+        // GlideMix: the Project tab beside the library -- MixMeister's
+        // playlist window: the mix's songs in order, click to go to one,
+        // drag to reorder (docs/mixmeister-vs-glidemix.md).
+        DockPanel {
+            id: mixHouseProjectPanel
+
+            objectName: "mixHouseProjectPanel"
+            title: qsTrc("appshell", "Project")
+
+            navigationSection: root.navigationPanelSec(mixHouseProjectPanel.location)
+
+            dropDestinations: root.horizontalPanelDropDestinations
+
+            height: 260
+            minimumHeight: 120
+            resizable: true
+
+            location: Location.Bottom
+            groupName: root.bottomPanelsGroup
+
+            //! Closed here: ProjectPageModel opens it as a tab of the library
+            //! once that is docked (open from the start, both floated).
+            visible: false
+
+            MixHouseProjectPanel {
+                navigationSection: mixHouseProjectPanel.navigationSection
             }
         },
 

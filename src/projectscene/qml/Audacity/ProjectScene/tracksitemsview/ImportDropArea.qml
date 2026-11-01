@@ -56,6 +56,13 @@ DropArea {
             timeline.context.revealTimeRange(start, end)
             tracksItemsView.revealTrack(trackId)
         }
+
+        // GlideMix: a Project tab row: the song fills the timeline, at
+        // whatever width the window has.
+        onViewFitRequested: function(start, end, trackId) {
+            timeline.context.showTimeRange(start, end)
+            tracksItemsView.revealTrack(trackId)
+        }
     }
 
     Timer {

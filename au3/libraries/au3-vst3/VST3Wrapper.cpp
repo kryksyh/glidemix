@@ -1,5 +1,7 @@
 #include "VST3Wrapper.h"
+#include <algorithm>
 #include <charconv>
+#include <vector>
 #include <stdexcept>
 #include <optional>
 #include <map>
@@ -126,6 +128,10 @@ const VST3EffectSettings& GetSettings(const EffectSettings& settings)
 }
 
 constexpr Steinberg::int32 MaxChannelsPerAudioBus = 2;
+
+//Number of samples processed when parameter changes have to be delivered
+//to the processor without real audio, see VST3Wrapper::ProcessSilentBlock
+constexpr Steinberg::int32 SilentBlockSize = 64;
 
 //Checks the arrangements the plug-in actually settled on, which may differ from
 //the ones that were requested.
@@ -877,8 +883,8 @@ bool VST3Wrapper::Initialize(EffectSettings& settings, Steinberg::Vst::SampleRat
 
             mActive = true;
             ConsumeChanges(settings);
-            //make zero-flush, to make sure parameters are delivered to the processor...
-            Process(nullptr, nullptr, 0);
+            //make sure parameters are delivered to the processor...
+            ProcessSilentBlock();
             StoreSettings(settings);
             return true;
         }
@@ -893,7 +899,7 @@ void VST3Wrapper::Finalize(EffectSettings* settings)
     mProcessContext.state = 0;
     if (settings != nullptr) {
         ConsumeChanges(*settings);
-        Process(nullptr, nullptr, 0);
+        ProcessSilentBlock();
     }
     mAudioProcessor->setProcessing(false);
     mEffectComponent->setActive(false);
@@ -954,7 +960,7 @@ void VST3Wrapper::FlushParameters(EffectSettings& settings, bool* hasChanges)
             if (mAudioProcessor->setProcessing(true) != Steinberg::kResultFalse) {
                 mProcessContext.sampleRate = mSetup.sampleRate;
                 mProcessContext.state = 0;
-                Process(nullptr, nullptr, 0);
+                ProcessSilentBlock();
                 mAudioProcessor->setProcessing(false);
             }
         }
@@ -963,6 +969,35 @@ void VST3Wrapper::FlushParameters(EffectSettings& settings, bool* hasChanges)
     } else if (hasChanges != nullptr) {
         *hasChanges = false;
     }
+}
+
+//Audacity 4.0.1 (upstream): the VST3 SDK documents that a plug-in should
+//accept parameter changes through a process() call with numSamples == 0 and
+//no audio buffers, but some widely used plug-in frameworks return from
+//process() before looking at the parameter changes when there are no samples
+//to process (e.g. DPF; upstream issue #11892). Changes sent that way never
+//reach the DSP model, so the state later reported by IComponent::getState()
+//is stale and the edits get reverted. Processing a short block of silence
+//works for both kinds of plug-ins.
+void VST3Wrapper::ProcessSilentBlock()
+{
+    using namespace Steinberg;
+
+    const auto numSamples = std::min(mSetup.maxSamplesPerBlock, SilentBlockSize);
+    const auto inputChannels = VST3Utils::CountChannels(mEffectComponent, Vst::kAudio, Vst::kInput, Vst::kMain);
+    const auto outputChannels = VST3Utils::CountChannels(mEffectComponent, Vst::kAudio, Vst::kOutput, Vst::kMain);
+
+    std::vector<float> silence((inputChannels + outputChannels) * numSamples, 0.f);
+    std::vector<float*> inputs(inputChannels);
+    std::vector<float*> outputs(outputChannels);
+    for (unsigned i = 0; i < inputChannels; ++i) {
+        inputs[i] = silence.data() + i * numSamples;
+    }
+    for (unsigned i = 0; i < outputChannels; ++i) {
+        outputs[i] = silence.data() + (inputChannels + i) * numSamples;
+    }
+
+    Process(inputs.data(), outputs.data(), numSamples);
 }
 
 bool VST3Wrapper::ConfigureParameterAutomation(std::shared_ptr<const ParameterAutomationSnapshot> snapshot)

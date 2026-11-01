@@ -9,6 +9,8 @@
 
 #include "effects/effects_base/effectstypes.h"
 
+#include "au3-utility/PluginCrashGuard.h"
+
 #include "log.h"
 
 using namespace au::effects;
@@ -19,6 +21,7 @@ VstViewModel::VstViewModel(QObject* parent, int instanceId)
 
 VstViewModel::~VstViewModel()
 {
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     m_settingUpdateTimer.stop();
     QObject::disconnect(&m_settingUpdateTimer, &QTimer::timeout, this, &VstViewModel::checkSettingChangesFromUiWhileIdle);
 
@@ -39,6 +42,12 @@ void VstViewModel::doInit()
     IF_ASSERT_FAILED(id != 0) {
         return;
     }
+
+    // GlideMix: opening the window hands the plug-in its state (FetchSettings
+    // below); some plug-ins crash right there (AIR, 2026-10-28). If so, the
+    // next start turns it off and names it.
+    m_guardId = instancesRegister()->effectIdByInstanceId(id).toStdString();
+    PluginCrashGuard::MarkedScope guard(m_guardId);
 
     std::shared_ptr<EffectInstance> instance = instancesRegister()->instanceById(this->instanceId());
     m_auVst3Instance = std::dynamic_pointer_cast<VST3Instance>(instance);
@@ -89,6 +98,7 @@ void VstViewModel::checkSettingChangesFromUiWhileIdle()
 
 void VstViewModel::checkSettingChangesFromUi(bool forceCommitting)
 {
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     bool hasChanges { false };
     m_settingsAccess->ModifySettings([&](EffectSettings& settings)
     {
@@ -111,6 +121,7 @@ void VstViewModel::settingsToView()
         return;
     }
 
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     VST3Wrapper& w = m_auVst3Instance->GetWrapper();
     m_settingsAccess->ModifySettings([&w](EffectSettings& settings) {
         constexpr auto fallbackOnDefaults = true;
@@ -125,6 +136,7 @@ void VstViewModel::settingsFromView()
         return;
     }
 
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     VST3Wrapper& w = m_auVst3Instance->GetWrapper();
     m_settingsAccess->ModifySettings([&w](EffectSettings& settings) {
         w.StoreSettings(settings);

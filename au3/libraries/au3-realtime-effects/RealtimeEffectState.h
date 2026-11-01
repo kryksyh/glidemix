@@ -156,6 +156,9 @@ private:
     }
 
     PluginID mID;
+    //! GlideMix: mID in UTF-8, for PluginCrashGuard scopes (also read on the
+    //! audio thread; set on the main thread before an instance exists)
+    std::string mGuardId;
     std::string mInstanceId;
     AutomationMode mAutomationMode{AutomationMode::Read};
 

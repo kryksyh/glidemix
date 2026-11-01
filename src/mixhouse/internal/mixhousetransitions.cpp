@@ -3,6 +3,14 @@
  */
 #include "mixhousetransitions.h"
 
+#include <optional>
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#include "mixhousetransitionnames.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -30,11 +38,89 @@ void MixHouseTransitions::init()
     // Every edit that can create, move or remove an overlap ends in a history
     // state (adds, drops, drags, undo/redo).
     projectHistory()->historyChanged().onReceive(this, [this](auto) {
+        // The project's clips are all there by its first history state: the
+        // saved names can be matched to them now.
+        if (m_namesFor != au3Project()) {
+            restoreSavedNames();
+        }
         m_zonesChanged.notify();
     });
     globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() {
+        m_applied.clear();
+        m_disabled.clear();
+        m_effects.clear();
+        m_namesFor = nullptr;
+        restoreSavedNames();
         m_zonesChanged.notify();
     });
+}
+
+void* MixHouseTransitions::au3Project() const
+{
+    const auto project = globalContext() ? globalContext()->currentProject() : nullptr;
+    return project ? reinterpret_cast<void*>(project->au3ProjectPtr()) : nullptr;
+}
+
+std::string MixHouseTransitions::savedNames() const
+{
+    // Clips are found again by their name and start (their ids are not kept in the file).
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    QJsonArray list;
+    for (const Zone& zone : zones()) {
+        if (zone.preset.empty() || !project) {
+            continue;
+        }
+        const trackedit::Clip out = project->clip(zone.outgoing);
+        const trackedit::Clip in = project->clip(zone.incoming);
+        list.append(QJsonObject {
+            { "o", out.title.toQString() }, { "os", out.startTime },
+            { "i", in.title.toQString() }, { "is", in.startTime },
+            { "n", QString::fromStdString(zone.preset) },
+        });
+    }
+    LOGI() << "GlideMix transitions: saving " << list.size() << " transition names with the project";
+    return list.isEmpty() ? std::string() : QJsonDocument(list).toJson(QJsonDocument::Compact).toStdString();
+}
+
+void MixHouseTransitions::restoreSavedNames()
+{
+    void* au3 = au3Project();
+    const auto project = globalContext()->currentTrackeditProject();
+    if (!au3 || !project) {
+        return;
+    }
+    m_namesFor = au3;
+    setTransitionNamesWriter(au3, [this]() { return savedNames(); });
+    const std::string saved = loadedTransitionNames(au3);
+    if (saved.empty()) {
+        m_namesFor = nullptr;   // maybe not read from the file yet: again on the next history state
+        return;
+    }
+    LOGI() << "GlideMix transitions: " << saved.size() << " bytes of saved transition names in the project";
+    const auto find = [&](const QString& title, double start) -> std::optional<trackedit::ClipKey> {
+        for (const trackedit::TrackId trackId : project->trackIdList()) {
+            for (const trackedit::Clip& clip : project->clipList(trackId)) {
+                if (clip.title.toQString() == title && std::abs(clip.startTime - start) < 1e-3) {
+                    return clip.key;
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    int restored = 0;
+    for (const QJsonValue& v : QJsonDocument::fromJson(QByteArray::fromStdString(saved)).array()) {
+        const QJsonObject o = v.toObject();
+        const auto out = find(o.value("o").toString(), o.value("os").toDouble());
+        const auto in = find(o.value("i").toString(), o.value("is").toDouble());
+        if (out && in) {
+            m_applied[{ *out, *in }] = o.value("n").toString().toStdString();
+            ++restored;
+        }
+    }
+    if (restored == 0) {
+        m_namesFor = nullptr;   // the clips aren't loaded yet: again on the next history state
+    }
+    LOGI() << "GlideMix transitions: " << restored << " transition names restored from the project";
 }
 
 muse::async::Notification MixHouseTransitions::zonesChanged() const
@@ -141,9 +227,13 @@ bool MixHouseTransitions::replaceGain(const trackedit::ClipKey& clip, double fro
     }
     line.push_back({ current.back().end.xValue, current.back().end.yValue, 0.0f });
 
+    // A millisecond of slack: after a clip moves, the line's ends differ from
+    // the clip's by rounding, and an old end point kept "after" the range made
+    // the line jump back up at the very end of the song.
+    constexpr double kSlackSec = 1e-3;
     std::vector<GainPoint> merged;
     for (const GainPoint& p : line) {
-        if (p.time < from) {
+        if (p.time < from - kSlackSec) {
             merged.push_back(p);
         }
     }
@@ -152,7 +242,7 @@ bool MixHouseTransitions::replaceGain(const trackedit::ClipKey& clip, double fro
         merged.push_back(p);
     }
     for (const GainPoint& p : line) {
-        if (p.time > to) {
+        if (p.time > to + kSlackSec) {
             merged.push_back(p);
         }
     }
@@ -188,7 +278,29 @@ bool MixHouseTransitions::replaceGain(const trackedit::ClipKey& clip, double fro
     if (segments.empty()) {
         return false;
     }
-    return clipGain()->setClipGainSegments(clip, segments, completed);
+    return clipGain()->setClipGainSegments(clip, segments, completed && m_editDepth == 0);
+}
+
+void MixHouseTransitions::beginEdit()
+{
+    ++m_editDepth;
+}
+
+void MixHouseTransitions::endEdit(const std::string& name)
+{
+    if (m_editDepth <= 0) {
+        return;
+    }
+    if (--m_editDepth == 0) {
+        if (name.empty()) {
+            // Part of the step already on top; autosaved like a pushed state, or a
+            // restored session would come back without this edit.
+            projectHistory()->modifyState(true);
+        } else {
+            projectHistory()->pushHistoryState(name, name);
+        }
+        m_zonesChanged.notify();
+    }
 }
 
 const std::vector<MixHouseTransitionPreset>& IMixHouseTransitions::presets()
@@ -254,10 +366,16 @@ bool MixHouseTransitions::applyTransition(const trackedit::ClipKey& outgoing, co
     // The same conversion Mix Now uses, so a transition applied from the zone's
     // menu is exactly the one the Preferences preview draws.
     const auto spec = transitionConfiguration() ? transitionConfiguration()->spec(name) : std::nullopt;
-    if (!spec) {
-        return false;
+    if (spec) {
+        return applyPresetValue(outgoing, incoming, presetFromSpec(*spec));
     }
-    return applyPresetValue(outgoing, incoming, presetFromSpec(*spec));
+    // MixMeister's own presets (Beatmix 8 bars, the default) by name too.
+    for (const MixHouseTransitionPreset& preset : presets()) {
+        if (preset.name == name) {
+            return applyPresetValue(outgoing, incoming, preset);
+        }
+    }
+    return false;
 }
 
 bool MixHouseTransitions::applyPresetValue(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
@@ -266,10 +384,13 @@ bool MixHouseTransitions::applyPresetValue(const trackedit::ClipKey& outgoing, c
     if (preset.outro.empty() && preset.intro.empty() && preset.bassOutro.empty() && preset.bassIntro.empty()
         && preset.midOutro.empty() && preset.midIntro.empty() && preset.highOutro.empty() && preset.highIntro.empty()
         && preset.effects.empty()) {
+        // Named before the write: its history push autosaves, names included.
+        m_applied[{ outgoing, incoming }] = preset.name;
         const bool ok = applyCrossfade(outgoing, incoming);
         if (ok) {
-            m_applied[{ outgoing, incoming }] = preset.name;
             m_zonesChanged.notify();
+        } else {
+            m_applied.erase({ outgoing, incoming });
         }
         return ok;
     }
@@ -282,6 +403,17 @@ bool MixHouseTransitions::applyPresetValue(const trackedit::ClipKey& outgoing, c
     const double beat = ts.tempo > 0.0 ? 60.0 / ts.tempo * (4.0 / std::max(1, ts.lower)) : 0.5;
 
     double anchor = zone.start;
+    // Linked anchors (MixMeister): the preset's points hang off the point
+    // where the outgoing OUT meets the incoming IN, not where the clips first
+    // touch. Both anchors sit on their beat grids already.
+    if (beatGrids()) {
+        const auto outAnchors = beatGrids()->clipAnchors(outgoing);
+        const auto inAnchors = beatGrids()->clipAnchors(incoming);
+        if (outAnchors.valid && inAnchors.valid && std::abs(outAnchors.outro - inAnchors.intro) < 0.05
+            && outAnchors.outro >= zone.start && outAnchors.outro < zone.end - kMinOverlapSec) {
+            return writePreset(outgoing, incoming, preset, outAnchors.outro);
+        }
+    }
     if (preset.beatmix) {
         const double bar = beat * std::max(1, ts.upper);
         anchor = std::ceil(zone.start / bar - 1e-6) * bar;
@@ -395,6 +527,12 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
         return false;
     }
     bool ok = true;
+    // Named before the writes: the last one pushes history, which autosaves
+    // the project, transition names included (mixhousetransitionnames.h).
+    const auto had = m_applied.find({ outgoing, incoming });
+    const std::optional<std::string> previousName = had != m_applied.end() ? std::optional<std::string>(had->second)
+                                                                           : std::nullopt;
+    m_applied[{ outgoing, incoming }] = preset.name;
     // The effect lines (filter sweeps, noise, echo / reverb out): whatever an
     // earlier transition here wrote goes first (ADD FX ones too), then this
     // one's, each on the track's own DJ effect. No history of their own either.
@@ -412,12 +550,18 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
         const trackedit::ClipKey& key = fx.outgoing ? outgoing : incoming;
         ok = clipGain()->setClipEffectPoints(key, effectId, fx.parameterId, bassLine(fx.markers, fx.outgoing ? outClip : inClip))
              && ok;
+        if (!ok) {
+            LOGW() << "GlideMix transition: effect line refused: " << fx.parameterId;
+        }
     }
     // The EQ bands first: no history of their own. The last write below pushes
     // the one undo step. A band this transition leaves alone is cleared, so an
     // earlier transition's lines don't linger.
     const auto band = [&](const trackedit::ClipKey& key, int which, const automation::AutomationPoints& line) {
-        ok = clipGain()->setClipBandPoints(key, which, line) && ok;
+        if (!clipGain()->setClipBandPoints(key, which, line)) {
+            ok = false;
+            LOGW() << "GlideMix transition: band line " << which << " refused (" << line.size() << " points)";
+        }
     };
     band(outgoing, 0, bassOut);
     band(incoming, 0, bassIn);
@@ -425,22 +569,30 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
     band(incoming, 1, midIn);
     band(outgoing, 2, highOut);
     band(incoming, 2, highIn);
-    if (!fadeOut.empty()) {
-        ok = replaceGain(outgoing, outFrom, outClip.endTime, fadeOut, fadeIn.empty()) && ok;
+    if (!fadeOut.empty() && !replaceGain(outgoing, outFrom, outClip.endTime, fadeOut, fadeIn.empty())) {
+        ok = false;
+        LOGW() << "GlideMix transition: outgoing volume line refused, anchor " << anchor << " clip " << outClip.startTime
+               << ".." << outClip.endTime;
     }
-    if (!fadeIn.empty()) {
-        ok = replaceGain(incoming, inClip.startTime, inTo, fadeIn, true) && ok;
+    if (!fadeIn.empty() && !replaceGain(incoming, inClip.startTime, inTo, fadeIn, true)) {
+        ok = false;
+        LOGW() << "GlideMix transition: incoming volume line refused, anchor " << anchor << " clip " << inClip.startTime
+               << ".." << inClip.endTime;
     }
-    if (!hasVolume) {
+    if (!hasVolume && m_editDepth == 0) {
         // A bass- or effects-only transition wrote no volume line, so nothing pushed history.
         projectHistory()->pushHistoryState(preset.effects.empty() ? "Bass swap" : preset.name, "Transition");
     }
     if (ok) {
-        m_applied[{ outgoing, incoming }] = preset.name;
         m_zonesChanged.notify();
         LOGI() << "GlideMix transition: " << preset.name << " at " << anchor << " s"
                << (bassOut.empty() && bassIn.empty() ? "" : " (with a bass swap)");
     } else {
+        if (previousName) {
+            m_applied[{ outgoing, incoming }] = *previousName;
+        } else {
+            m_applied.erase({ outgoing, incoming });
+        }
         LOGW() << "GlideMix transition: could not write " << preset.name;
     }
     return ok;
@@ -681,10 +833,13 @@ std::string MixHouseTransitions::mixNow(double playhead)
     // The choice is in Preferences → Transitions: one of Mixtape's or the user's own, or one of
     // MixMeister's presets; empty means only pull, leaving the volumes as they are.
     const std::string chosen = transitionConfiguration() ? transitionConfiguration()->mixNowTransition()
-                               : std::string(kDefaultMixNowTransition);
+                               : std::string(kDefaultTransition);
     std::optional<MixHouseTransitionPreset> mixNowPreset;
     if (!chosen.empty()) {
-        if (const auto spec = transitionConfiguration() ? transitionConfiguration()->spec(chosen) : std::nullopt) {
+        if (auto spec = transitionConfiguration() ? transitionConfiguration()->spec(chosen) : std::nullopt) {
+            // Mix Now pulls a song in at the playhead: no room to fade in before
+            // the bar it lands on, so the fades start on that bar.
+            spec->blendAroundAnchor = false;
             mixNowPreset = presetFromSpec(*spec);
         } else {
             for (const MixHouseTransitionPreset& candidate : presets()) {

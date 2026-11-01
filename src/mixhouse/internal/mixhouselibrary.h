@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QSqlDatabase>
 #include <QThread>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -268,6 +269,12 @@ private:
     mutable bool m_open = false;
     mutable bool m_tried = false;
     mutable QHash<QString, int> m_probedSampleRates;   ///< file -> header sample rate, for rows missing samplerate
+    //! Writes the sample rate of every track missing one into the library,
+    //! on its own thread, once per run (see tracks()).
+    void fillMissingSampleRates();
+    //! False once this instance is gone: background threads check it before
+    //! calling back.
+    const std::shared_ptr<std::atomic<bool> > m_alive = std::make_shared<std::atomic<bool> >(true);
     // Writing needs its own connection: the read one is opened READONLY on
     // purpose and must stay that way.
     QSqlDatabase m_writeDb;

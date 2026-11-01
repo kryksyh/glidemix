@@ -5,6 +5,8 @@
 
 #include "effectsutils.h"
 
+#include "au3-utility/PluginCrashGuard.h"
+
 #include "framework/global/async/async.h"
 #include "framework/global/defer.h"
 #include "framework/global/realfn.h"
@@ -119,6 +121,11 @@ muse::Ret EffectExecutionScenario::doPerformEffect(au3::Au3Project& project, con
     //! ============================================================================
     //! NOTE Step 1 - check input params (effect is present and available, selection)
     //! ============================================================================
+
+    // GlideMix: applying a third-party effect runs its code on this thread;
+    // if it crashes the app, the next start turns it off (PluginCrashGuard)
+    const std::string guardId = effectId.toStdString();
+    PluginCrashGuard::CallScope crashGuard(guardId.c_str());
 
     // common things used below
     PluginID ID = effectId.toStdString();

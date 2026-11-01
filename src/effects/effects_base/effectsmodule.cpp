@@ -5,6 +5,8 @@
 
 #include "au3-module-manager/PluginManager.h"
 #include "au3-files/FileNames.h"
+#include "au3-utility/PluginCrashGuard.h"
+#include "framework/global/iglobalconfiguration.h"
 
 #include "framework/interactive/iinteractiveuriregister.h"
 #include "framework/diagnostics/idiagnosticspathsregister.h"
@@ -109,9 +111,21 @@ void EffectsModule::onPreInit(const muse::IApplication::RunMode&)
     PluginManager::Get().Initialize(std::move(configFactory), std::make_unique<EffectIdResolver>());
 }
 
-void EffectsModule::onInit(const muse::IApplication::RunMode&)
+void EffectsModule::onInit(const muse::IApplication::RunMode& mode)
 {
     m_configuration->init();
+
+    // GlideMix: remember which plug-in was running when the app crashed, and
+    // turn it off on the next start (EffectsProvider::initOnce). The records
+    // share the folder of muse's load guard. Not in the validation
+    // sub-process: a plug-in crashing there is expected and handled.
+    if (mode != muse::IApplication::RunMode::AudioPluginRegistration) {
+        if (const auto globalConfiguration = globalIoc()->resolve<muse::IGlobalConfiguration>(mname)) {
+            const std::string dir = (globalConfiguration->userAppDataPath() + "/audio_plugins_loading").toStdString();
+            m_effectsProvider->setPluginsThatCrashedLastRun(PluginCrashGuard::ReadRecords(dir));
+            PluginCrashGuard::Install(dir);
+        }
+    }
 
     //! --- Diagnostics ---
     auto pr = globalIoc()->resolve<muse::diagnostics::IDiagnosticsPathsRegister>(mname);

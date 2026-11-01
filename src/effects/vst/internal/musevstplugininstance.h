@@ -34,6 +34,9 @@ public:
 private:
 
     EffectId m_effectId;
+    //! GlideMix: per instance; was a function-level static, so every
+    //! instance reported the first plug-in's id
+    muse::audio::AudioResourceId m_resourceId;
     EffectInstanceId m_instanceId;
     std::shared_ptr<VST3Instance> m_auVstInstance;
 };

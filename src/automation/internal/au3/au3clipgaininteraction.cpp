@@ -662,7 +662,9 @@ bool Au3ClipGainInteraction::setClipGainSegments(
         if (!std::isfinite(s.start.xValue) || !std::isfinite(s.end.xValue)
             || !std::isfinite(s.start.yValue) || !std::isfinite(s.end.yValue)
             || !std::isfinite(s.curvature) || std::abs(s.curvature) > 1.0f
-            || s.start.xValue < start || s.end.xValue > end || s.start.xValue > s.end.xValue
+            // A hair of tolerance: after a clip moves, its line's ends can differ
+            // from the clip's by rounding (GlideMix's chain moves refused here).
+            || s.start.xValue < start - 1e-6 || s.end.xValue > end + 1e-6 || s.start.xValue > s.end.xValue
             || s.start.yValue < env.GetMinValue() || s.start.yValue > env.GetMaxValue()
             || s.end.yValue < env.GetMinValue() || s.end.yValue > env.GetMaxValue()
             || (i && (s.start.xValue != segments[i - 1].end.xValue

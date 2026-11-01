@@ -40,5 +40,9 @@ public:
     /// view, and its lane.
     virtual void requestViewFocus(double start, double end, trackedit::TrackId track) = 0;
     virtual muse::async::Channel<double, double, trackedit::TrackId> viewFocusRequested() const = 0;
+    /// Zoom and scroll so [start, end] fills the timeline at its current
+    /// width, and show `track` (the Project tab's row click).
+    virtual void requestViewFit(double start, double end, trackedit::TrackId track) = 0;
+    virtual muse::async::Channel<double, double, trackedit::TrackId> viewFitRequested() const = 0;
 };
 }

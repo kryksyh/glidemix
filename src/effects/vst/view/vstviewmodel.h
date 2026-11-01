@@ -46,6 +46,8 @@ private:
     std::shared_ptr<VST3Instance> m_auVst3Instance;
     std::shared_ptr<EffectSettingsAccess> m_settingsAccess;
     QTimer m_settingUpdateTimer;
+    //! GlideMix: effect id for PluginCrashGuard scopes
+    std::string m_guardId;
 };
 
 class VstViewModelFactory : public EffectViewModelFactory<VstViewModel>

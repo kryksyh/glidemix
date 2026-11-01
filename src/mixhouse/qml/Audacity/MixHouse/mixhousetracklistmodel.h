@@ -839,6 +839,10 @@ private:
     //! A track from another DJ app's library: not in this library, so
     //! nothing writes to it.
     static bool isExternalTrack(const MixHouseTrack& t) { return isExternalLibraryTrack(t.id); }
+    //! The row with its beatgrid: a list row whose sample rate the library
+    //! hasn't filled in yet has none (MixHouseLibrary::tracks()), and the
+    //! one-track lookup reads it from the file.
+    MixHouseTrack withBeatGrid(const MixHouseTrack& t) const;
     static void applyTagFields(MixHouseTrack& t, const QVariantMap& fields);
     //! The library id of the same file as an external track, or -1.
     //! The song's phrases for its cue points (rekordbox XML export).

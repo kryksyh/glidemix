@@ -38,10 +38,13 @@ public:
     bool knowsTempo(const muse::io::path_t& filePath) const override;
     void requestViewFocus(double start, double end, trackedit::TrackId track) override;
     muse::async::Channel<double, double, trackedit::TrackId> viewFocusRequested() const override;
+    void requestViewFit(double start, double end, trackedit::TrackId track) override;
+    muse::async::Channel<double, double, trackedit::TrackId> viewFitRequested() const override;
 
 private:
     MixHouseTrackList findLibraryTrack(const muse::io::path_t& filePath) const;
 
     muse::async::Channel<double, double, trackedit::TrackId> m_viewFocusRequested;
+    muse::async::Channel<double, double, trackedit::TrackId> m_viewFitRequested;
 };
 }

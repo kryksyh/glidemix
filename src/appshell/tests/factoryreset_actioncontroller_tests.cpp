@@ -92,7 +92,7 @@ public:
     void setupRestartDialog()
     {
         EXPECT_CALL(*m_interactive, question(
-                        HasSubstr("restart Audacity"),
+                        HasSubstr("restart GlideMix"),
                         _, _, _, _, _))
         .WillOnce([this](const std::string&, const IInteractive::Text&,
                          const IInteractive::ButtonDatas&, int,

@@ -32,6 +32,7 @@ set(MODULE_TEST_LINK
         spectrogram
         au3wrap
         au3-label-track
+        au3-realtime-effects
         au3-time-frequency-selection
         au3-wave-track
 

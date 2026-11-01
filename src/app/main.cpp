@@ -127,7 +127,7 @@ int main(int argc, char** argv)
 #define MUSE_APP_INSTALL_SUFFIX ""
 #endif
     // Any OS that uses Freedesktop.org Desktop Entry Specification (e.g. Linux, BSD)
-    QGuiApplication::setDesktopFileName("org.audacityteam.Audacity" MUSE_APP_INSTALL_SUFFIX ".desktop");
+    QGuiApplication::setDesktopFileName("com.glidemix.GlideMix" MUSE_APP_INSTALL_SUFFIX ".desktop");
 #endif
 
     // Force the 8-bit text encoding to UTF-8. This is the default encoding on all supported platforms except for MSVC under Windows, which
@@ -203,7 +203,7 @@ int main(int argc, char** argv)
                 forwardedArgs.append(QString::fromUtf8(argvFinal[i]));
             }
             if (muse::mi::activateExistingInstance(QString::fromLatin1(appName), forwardedArgs)) {
-                LOGI() << "existing Audacity instance activated";
+                LOGI() << "existing GlideMix instance activated";
                 LOGI() << "exiting";
                 return 0;
             }

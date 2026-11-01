@@ -23,6 +23,10 @@
 #include <wrl/client.h>
 #endif
 
+#ifdef Q_OS_LINUX
+#include "mod-ffmpeg/lib-ffmpeg-support/FFmpegFunctions.h"
+#endif
+
 #include "mixhouse/mixhousenativepath.h"
 #include "log.h"
 
@@ -346,6 +350,84 @@ AudioInfo decodeMediaFoundation(const QString& path,
 }
 #endif
 
+#ifdef Q_OS_LINUX
+// --- FFmpeg: m4a/aac/alac and anything else libsndfile cannot read -- the
+// Linux counterpart of AudioToolbox / Media Foundation. Linux has no system
+// decoder for these; the importer already uses the FFmpeg the user has
+// installed (loaded at run time), so the analysis does too.
+AudioInfo decodeFFmpeg(const QString& path,
+                       const std::function<bool(const float*, long long)>* onSamples)
+{
+    AudioInfo info;
+    const auto ffmpeg = FFmpegFunctions::Load();
+    if (!ffmpeg) {
+        info.error = QStringLiteral("FFmpeg is not installed");
+        return info;
+    }
+    auto format = ffmpeg->CreateAVFormatContext();
+    if (!format || format->OpenInputContext(wxString::FromUTF8(path.toUtf8().constData()), nullptr,
+                                            AVDictionaryWrapper(*ffmpeg)) != AVIOContextWrapper::OpenResult::Success) {
+        info.error = QStringLiteral("Format not recognised.");
+        return info;
+    }
+    // The first audio stream FFmpeg can decode.
+    std::unique_ptr<AVCodecContextWrapper> codec;
+    int streamIndex = -1;
+    for (unsigned int i = 0; i < format->GetStreamsCount() && !codec; ++i) {
+        const AVStreamWrapper* stream = format->GetStream(static_cast<int>(i));
+        if (!stream || !stream->IsAudio() || !ffmpeg->CreateDecoder(stream->GetAVCodecID())) {
+            continue;
+        }
+        auto context = stream->GetAVCodecContext();
+        if (context && context->Open(context->GetCodec()) >= 0 && context->GetChannels() > 0) {
+            codec = std::move(context);
+            streamIndex = stream->GetIndex();
+        }
+    }
+    if (!codec) {
+        info.error = QStringLiteral("No audio stream FFmpeg can decode.");
+        return info;
+    }
+    info.valid = true;
+    info.sampleRate = codec->GetSampleRate();
+    info.channels = codec->GetChannels();
+    const int64_t duration = format->GetDuration();   // AV_TIME_BASE units (microseconds)
+    if (duration > 0 && info.sampleRate > 0) {
+        info.durationSec = static_cast<double>(duration) / 1e6;
+        info.frames = static_cast<long long>(std::llround(info.durationSec * info.sampleRate));
+    }
+    if (!onSamples) {
+        return info;
+    }
+
+    const auto deliver = [&](const std::vector<float>& data) {
+        const long long frames = static_cast<long long>(data.size()) / info.channels;
+        return frames <= 0 || (*onSamples)(data.data(), frames);
+    };
+    long long decoded = 0;
+    bool more = true;
+    for (std::unique_ptr<AVPacketWrapper> packet; more && (packet = format->ReadNextPacket()) != nullptr;) {
+        if (packet->GetStreamIndex() != streamIndex) {
+            continue;
+        }
+        const std::vector<float> data = codec->DecodeAudioPacketFloat(packet.get());
+        decoded += static_cast<long long>(data.size()) / info.channels;
+        more = deliver(data);
+    }
+    if (more) {   // what the decoder still holds
+        auto empty = ffmpeg->CreateAVPacketWrapper();
+        const std::vector<float> data = codec->DecodeAudioPacketFloat(empty.get());
+        decoded += static_cast<long long>(data.size()) / info.channels;
+        deliver(data);
+    }
+    if (decoded > 0) {
+        info.frames = decoded;
+        info.durationSec = static_cast<double>(decoded) / info.sampleRate;
+    }
+    return info;
+}
+#endif
+
 AudioInfo decode(const QString& path, const std::function<bool(const float*, long long)>* onSamples)
 {
     AudioInfo info = isMp3(path) ? decodeMpg123(path, onSamples) : decodeSndfile(path, onSamples);
@@ -357,6 +439,11 @@ AudioInfo decode(const QString& path, const std::function<bool(const float*, lon
 #ifdef Q_OS_WIN
     if (!info.valid) {
         info = decodeMediaFoundation(path, onSamples);
+    }
+#endif
+#ifdef Q_OS_LINUX
+    if (!info.valid && !isMp3(path)) {
+        info = decodeFFmpeg(path, onSamples);
     }
 #endif
     return info;

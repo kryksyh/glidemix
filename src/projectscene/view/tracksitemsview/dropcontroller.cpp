@@ -314,6 +314,9 @@ void DropController::listenForPlacedSongs()
     if (!mixhouseAligner()) {
         return;
     }
+    mixhouseAligner()->viewFitRequested().onReceive(this, [this](double start, double end, trackedit::TrackId track) {
+        emit viewFitRequested(start, end, static_cast<int>(track));
+    });
     mixhouseAligner()->viewFocusRequested().onReceive(this, [this](double start, double end, trackedit::TrackId track) {
         emit viewFocusRequested(start, end, static_cast<int>(track));
     });

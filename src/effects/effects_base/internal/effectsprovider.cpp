@@ -14,6 +14,7 @@
 #include "au3-module-manager/ModuleManager.h"
 
 #include "framework/global/log.h"
+#include "framework/audioplugins/audiopluginserrors.h"
 #include "stringutils.h"
 
 #include <map>
@@ -79,6 +80,8 @@ void EffectsProvider::initOnce(const muse::modularity::ContextPtr& ctx, muse::II
 
     doScanPlugins(ctx, registerAudioPluginsScenario, doScanThirdPartyPlugins);
 
+    turnOffPluginsThatCrashedLastRun(interactive);
+
     // Providers must be available in ModuleManager for on-demand plugin loading.
     ModuleManager::Get().DiscoverProviders();
 
@@ -86,6 +89,80 @@ void EffectsProvider::initOnce(const muse::modularity::ContextPtr& ctx, muse::II
     knownPluginsRegister()->pluginInfoListChanged().onNotify(this, [this]() {
         reloadEffects();
     });
+}
+
+void EffectsProvider::setPluginsThatCrashedLastRun(std::vector<std::string> ids)
+{
+    m_crashedLastRun = std::move(ids);
+}
+
+// GlideMix: a plug-in that crashed the app last time is marked broken (the
+// same state muse's load guard uses for a crash while loading), so it is not
+// loaded again -- not even by a project that uses it -- and we say which one.
+// Plugin manager > Rescan plugins with "Include plugins with errors" brings
+// it back.
+void EffectsProvider::turnOffPluginsThatCrashedLastRun(muse::IInteractive& interactive)
+{
+    if (m_crashedLastRun.empty()) {
+        return;
+    }
+    const std::vector<std::string> crashed = std::move(m_crashedLastRun);
+    m_crashedLastRun.clear();
+
+    muse::audioplugins::AudioPluginInfoList toMark;
+    muse::audioplugins::PluginResourceIdList toMarkIds;
+    QStringList names;
+    for (const auto& info : knownPluginsRegister()->pluginInfoList()) {
+        if (std::find(crashed.begin(), crashed.end(), info.meta.id) == crashed.end()) {
+            continue;
+        }
+        LOGW() << "Plugin was running when the app crashed last time, turning it off: " << info.meta.id;
+
+        const EffectMeta meta = utils::museToAuEffectMeta(info.path, info.meta, info.state);
+        const QString name = meta.title.empty()
+                             ? QString::fromStdString(utils::parseEffectName(meta.id))
+                             : utils::effectDisplayTitle(meta).toQString();
+        if (!name.isEmpty() && !names.contains(name)) {
+            names << name;
+        }
+
+        if (info.state != muse::audioplugins::AudioPluginState::Error) {
+            auto broken = info;
+            broken.state = muse::audioplugins::AudioPluginState::Error;
+            broken.errorCode = static_cast<int>(muse::audioplugins::Err::PluginCrashedOnLoad);
+            toMarkIds.push_back(broken.meta.id);
+            toMark.push_back(std::move(broken));
+        }
+    }
+
+    if (!toMark.empty()) {
+        muse::Ret ret = knownPluginsRegister()->unregisterPlugins(toMarkIds);
+        if (ret) {
+            ret = knownPluginsRegister()->registerPlugins(toMark);
+        }
+        if (!ret) {
+            LOGE() << "Failed to turn off crashed plugins: " << ret.toString();
+        }
+        reloadEffects();
+    }
+
+    if (names.isEmpty()) {
+        return;
+    }
+
+    const bool one = names.size() == 1;
+    const std::string title = one ? muse::trc("effects", "Plugin turned off") : muse::trc("effects", "Plugins turned off");
+    const std::string text = (one
+                              ? muse::qtrc("effects", "GlideMix closed unexpectedly last time while this plugin was running: %1.\n\n"
+                                                      "It has been turned off so it can't close GlideMix again. Projects that "
+                                                      "use it open without it.\n\nTo try it again: Effect > Plugin manager, "
+                                                      "tick \"Include plugins with errors\", then Rescan plugins.")
+                              : muse::qtrc("effects", "GlideMix closed unexpectedly last time while these plugins were running: %1.\n\n"
+                                                      "They have been turned off so they can't close GlideMix again. Projects that "
+                                                      "use them open without them.\n\nTo try them again: Effect > Plugin manager, "
+                                                      "tick \"Include plugins with errors\", then Rescan plugins."))
+                             .arg(names.join(QStringLiteral(", "))).toStdString();
+    interactive.warningSync(title, text);
 }
 
 void EffectsProvider::forgetPlugins(const EffectFilter& forget)

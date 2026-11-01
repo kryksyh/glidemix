@@ -198,6 +198,9 @@ void setTrackRulerType(const std::shared_ptr<au::project::IAudacityProject>& pro
 ProjectViewState::ProjectViewState(const muse::modularity::ContextPtr& ctx)
     : muse::Contextable(ctx)
 {
+    // GlideMix: the volume line shows from the start, so nobody has to find
+    // the automation button first (Chris, 2026-11-01). The button hides it.
+    m_clipGainAutomationEnabled.val = true;
 }
 
 void ProjectViewState::init(const std::shared_ptr<au3::IAu3Project>& project)

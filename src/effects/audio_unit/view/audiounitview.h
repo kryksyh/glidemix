@@ -62,6 +62,8 @@ private:
     int m_instanceId = -1;
 
     std::unique_ptr<AUControl> m_auControl;
+    //! GlideMix: effect id for PluginCrashGuard scopes
+    std::string m_guardId;
 
     int m_sidePadding = 0;
     int m_topPadding = 0;

@@ -50,9 +50,9 @@ if (OS_IS_WIN)
 
 elseif(OS_IS_LIN)
 
-    if (MUSE_APP_INSTALL_SUFFIX)
-        set(APP_OUTPUT_NAME "${EXECUTABLE_NAME}${MUSE_APP_INSTALL_SUFFIX}")
-    endif()
+    # GlideMix: the program is "glidemix" (the CMake target keeps its
+    # upstream name "audacity"; Audacity is Muse Group's trademark).
+    set(APP_OUTPUT_NAME "glidemix${MUSE_APP_INSTALL_SUFFIX}")
 
     # $ORIGIN/../lib holds the bundled extdeps libraries (see require_dep).
     set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib;${QT_INSTALL_LIBS}")

@@ -319,12 +319,14 @@ EffectId EffectChainPresets::resolve(const Effect& effect) const
         if (parts.size() < 2) {
             return {};
         }
+#ifdef Q_OS_MACOS
         for (const EffectMeta& meta : effectsProvider()->effectMetaList()) {
             if (isAudioUnitFamily(meta.family) && meta.vendor.toStdString() == parts[0]
                 && meta.title.toStdString() == parts[1] && meta.isLoadable()) {
                 return meta.id;
             }
         }
+#endif
         return {};
     }
     const EffectId id = String::fromStdString(effect.id);

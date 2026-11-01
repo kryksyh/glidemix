@@ -2,12 +2,15 @@
 * Audacity: A Digital Audio Editor
 */
 #include "musevstplugininstance.h"
+#include "guardedplugview.h"
 
 #include "au3-vst3/VST3Instance.h"
 #include "au3-vst3/VST3Wrapper.h"
 
 // from muse
 #include "vst/vsttypes.h"
+
+#include "au3-utility/PluginCrashGuard.h"
 
 #include "log.h"
 
@@ -17,6 +20,7 @@ MuseVstPluginInstance::MuseVstPluginInstance(const EffectId& effectId,
                                              const EffectInstanceId& instanceId,
                                              std::shared_ptr<VST3Instance> auVstInstance)
     : m_effectId(effectId),
+    m_resourceId(effectId.toStdString()),
     m_instanceId(instanceId),
     m_auVstInstance(auVstInstance)
 {
@@ -24,11 +28,7 @@ MuseVstPluginInstance::MuseVstPluginInstance(const EffectId& effectId,
 
 const muse::audio::AudioResourceId& MuseVstPluginInstance::resourceId() const
 {
-    static muse::audio::AudioResourceId id;
-    if (id.empty()) {
-        id = m_effectId.toStdString();
-    }
-    return id;
+    return m_resourceId;
 }
 
 const std::string& MuseVstPluginInstance::name() const
@@ -59,7 +59,15 @@ muse::vst::PluginViewPtr MuseVstPluginInstance::createView() const
         return nullptr;
     }
 
-    return owned(controller->createView(muse::vst::PluginEditorViewType::kEditor));
+    // GlideMix: the plug-in's window code runs here and in the view's
+    // attached(); a crash in either turns the plug-in off on the next start
+    const std::string guardId = m_effectId.toStdString();
+    PluginCrashGuard::MarkedScope guard(guardId);
+    muse::vst::PluginViewPtr view = owned(controller->createView(muse::vst::PluginEditorViewType::kEditor));
+    if (!view) {
+        return nullptr;
+    }
+    return muse::vst::PluginViewPtr(new GuardedPlugView(view, guardId), false);
 }
 
 muse::vst::PluginControllerPtr MuseVstPluginInstance::controller() const

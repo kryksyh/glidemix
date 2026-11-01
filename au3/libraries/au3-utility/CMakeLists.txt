@@ -41,6 +41,8 @@ set( SOURCES
    MessageBuffer.h
    ModuleConstants.cpp
    ModuleConstants.h
+   PluginCrashGuard.cpp
+   PluginCrashGuard.h
    MemoryStream.cpp
    MemoryStream.h
    Observer.cpp

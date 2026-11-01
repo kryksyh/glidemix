@@ -31,8 +31,8 @@ if (AU4_BUILD_CONFIGURATION STREQUAL "app-portable")
 endif()
 
 # Install desktop file (perform variable substitution first)
-configure_file(${CMAKE_CURRENT_LIST_DIR}/org.audacityteam.Audacity.desktop.in org.audacityteam.Audacity${MUSE_APP_INSTALL_SUFFIX}.desktop)
-install(FILES ${PROJECT_BINARY_DIR}/org.audacityteam.Audacity${MUSE_APP_INSTALL_SUFFIX}.desktop DESTINATION share/applications)
+configure_file(${CMAKE_CURRENT_LIST_DIR}/com.glidemix.GlideMix.desktop.in com.glidemix.GlideMix${MUSE_APP_INSTALL_SUFFIX}.desktop)
+install(FILES ${PROJECT_BINARY_DIR}/com.glidemix.GlideMix${MUSE_APP_INSTALL_SUFFIX}.desktop DESTINATION share/applications)
 
 # Install appdata file (perform variable substitution first)
 if("${MUSE_APP_INSTALL_SUFFIX}" MATCHES "-")
@@ -43,10 +43,10 @@ if("${MUSE_APP_INSTALL_SUFFIX}" MATCHES "-")
     )
 endif()
 
-configure_file(${CMAKE_CURRENT_LIST_DIR}/org.audacityteam.Audacity.appdata.xml.in org.audacityteam.Audacity${MUSE_APP_INSTALL_SUFFIX}.appdata.xml)
-install(FILES ${PROJECT_BINARY_DIR}/org.audacityteam.Audacity${MUSE_APP_INSTALL_SUFFIX}.appdata.xml DESTINATION share/metainfo)
+configure_file(${CMAKE_CURRENT_LIST_DIR}/com.glidemix.GlideMix.appdata.xml.in com.glidemix.GlideMix${MUSE_APP_INSTALL_SUFFIX}.appdata.xml)
+install(FILES ${PROJECT_BINARY_DIR}/com.glidemix.GlideMix${MUSE_APP_INSTALL_SUFFIX}.appdata.xml DESTINATION share/metainfo)
 
-# Add .AUP4 to MIME database (informs system that filetypes .AUP4 are Audacity files)
+# Add .AUP4 to MIME database (GlideMix project files)
 configure_file(${CMAKE_CURRENT_LIST_DIR}/audacity.xml.in audacity${MUSE_APP_INSTALL_SUFFIX}.xml)
 install(FILES ${PROJECT_BINARY_DIR}/audacity${MUSE_APP_INSTALL_SUFFIX}.xml DESTINATION share/mime/packages COMPONENT doc)
 

@@ -53,6 +53,7 @@ private:
     void updatePlaybackMeterVisibility();
 
     bool m_inited = false;
+    bool m_projectTabOpened = false;
 };
 }
 

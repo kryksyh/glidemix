@@ -153,6 +153,9 @@ private:
         double sequenceStart = 0.0;   // project seconds of file second 0
         double ratio = 1.0;           // project seconds per file second
     };
+    //! The file's loudness, one average per bar from `bar1` (the waveform
+    //! overview's peaks); empty without a waveform.
+    std::vector<double> barLevels(const Grid& grid, double bar1, double bar, double fileSeconds) const;
     SourceAnchors sourceAnchors(const trackedit::ClipKey& clip) const;
     //! Anchor source seconds being dragged, by file (not yet saved).
     mutable QHash<QString, std::pair<double, double> > m_anchorDrag;

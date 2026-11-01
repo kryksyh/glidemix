@@ -93,6 +93,9 @@ private:
     std::chrono::steady_clock::time_point m_pollQuietUntil;
     uint64_t m_hostWritesSeen = 0;
     void pollParameters();
+
+    //! GlideMix: effect id for PluginCrashGuard scopes
+    std::string m_guardId;
 };
 
 class AudioUnitViewModelFactory : public EffectViewModelFactory<AudioUnitViewModel>

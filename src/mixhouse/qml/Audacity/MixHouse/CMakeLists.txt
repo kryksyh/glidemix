@@ -16,6 +16,8 @@ qt_add_qml_module(mixhouse_qml
         mixhousetempolanemodel.h
         mixhousetransitionzonesmodel.cpp
         mixhousetransitionzonesmodel.h
+        mixhouseprojectlistmodel.cpp
+        mixhouseprojectlistmodel.h
         mixhousegrideditormodel.cpp
         mixhousegrideditormodel.h
         mixhousegrideditorview.cpp
@@ -30,6 +32,7 @@ qt_add_qml_module(mixhouse_qml
         mixhousestatusmodel.h
     QML_FILES
         MixHouseLibraryPanel.qml
+        MixHouseProjectPanel.qml
         MixHouseGridEditorPanel.qml
         SmartPlaylistEditor.qml
         MixHouseStatusLine.qml

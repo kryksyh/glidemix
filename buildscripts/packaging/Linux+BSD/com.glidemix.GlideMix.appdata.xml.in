@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <developer_name>GlideMix</developer_name>
+  <id>com.glidemix.GlideMix@MUSE_APP_INSTALL_SUFFIX@</id>
+  <launchable type="desktop-id">com.glidemix.GlideMix@MUSE_APP_INSTALL_SUFFIX@.desktop</launchable>
+  <project_license>GPL-3.0-only</project_license>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>GlideMix</name>
+  <summary>Prepare DJ mixes, mixtapes and radio shows</summary>
+  <description>
+    <p>GlideMix is for DJs who prepare mixes ahead of time: mixtapes, radio
+    shows and sets.</p>
+    <ul>
+      <li>A music library that analyses BPM, beat grid, key and energy</li>
+      <li>Songs placed on a timeline and linked by their intro and outro</li>
+      <li>Beat-matched transitions with volume and EQ curves you can edit</li>
+      <li>A playlist of the mix you can reorder</li>
+      <li>Export the finished mix as one audio file</li>
+    </ul>
+    <p>GlideMix is based on Audacity. Audacity is a trademark of Muse Group;
+    GlideMix is an independent project, not affiliated with or endorsed by it.</p>
+  </description>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <url type="homepage">https://glidemix.com/</url>
+  <url type="help">https://glidemix.com/help</url>
+  <url type="bugtracker">https://github.com/cristitm76/glidemix-releases/issues</url>
+</component>

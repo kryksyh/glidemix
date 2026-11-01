@@ -87,6 +87,11 @@ struct MixHouseTransitionSpec {
     MixHouseNoiseSweep noise = MixHouseNoiseSweep::None;
     MixHouseEffectOut effectOut = MixHouseEffectOut::None;
     bool builtIn = false;
+    /// GlideMix's blend (Chris, 2026-11-01): the incoming song fades in before
+    /// the anchor and is at full volume on it, the outgoing one is full up to
+    /// the anchor and fades out after it, and the bass changes hands exactly
+    /// there. Off: both fade over the same bars after the anchor.
+    bool blendAroundAnchor = false;
 };
 
 /// Turns a spec into the concrete markers the transition code writes onto the
@@ -113,4 +118,8 @@ std::string validateTransitionSpec(const MixHouseTransitionSpec& spec);
 
 /// The name Mix Now uses when nothing else is chosen.
 inline constexpr const char* kDefaultMixNowTransition = "Quick crossfade + bass swap";
+//! What a new pair of songs gets, and Mix Now uses, until the user picks
+//! another. Chris (2026-11-01): the S-curves beat MixMeister's straight
+//! Beatmix lines, which stay in the menus.
+inline constexpr const char* kDefaultTransition = kDefaultMixNowTransition;
 }

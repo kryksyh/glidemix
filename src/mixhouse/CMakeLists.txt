@@ -123,6 +123,11 @@ elseif (OS_IS_WIN)
     set_source_files_properties(${MIXHOUSE_PREVIEW_PLAYER_SRC} PROPERTIES
         SKIP_UNITY_BUILD_INCLUSION ON
         SKIP_PRECOMPILE_HEADERS ON)
+elseif (OS_IS_LIN)
+    # Decoded by the analysis decoder, played on its own PortAudio stream.
+    set(MIXHOUSE_PREVIEW_PLAYER_SRC ${CMAKE_CURRENT_LIST_DIR}/internal/platform/linux/mixhousepreviewplayer.cpp)
+    set_source_files_properties(${MIXHOUSE_PREVIEW_PLAYER_SRC} PROPERTIES
+        SKIP_UNITY_BUILD_INCLUSION ON)
 else()
     set(MIXHOUSE_PREVIEW_PLAYER_SRC ${CMAKE_CURRENT_LIST_DIR}/internal/platform/stub/mixhousepreviewplayer.cpp)
 endif()
@@ -139,8 +144,11 @@ set(MIXHOUSE_ALIGNER_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetrackaligner.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetrackaligner.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseprojectaligner.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseprojectaligner.h)
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseprojectaligner.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetransitionnames.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetransitionnames.h)
 set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseprojectaligner.cpp
+                            ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetransitionnames.cpp
                             ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousebeatgrids.cpp
                             ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseclipcolors.cpp
                             ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousestems.cpp
@@ -169,6 +177,10 @@ endif()
 if (OS_IS_WIN)
     # Media Foundation: library preview and the m4a/aac/alac decoder.
     list(APPEND MODULE_LINK mfplat mfreadwrite mfuuid ole32)
+endif()
+if (OS_IS_LIN)
+    # FFmpeg (loaded at run time): the m4a/aac/alac decoder for analysis.
+    list(APPEND MODULE_LINK au3-ffmpeg-support portaudio::portaudio)
 endif()
 
 # Beat This! neural downbeat detection (thirdparty/beat_this_cpp,

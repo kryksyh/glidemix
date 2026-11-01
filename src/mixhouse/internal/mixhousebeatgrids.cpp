@@ -302,6 +302,41 @@ std::vector<IMixHouseBeatGrids::WaveColumn> MixHouseBeatGrids::clipWaveColumns(c
     return out;
 }
 
+std::vector<double> MixHouseBeatGrids::barLevels(const Grid& grid, double bar1, double bar, double fileSeconds) const
+{
+    std::vector<double> levels;
+    if (bar <= 0.0 || fileSeconds <= bar1) {
+        return levels;
+    }
+    auto cached = m_waveCache.constFind(grid.filePath);
+    if (cached == m_waveCache.constEnd()) {
+        MixHouseWaveformOverview wave;
+        if (rekordboxPhrases()) {
+            wave = rekordboxPhrases()->waveformDetail(grid.filePath, grid.bpm);
+        }
+        if (!wave.valid && library() && grid.trackId >= 0) {
+            wave = decodeWaveformOverview(library()->overviewAnalysisBlob(grid.trackId));
+        }
+        cached = m_waveCache.insert(grid.filePath, wave);
+    }
+    const size_t stored = cached->valid ? cached->all.size() / 2 : 0;
+    if (stored == 0) {
+        return levels;
+    }
+    // The stored columns span the whole file; one average per bar from bar 1.
+    const double perSecond = static_cast<double>(stored) / fileSeconds;
+    for (double t = bar1; t < fileSeconds; t += bar) {
+        const size_t i0 = std::min(stored, static_cast<size_t>(std::max(0.0, t * perSecond)));
+        const size_t i1 = std::min(stored, std::max(i0 + 1, static_cast<size_t>((t + bar) * perSecond)));
+        double sum = 0.0;
+        for (size_t i = i0; i < i1; ++i) {
+            sum += std::max(cached->all[2 * i], cached->all[2 * i + 1]);
+        }
+        levels.push_back(i1 > i0 ? sum / static_cast<double>(i1 - i0) : 0.0);
+    }
+    return levels;
+}
+
 bool MixHouseBeatGrids::clipFile(const trackedit::ClipKey& key, ClipFile& out) const
 {
     const Grid grid = gridForClipName(clipName(key), false);
@@ -1022,31 +1057,91 @@ MixHouseBeatGrids::SourceAnchors MixHouseBeatGrids::sourceAnchors(const trackedi
         return result;
     }
 
-    // Defaults. Intro: bar 1. Outro: rekordbox's (or the edited) Outro phrase
-    // start, else the last 8-bar phrase boundary that leaves 8 bars to play.
+    // Defaults, MixMeister's Beatmix anchors on GlideMix's phrases
+    // (docs/mixmeister-research.md 8.1): both on the grid, in phrase steps
+    // from bar 1. Outro: rekordbox's (or the edited) Outro phrase start, else
+    // the last phrase line that still leaves a phrase to play. Intro: where
+    // the leading Intro phrases end, else bar 1. A phrase that isn't loud
+    // enough (8 bars averaging under 15 % of the loudest bar) is stepped over,
+    // and a song too short for 8-bar phrases tries 4, 2, then 1.
     const double beat = 60.0 / grid.bpm;
+    const double bar = 4.0 * beat;
     const double bar1 = grid.downbeatSec >= 0.0 ? grid.downbeatSec : std::max(0.0, grid.firstBeatSec);
-    const double phrase = 32.0 * beat;
-    double outro = -1.0;
-    for (const MixHousePhrase& p : phrasesFor(grid)) {
-        if (p.label.startsWith(QStringLiteral("Outro")) && p.startSec > bar1 + phrase) {
-            outro = bar1 + std::round((p.startSec - bar1) / (4.0 * beat)) * 4.0 * beat;
+    const std::vector<MixHousePhrase> phrases = phrasesFor(grid);
+    const std::vector<double> levels = barLevels(grid, bar1, bar, fileSeconds);   // empty: no waveform yet
+    const double loudest = levels.empty() ? 0.0 : *std::max_element(levels.begin(), levels.end());
+    const auto loudEnough = [&](double from, int bars) {
+        if (loudest <= 0.0) {
+            return true;   // nothing to judge by: every phrase counts
+        }
+        const long long first = std::llround((from - bar1) / bar);
+        double sum = 0.0;
+        for (long long b = first; b < first + bars; ++b) {
+            sum += (b >= 0 && b < static_cast<long long>(levels.size())) ? levels[static_cast<size_t>(b)] : 0.0;
+        }
+        return sum / bars >= 0.15 * loudest;
+    };
+    const auto onBar = [&](double sec) { return bar1 + std::round((sec - bar1) / bar) * bar; };
+
+    double labelOutro = -1.0;
+    for (const MixHousePhrase& p : phrases) {
+        if (p.label.startsWith(QStringLiteral("Outro")) && p.startSec > bar1 + 8.0 * bar) {
+            labelOutro = onBar(p.startSec);
             break;
         }
     }
-    if (outro < 0.0) {
-        const double phrases = std::floor((fileSeconds - bar1 - phrase) / phrase);
-        outro = bar1 + std::max(1.0, phrases) * phrase;
-    }
-    // Intro: where the leading Intro phrases end (the parked app's mixInSec),
-    // on a bar; bar 1 without them.
-    double intro = bar1;
-    for (const MixHousePhrase& p : phrasesFor(grid)) {
+    double labelIntro = bar1;
+    for (const MixHousePhrase& p : phrases) {
         if (!p.label.startsWith(QStringLiteral("Intro"))) {
             if (p.startSec > bar1 + beat) {
-                intro = bar1 + std::round((p.startSec - bar1) / (4.0 * beat)) * 4.0 * beat;
+                labelIntro = onBar(p.startSec);
             }
             break;
+        }
+    }
+
+    double intro = bar1;
+    double outro = bar1 + bar;
+    for (const int bars : { 8, 4, 2, 1 }) {
+        const double phrase = bars * bar;
+        double out = labelOutro;
+        if (out >= 0.0) {
+            // A labelled Outro whose music has already faded out (rekordbox
+            // marks where the outro begins, often near-silent) left a gap of
+            // silence in every blend: the outgoing song must still play
+            // during the mix, as MixMeister's last-loud-phrase rule ensures.
+            while (out - phrase > labelIntro && !loudEnough(out, bars)) {
+                out -= phrase;
+            }
+        } else {
+            // B1: the last phrase line inside the song; back while the phrase before it is quiet.
+            double b1 = bar1 + std::floor((fileSeconds - bar1) / phrase) * phrase;
+            while (b1 - 2.0 * phrase > bar1 && !loudEnough(b1 - phrase, bars)) {
+                b1 -= phrase;
+            }
+            out = b1 - phrase;
+        }
+        double in = labelIntro;
+        while (in + phrase < out && !loudEnough(in, bars)) {
+            in += phrase;   // a quiet first phrase isn't where the song has arrived
+        }
+        // The IN is where the song has arrived: its first bar with its music
+        // really playing, not a label on a still-quiet lead-in. The blend is
+        // complete there (the song fades in before it), so a quiet stretch
+        // after it left a hole in the mix (Chris, 2026-11-01).
+        const double levelFloor = 0.4 * loudest;
+        for (int walked = 0; walked < 16 && in + phrase < out; ++walked) {
+            const long long b = std::llround((in - bar1) / bar);
+            if (loudest <= 0.0 || b < 0 || b >= static_cast<long long>(levels.size())
+                || levels[static_cast<size_t>(b)] >= levelFloor) {
+                break;
+            }
+            in += bar;
+        }
+        intro = in;
+        outro = out;
+        if (in + phrase <= out) {
+            break;   // the intro's mix range ends before the outro's begins
         }
     }
     if (intro >= outro - beat) {

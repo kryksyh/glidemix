@@ -35,6 +35,10 @@ class EffectsProvider : public IEffectsProvider, public muse::async::Asyncable
 public:
     void deinit();
 
+    //! GlideMix: ids of plug-ins that were running when the last run crashed
+    //! (PluginCrashGuard). initOnce turns them off and says so.
+    void setPluginsThatCrashedLastRun(std::vector<std::string> ids);
+
     void initOnce(const muse::modularity::ContextPtr& ctx, muse::IInteractive& interactive,
                   muse::audioplugins::IRegisterAudioPluginsScenario& registerAudioPluginsScenario) override;
 
@@ -60,6 +64,7 @@ public:
 
 private:
     void reloadEffects();
+    void turnOffPluginsThatCrashedLastRun(muse::IInteractive& interactive);
     IEffectLoaderPtr loader(const EffectId& effectId) const;
 
     enum NewPluginsRegistered {
@@ -74,6 +79,7 @@ private:
     void doSave(EffectFilter removeFromConfig = nullptr);
 
     EffectMetaList m_effects;
+    std::vector<std::string> m_crashedLastRun;
     muse::async::Notification m_effectsChanged;
 };
 }

@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 
 #include "mixhouse/mixhouseaudiosource.h"
 #include "mixhouse/mixhousefiletags.h"
@@ -57,6 +58,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
@@ -64,6 +66,7 @@
 #include <QSqlQuery>
 #include <QStandardPaths>
 #include <QThread>
+#include <QTimer>
 #include <QVariant>
 #include <QXmlStreamReader>
 #include <QUrl>
@@ -221,9 +224,12 @@ const char* const kKeyIdToCamelotText[25] = {
 }
 
 static const char* kConnectionName = "mixhouse_library";
+//! After the window is up: the fill reads every file missing a sample rate.
+static constexpr int kSampleRateFillDelayMs = 5000;
 
 MixHouseLibrary::~MixHouseLibrary()
 {
+    *m_alive = false;
     // A running QThread must be stopped before its destructor runs (Qt
     // itself asserts/aborts otherwise) -- a real scenario if the app quits
     // while a background scan is still going. Ask the worker to wrap up
@@ -571,6 +577,8 @@ bool MixHouseLibrary::ensureOpen() const
     // Both exist because a silent failure here is invisible until much later:
     // a beatgrid that does not decode looks like "no beatgrid", and a decoder that
     // disagrees with the file would make every analyzer fed by it wrong.
+    QElapsedTimer selfCheckTimer;
+    selfCheckTimer.start();
     TrackQuery probe;
     probe.limit = 200;
     const MixHouseTrackList sample = tracks(probe);
@@ -588,31 +596,147 @@ bool MixHouseLibrary::ensureOpen() const
                << " decoded in a " << sample.size() << "-track sample";
     }
 
-    int probed = 0, agree = 0;
+    // The decoder check opens files, which on a sleeping external drive took
+    // 4 s of a frozen window (2026-11-01): it runs on its own thread.
+    struct DecoderCheck {
+        QString filePath;
+        QString title;
+        int sampleRate = 0;
+        double durationSec = 0.0;
+    };
+    std::vector<DecoderCheck> checks;
     for (const MixHouseTrack& t : sample) {
-        if (t.filePath.isEmpty() || t.sampleRate <= 0 || t.durationSec <= 0.0) {
-            continue;
+        if (!t.filePath.isEmpty() && t.sampleRate > 0 && t.durationSec > 0.0) {
+            checks.push_back({ t.filePath, t.title, t.sampleRate, t.durationSec });
         }
-        const AudioInfo ai = probeAudioFile(t.filePath);
-        if (!ai.valid) {
-            LOGW() << "decode failed: " << t.filePath << " -- " << ai.error;
-            continue;
-        }
-        ++probed;
-        // Duration tolerance of 1s: container headers and decoders disagree
-        // slightly on trailing partial frames, which is not an error.
-        if (ai.sampleRate == t.sampleRate && std::abs(ai.durationSec - t.durationSec) < 1.0) {
-            ++agree;
-        } else {
-            LOGW() << "decode mismatch: " << t.title
-                   << " db(sr=" << t.sampleRate << " dur=" << t.durationSec << ")"
-                   << " decoded(sr=" << ai.sampleRate << " dur=" << ai.durationSec << ")";
-        }
-        if (probed >= 8) { break; }
     }
-    LOGI() << "GlideMix decoder: " << agree << "/" << probed
-           << " files agree with the database on sample rate and duration";
+    LOGI() << "GlideMix library self-check on open: " << selfCheckTimer.elapsed() << " ms";
+    std::thread([checks = std::move(checks)]() {
+        int probed = 0, agree = 0;
+        for (const DecoderCheck& t : checks) {
+            const AudioInfo ai = probeAudioFile(t.filePath);
+            if (!ai.valid) {
+                LOGW() << "decode failed: " << t.filePath << " -- " << ai.error;
+                continue;
+            }
+            ++probed;
+            // Duration tolerance of 1s: container headers and decoders disagree
+            // slightly on trailing partial frames, which is not an error.
+            if (ai.sampleRate == t.sampleRate && std::abs(ai.durationSec - t.durationSec) < 1.0) {
+                ++agree;
+            } else {
+                LOGW() << "decode mismatch: " << t.title
+                       << " db(sr=" << t.sampleRate << " dur=" << t.durationSec << ")"
+                       << " decoded(sr=" << ai.sampleRate << " dur=" << ai.durationSec << ")";
+            }
+            if (probed >= 8) { break; }
+        }
+        LOGI() << "GlideMix decoder: " << agree << "/" << probed
+               << " files agree with the database on sample rate and duration";
+    }).detach();
+
+    // Not from inside ensureOpen(): the fill opens the library for writing.
+    QTimer::singleShot(kSampleRateFillDelayMs, qApp, [this, alive = m_alive]() {
+        if (*alive) {
+            const_cast<MixHouseLibrary*>(this)->fillMissingSampleRates();
+        }
+    });
     return true;
+}
+
+// Tracks imported from rekordbox or added by this app's scanner have a
+// beatgrid but no sample rate, and a beatgrid can't be read without it (frame
+// positions). 34,695 of a 38,346-track library had none, and filling them in
+// while listing tracks read every file on the UI thread, again each run. Here
+// each file is read once, ever, on its own thread, and the rate is stored.
+void MixHouseLibrary::fillMissingSampleRates()
+{
+    // One per run, not per instance (there is one library per project window).
+    static std::atomic<bool> started { false };
+    if (started.exchange(true) || !ensureWritable()) {
+        return;
+    }
+    std::thread([this, path = m_path, alive = m_alive]() {
+        QElapsedTimer timer;
+        timer.start();
+        const QString connection = QStringLiteral("mixhouse_samplerate_fill");
+        int missing = 0, filled = 0, unreadable = 0;
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connection);
+            db.setDatabaseName(path);
+            if (db.open()) {
+                QSqlQuery(db).exec(QStringLiteral("PRAGMA busy_timeout=5000"));
+                std::vector<std::pair<int, QString> > rows;
+                {
+                    QSqlQuery sel(db);
+                    sel.setForwardOnly(true);
+                    if (sel.exec(QStringLiteral(
+                            "SELECT l.id, t.location FROM library l JOIN track_locations t ON t.id = l.location "
+                            "WHERE (l.samplerate IS NULL OR l.samplerate <= 0) AND l.beats IS NOT NULL "
+                            "AND length(l.beats) > 0 AND t.location IS NOT NULL"))) {
+                        while (sel.next()) {
+                            rows.emplace_back(sel.value(0).toInt(), sel.value(1).toString());
+                        }
+                    }
+                }
+                missing = static_cast<int>(rows.size());
+                if (missing > 0) {
+                    LOGI() << "GlideMix: reading the sample rate of " << missing << " tracks in the background";
+                }
+                // Short write transactions: the main thread writes to the same file.
+                QSqlQuery update(db);
+                update.prepare(QStringLiteral("UPDATE library SET samplerate = :sr WHERE id = :id"));
+                std::vector<std::pair<int, int> > batch;
+                const auto flush = [&]() {
+                    if (batch.empty()) {
+                        return;
+                    }
+                    db.transaction();
+                    for (const auto& [id, rate] : batch) {
+                        update.bindValue(QStringLiteral(":sr"), rate);
+                        update.bindValue(QStringLiteral(":id"), id);
+                        if (!update.exec()) {
+                            LOGW() << "sample rate fill: update failed: " << update.lastError().text();
+                        }
+                    }
+                    db.commit();
+                    batch.clear();
+                };
+                for (const auto& [id, file] : rows) {
+                    if (!*alive) {
+                        break;
+                    }
+                    const AudioInfo info = probeAudioFile(file);
+                    if (info.valid && info.sampleRate > 0) {
+                        batch.emplace_back(id, info.sampleRate);
+                        ++filled;
+                    } else {
+                        ++unreadable;   // missing or unplugged: tried again next run
+                    }
+                    if (batch.size() >= 200) {
+                        flush();
+                    }
+                }
+                flush();
+                db.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(connection);
+        if (missing == 0) {
+            return;
+        }
+        LOGI() << "GlideMix: sample rates filled in for " << filled << " of " << missing << " tracks ("
+               << unreadable << " unreadable) in " << timer.elapsed() << " ms";
+        if (filled == 0) {
+            return;
+        }
+        QTimer::singleShot(0, qApp, [this, alive]() {
+            if (*alive) {
+                m_probedSampleRates.clear();
+                m_libraryChanged.notify();   // the open views get their beatgrids
+            }
+        });
+    }).detach();
 }
 
 QString MixHouseLibrary::databasePath() const { return m_path; }
@@ -637,6 +761,9 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
     if (!ensureOpen()) {
         return out;
     }
+    QElapsedTimer timer;
+    timer.start();
+    int headerReads = 0;
 
     // Sorting is done in SQL, not on an already-truncated page: sorting a 2000-row
     // slice of a 1372-track library would sort the wrong rows.
@@ -908,20 +1035,6 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
         t.downbeatConfidence = q.value(35).isNull() ? 0.0 : q.value(35).toDouble();
         t.downbeatDetector = q.value(36).toString();
         t.energy       = q.value(37).isNull() ? 0.0 : q.value(37).toDouble();
-        if (t.sampleRate <= 0 && !t.beatsBlob.isEmpty() && !t.filePath.isEmpty()) {
-            // Tracks added by this app's own scanner never had samplerate
-            // filled in, and a beatgrid stores its beats as frame positions:
-            // without the rate every grid read as "first beat at 0", which
-            // put a whole track out of phase. Read it from the file header
-            // (once per file per session).
-            auto cached = m_probedSampleRates.find(t.filePath);
-            if (cached == m_probedSampleRates.end()) {
-                const AudioInfo info = probeAudioFile(t.filePath);
-                cached = m_probedSampleRates.insert(t.filePath, info.valid ? info.sampleRate : 0);
-            }
-            t.sampleRate = cached.value();
-        }
-        t.beats        = decodeBeats(t.beatsBlob, t.beatsVersion, t.sampleRate);
         if (!query.fileBaseName.isEmpty() && QFileInfo(t.filePath).completeBaseName() != query.fileBaseName) {
             continue;
         }
@@ -958,6 +1071,36 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
         if (query.limit > 0 && static_cast<int>(out.size()) > query.limit) {
             out.resize(static_cast<size_t>(query.limit));
         }
+    }
+
+    // Beatgrids only for the rows kept: a text sort fetches the whole library.
+    // A beatgrid stores its beats as frame positions, so it needs the sample
+    // rate, and tracks added by this app's own scanner (or imported from
+    // rekordbox) never had it filled in. Reading it from the file header is
+    // only done for a one-track lookup (placing a song, the grid editor); a
+    // list never opens files -- sorting 38k tracks by Artist read 34,674
+    // headers off an external drive and froze the app for 125 s (2026-11-01).
+    // fillMissingSampleRates() writes them into the library in the background
+    // instead; until it gets to a row, that row has no grid.
+    const bool oneTrack = query.trackId >= 0 || !query.location.isEmpty() || !query.fileBaseName.isEmpty();
+    for (MixHouseTrack& t : out) {
+        if (t.sampleRate <= 0 && !t.beatsBlob.isEmpty() && !t.filePath.isEmpty()) {
+            auto cached = m_probedSampleRates.find(t.filePath);
+            if (cached == m_probedSampleRates.end() && oneTrack) {
+                const AudioInfo info = probeAudioFile(t.filePath);
+                ++headerReads;
+                cached = m_probedSampleRates.insert(t.filePath, info.valid ? info.sampleRate : 0);
+            }
+            if (cached != m_probedSampleRates.end()) {
+                t.sampleRate = cached.value();
+            }
+        }
+        t.beats = decodeBeats(t.beatsBlob, t.beatsVersion, t.sampleRate);
+    }
+
+    if (timer.elapsed() >= 50) {
+        LOGI() << "GlideMix library query: " << out.size() << " rows in " << timer.elapsed() << " ms, "
+               << headerReads << " file header reads";
     }
     return out;
 }
@@ -1306,13 +1449,15 @@ bool MixHouseLibrary::backupOnce()
     }
     // Before the FIRST write of a session, copy the database. This is the project's
     // live collection and a bad write would be unrecoverable otherwise.
+    QElapsedTimer timer;
+    timer.start();
     const QString backup = m_path + QStringLiteral(".mixhouse-backup");
     QFile::remove(backup);
     if (!QFile::copy(m_path, backup)) {
         LOGE() << "could not back up the library before writing: " << backup;
         return false;
     }
-    LOGI() << "library backed up to " << backup;
+    LOGI() << "library backed up to " << backup << " in " << timer.elapsed() << " ms";
     m_backedUp = true;
     return true;
 }

@@ -18,6 +18,7 @@
 #include "au3-channel/Channel.h"
 #include "au3-components/EffectInterface.h"
 #include "au3-utility/MessageBuffer.h"
+#include "au3-utility/PluginCrashGuard.h"
 #include "au3-module-manager/PluginManager.h"
 #include "au3-math/SampleCount.h"
 #include <QUuid>
@@ -368,6 +369,7 @@ RealtimeEffectState& RealtimeEffectState::operator=(const RealtimeEffectState& o
     if (!mPlugin || !other.mPlugin) {
         return *this;
     }
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     CommandParameters params;
     if (other.mPlugin->SaveSettings(mMainSettings.settings, params)) {
         mPlugin->LoadSettings(params, mMainSettings.settings);
@@ -385,6 +387,7 @@ std::shared_ptr<RealtimeEffectState> RealtimeEffectState::Clone(bool newIdentity
 {
     auto pNewState{ RealtimeEffectState::make_shared(PluginID {}) };
     pNewState->mID = mID;
+    pNewState->mGuardId = mGuardId;
     pNewState->mPlugin = mPlugin;
     if (mPlugin) {
         pNewState->mOutputs = mPlugin->MakeOutputs();
@@ -418,6 +421,13 @@ const PluginID& RealtimeEffectState::GetID() const noexcept
 const EffectInstanceFactory* RealtimeEffectState::GetEffect()
 {
     if (!mPlugin) {
+        // GlideMix: loading a plug-in runs its code; if that crashes the
+        // app, the next start turns it off (PluginCrashGuard)
+        // (rewritten only when the id changed: the audio thread reads it)
+        if (std::string guardId = mID.ToStdString(wxConvUTF8); guardId != mGuardId) {
+            mGuardId = std::move(guardId);
+        }
+        PluginCrashGuard::MarkedScope guard(mGuardId);
         mPlugin = EffectFactory::Call(mID);
         if (mPlugin) {
             // Also make EffectSettings, but preserve activation
@@ -434,6 +444,7 @@ const EffectInstanceFactory* RealtimeEffectState::GetEffect()
 
 std::shared_ptr<EffectInstance> RealtimeEffectState::MakeInstance()
 {
+    PluginCrashGuard::MarkedScope guard(mGuardId);
     mMovedMessage.reset();
     mMessage.reset();
     auto result = mPlugin->MakeInstance();
@@ -457,6 +468,7 @@ RealtimeEffectState::EnsureInstance(double sampleRate, size_t audioThreadBufferS
         return {};
     }
 
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     auto pInstance = mwInstance.lock();
     if (!mInitialized) {
         //! copying settings in the main thread while worker isn't yet running
@@ -547,6 +559,7 @@ RealtimeEffectState::AddGroup(
     if (!mPlugin) {
         return {};
     }
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     auto first = mCurrentProcessor;
     const auto numAudioIn = pInstance->GetAudioInCount();
     const auto numAudioOut = pInstance->GetAudioOutCount();
@@ -573,6 +586,7 @@ RealtimeEffectState::AddGroup(
 
 bool RealtimeEffectState::ProcessStart(bool running)
 {
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     // Get state changes from the main thread
     // Note that it is only here that the answer of IsActive() may be changed,
     // and it is important that for each state the answer is unchanging in one
@@ -621,6 +635,7 @@ bool RealtimeEffectState::ProcessStart(bool running)
 /*! The iteration over channels in AddGroup and Process must be the same */
 void RealtimeEffectState::PrepareAutomationTiming(size_t maxFrames, double sampleRate)
 {
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     const auto instance = GetInstance();
     const auto latency = instance ? instance->GetLatency(GetSettings(), sampleRate) : 0;
     mAutomationTimeQueue.Prepare(maxFrames, latency);
@@ -648,6 +663,7 @@ size_t RealtimeEffectState::Process(
     const float* const* inbuf, float* const* outbuf, float* const dummybuf,
     size_t numSamples, const double* projectTimes)
 {
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     const auto pInstance = mwInstance.lock();
     const auto& pair = mGroups[group];
     const float** const clientIn
@@ -763,6 +779,7 @@ size_t RealtimeEffectState::Process(
 
 bool RealtimeEffectState::ProcessEnd()
 {
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     auto pInstance = mwInstance.lock();
     bool result = pInstance
                   &&// Assuming we are in a processing scope, use the worker settings
@@ -807,6 +824,7 @@ void RealtimeEffectState::SetActive(bool active)
 
 bool RealtimeEffectState::Finalize() noexcept
 {
+    PluginCrashGuard::CallScope guard(mGuardId.c_str());
     mGroups.clear();
     mCurrentProcessor = 0;
 

@@ -56,6 +56,11 @@ muse::String utils::effectFamilyLabel(EffectFamily family)
     if (family == EffectFamily::Extension) {
         return muse::mtrc("effects", "Extension");
     }
+    //! GlideMix: the built-in effects' family is stored as "Audacity"
+    //! (effectFamilyToString); shown as what it is, not a trademark.
+    if (family == EffectFamily::Builtin) {
+        return muse::mtrc("effects", "Built-in");
+    }
 
     return effectFamilyToString(family);
 }

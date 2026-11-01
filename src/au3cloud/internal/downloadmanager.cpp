@@ -52,7 +52,7 @@ void DownloadManager::startDownload(const std::string& id, const std::string& ur
     auto buffer = std::make_shared<QBuffer>();
 
     muse::network::RequestHeaders headers;
-    headers.rawHeaders["User-Agent"] = "Audacity";
+    headers.rawHeaders["User-Agent"] = "GlideMix";
 
     auto retVal = manager->get(QUrl(QString::fromStdString(url)),
                                std::static_pointer_cast<QIODevice>(buffer),

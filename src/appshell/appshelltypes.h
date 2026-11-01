@@ -33,6 +33,8 @@ static const DockName TRACKS_PANEL_NAME("tracksPanel");
 static const DockName HISTORY_PANEL_NAME("historyPanel");
 // MixHouse DJ 2: must match the DockPanel objectName in ProjectPage.qml.
 static const DockName MIXHOUSE_LIBRARY_PANEL_NAME("mixHouseLibraryPanel");
+// GlideMix: the Project tab (MixMeister's playlist), beside the library.
+static const DockName MIXHOUSE_PROJECT_PANEL_NAME("mixHouseProjectPanel");
 static const DockName PLAYBACK_METER_PANEL_NAME("playbackMeterPanel");
 
 // Toolbars:

@@ -185,7 +185,7 @@ void OAuthHttpServerReplyHandler::Impl::sendRedirect(const QUrl& url)
     }
 
     const QUrl target = url.isEmpty() ? m_redirectUrl : url;
-    const QString text = muse::qtrc("cloud", "Sign in successful! You’re good to go back to Audacity.");
+    const QString text = muse::qtrc("cloud", "Sign in successful! You’re good to go back to GlideMix.");
     const QByteArray status = target.isEmpty() ? QByteArrayLiteral("200 OK") : QByteArrayLiteral("302 Found");
 
     answerPendingClient(makeResponse(status, target, text));
@@ -197,7 +197,7 @@ void OAuthHttpServerReplyHandler::Impl::sendError()
         return;
     }
 
-    const QString text = muse::qtrc("cloud", "Sign in failed. Please return to Audacity and try again.");
+    const QString text = muse::qtrc("cloud", "Sign in failed. Please return to GlideMix and try again.");
     answerPendingClient(makeResponse(QByteArrayLiteral("200 OK"), QUrl(), text));
 }
 

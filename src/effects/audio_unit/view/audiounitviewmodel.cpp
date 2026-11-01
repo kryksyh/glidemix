@@ -21,6 +21,7 @@
 #include "au3-audio-unit/AudioUnitInstance.h"
 #include "au3-audio-unit/AudioUnitUtils.h"
 #include "au3-audio-unit/AudioUnitEffectBase.h"
+#include "au3-utility/PluginCrashGuard.h"
 
 #include "log.h"
 
@@ -63,6 +64,7 @@ AudioUnitViewModel::AudioUnitViewModel(QObject* parent, int instanceId)
 
 AudioUnitViewModel::~AudioUnitViewModel()
 {
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     checkSettingChangesFromUi();
     deinit();
 }
@@ -72,6 +74,11 @@ void AudioUnitViewModel::doInit()
     IF_ASSERT_FAILED(instanceId() >= 0) {
         return;
     }
+
+    // GlideMix: a crash while the window opens turns the plug-in off on the
+    // next start (PluginCrashGuard)
+    m_guardId = instancesRegister()->effectIdByInstanceId(instanceId()).toStdString();
+    PluginCrashGuard::MarkedScope guard(m_guardId);
 
     m_instance = std::dynamic_pointer_cast<AudioUnitInstance>(instancesRegister()->instanceById(instanceId()));
     IF_ASSERT_FAILED(m_instance) {
@@ -194,6 +201,7 @@ void au::effects::AudioUnitViewModel::settingsToView()
     IF_ASSERT_FAILED(m_instance && m_settingsAccess) {
         return;
     }
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
 
     if (!m_instance->IsInitialized()) {
         m_instance->Initialize();
@@ -214,6 +222,7 @@ void au::effects::AudioUnitViewModel::settingsFromView()
     IF_ASSERT_FAILED(m_instance && m_settingsAccess) {
         return;
     }
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
 
     m_settingsAccess->ModifySettings([this](EffectSettings& settings) {
         m_instance->FetchSettings(AudioUnitInstance::GetSettings(settings), true, true);
@@ -223,6 +232,7 @@ void au::effects::AudioUnitViewModel::settingsFromView()
 
 void au::effects::AudioUnitViewModel::checkSettingChangesFromUi()
 {
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     if (m_toUpdate.size()) {
         m_settingsAccess->ModifySettings([&](EffectSettings& settings){
             auto& mySettings = AudioUnitInstance::GetSettings(settings);
@@ -320,6 +330,7 @@ void au::effects::AudioUnitViewModel::pollParameters()
     if (!m_instance || m_settingsFetchPending) {
         return;
     }
+    PluginCrashGuard::CallScope guard(m_guardId.c_str());
     const auto unit = m_instance->GetAudioUnit();
     auto& parameters = m_instance->GetParameters();
     if (!unit || !parameters) {
@@ -372,8 +383,10 @@ void au::effects::AudioUnitViewModel::fetchSettingsAsync()
     // thread, where the shared name set may be safely modified.
     std::shared_ptr<EventListenerContext> context = m_listenerContext;
     std::shared_ptr<AudioUnitInstance> instance = m_instance;
+    const std::string guardId = m_guardId;
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^ {
+            PluginCrashGuard::CallScope guard(guardId.c_str());
             AUPreset preset {};
             std::optional<SInt32> presetNumber;
             if (!instance->GetFixedSizeProperty(kAudioUnitProperty_PresentPreset, preset)

@@ -5,6 +5,7 @@
 
 #include "framework/global/log.h"
 #include "framework/global/async/async.h"
+#include "framework/dockwindow/idockwindow.h"
 
 #include "internal/applicationuiactions.h"
 #include "projectscene/internal/projectsceneuiactions.h"
@@ -41,6 +42,24 @@ void ProjectPageModel::init()
     }
 
     updatePlaybackMeterVisibility();
+
+    //! GlideMix: the Project tab joins the library's tabs only once the library
+    //! is docked. Open from the start, both panels were taken for tabs of each
+    //! other before either was docked (DockWindow::loadPanels) and floated.
+    //! Once per run, so a tab closed by hand stays closed.
+    if (!m_projectTabOpened) {
+        muse::async::Async::call(this, [this]() {
+            const auto window = dockWindowProvider() ? dockWindowProvider()->window() : nullptr;
+            if (!window || m_projectTabOpened || !window->isDockOpen(MIXHOUSE_LIBRARY_PANEL_NAME)) {
+                return;
+            }
+            m_projectTabOpened = true;
+            if (!window->isDockOpen(MIXHOUSE_PROJECT_PANEL_NAME)) {
+                dispatcher()->dispatch("dock-set-open",
+                                       ActionData::make_arg2<QString, bool>(MIXHOUSE_PROJECT_PANEL_NAME, true));
+            }
+        });
+    }
 }
 
 void ProjectPageModel::updatePlaybackMeterVisibility()

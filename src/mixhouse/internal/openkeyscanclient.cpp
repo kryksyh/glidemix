@@ -41,6 +41,8 @@ namespace {
 //     openkeyscan-analyzer/ -- the same build, installed separately.
 //  4. A developer checkout: ~/Developer/openkeyscan-analyzer with its .venv
 //     (development builds only).
+//  Linux: bundled as usr/lib/openkeyscan-analyzer/ (AppImage), or the add-on
+//     in ~/.local/share/Glidemix/Helpers/openkeyscan-analyzer/.
 // None found: key detection is off (keys stay empty; BPM, grid and waveform
 // are still analysed), logged once rather than tried again for every track.
 // Windows: the same places with Windows names -- python instead of python3,
@@ -87,6 +89,17 @@ std::optional<AnalyzerLaunch> findKeyAnalyzer()
     if (executable(addOn)) {
         return AnalyzerLaunch { addOn, {}, QFileInfo(addOn).absolutePath() };
     }
+#ifdef Q_OS_LINUX
+    //! Linux: bundled in the AppImage (usr/bin/.. -> usr/lib), or installed
+    //! as an add-on in the user's data folder.
+    for (const QString& linuxPath : {
+            QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/openkeyscan-analyzer/openkeyscan-analyzer"),
+            QDir::homePath() + QStringLiteral("/.local/share/Glidemix/Helpers/openkeyscan-analyzer/openkeyscan-analyzer") }) {
+        if (executable(linuxPath)) {
+            return AnalyzerLaunch { QFileInfo(linuxPath).canonicalFilePath(), {}, QFileInfo(linuxPath).canonicalPath() };
+        }
+    }
+#endif
 #ifdef GLIDEMIX_DEV_HELPERS
     const QString dev = QDir::homePath() + QStringLiteral("/Developer/openkeyscan-analyzer");
 #ifdef Q_OS_WIN

@@ -239,6 +239,13 @@ static MixHouseTransitionSpec withEffects(MixHouseTransitionSpec spec, MixHouseF
     return spec;
 }
 
+//! The blend around the anchor (MixHouseTransitionSpec::blendAroundAnchor).
+static MixHouseTransitionSpec aroundAnchor(MixHouseTransitionSpec spec)
+{
+    spec.blendAroundAnchor = true;
+    return spec;
+}
+
 //! A DJ's three-band blend: the highs cross over the whole length, the bass
 //! swaps in the middle and the mids a phrase later.
 static MixHouseTransitionSpec withEq(MixHouseTransitionSpec spec)
@@ -280,6 +287,18 @@ MixHouseTransitionPreset presetFromSpec(const MixHouseTransitionSpec& spec)
         preset.highIntro.push_back({ p.offset, p.value });
     }
     addEffectLines(spec, preset.effects);
+    if (spec.blendAroundAnchor) {
+        for (MixHouseTransitionMarker& m : preset.intro) {
+            m.offset -= length;
+        }
+        // The swap sits halfway through the lines: on the anchor now, for both songs.
+        for (auto* line : { &preset.bassOutro, &preset.bassIntro, &preset.midOutro, &preset.midIntro,
+                            &preset.highOutro, &preset.highIntro }) {
+            for (MixHouseBassMarker& m : *line) {
+                m.offset -= length / 2.0;
+            }
+        }
+    }
     return preset;
 }
 
@@ -290,10 +309,10 @@ const std::vector<MixHouseTransitionSpec>& builtInTransitionSpecs()
     // over the whole length, and the bass handed over on beat 4, right in the
     // middle, when both tracks are at -3 dB and the kick can change hands.
     static const std::vector<MixHouseTransitionSpec> kSpecs = {
-        makeSpec(kDefaultMixNowTransition, 8, K::Crossfade, K::Swap, 0.5, 0),
-        makeSpec("Quick crossfade + bass swap, 2 beats out", 8, K::Crossfade, K::Swap, 0.5, 2),
-        makeSpec("Bass swap, 8 bars", 32, K::Crossfade, K::Swap, 0.5, 0),
-        makeSpec("Bass swap, 16 bars", 64, K::Crossfade, K::Swap, 0.5, 0),
+        aroundAnchor(makeSpec(kDefaultMixNowTransition, 8, K::Crossfade, K::Swap, 0.5, 0)),
+        aroundAnchor(makeSpec("Quick crossfade + bass swap, 2 beats out", 8, K::Crossfade, K::Swap, 0.5, 2)),
+        aroundAnchor(makeSpec("Bass swap, 8 bars", 32, K::Crossfade, K::Swap, 0.5, 0)),
+        aroundAnchor(makeSpec("Bass swap, 16 bars", 64, K::Crossfade, K::Swap, 0.5, 0)),
         withEffects(makeSpec("Filter out, 8 bars", 32, K::Crossfade, K::Swap, 0.5, 0),
                     MixHouseFilterSweep::OutHighPass),
         withEffects(makeSpec("Filter in, 8 bars", 32, K::Crossfade, K::Swap, 0.5, 0),

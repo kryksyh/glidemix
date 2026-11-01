@@ -44,6 +44,8 @@ public:
     bool applyTransition(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                          const std::string& name) override;
     std::string mixNow(double playhead) override;
+    void beginEdit() override;
+    void endEdit(const std::string& name) override;
 
 private:
     struct GainPoint {
@@ -57,6 +59,10 @@ private:
     //! applyCrossfade, starting the fade at `fadeStart` when it lies inside the overlap.
     bool crossfadeFrom(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, double fadeStart);
     bool findZone(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, Zone& zone) const;
+    //! The transition names saved with the project (mixhousetransitionnames.h).
+    void* au3Project() const;
+    std::string savedNames() const;
+    void restoreSavedNames();
 public:
     bool laneLines(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, Lane lane,
                    LaneLine& out, LaneLine& in) const override;
@@ -105,5 +111,7 @@ private:
     std::map<ZoneKey, std::vector<EffectEntry> > m_effects;
     //! Switched-off zones, with the transition that was there ("" = a crossfade).
     std::map<ZoneKey, std::string> m_disabled;
+    int m_editDepth = 0;   ///< > 0 between beginEdit() and endEdit()
+    void* m_namesFor = nullptr;   ///< the au3 project whose saved names were read
 };
 }

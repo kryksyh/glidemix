@@ -18,6 +18,7 @@
 #include <QProcess>
 #include <QFile>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QtGlobal>
 #if defined(Q_OS_MACOS)
 #include <ApplicationServices/ApplicationServices.h>
@@ -479,6 +480,8 @@ void MixHouseTrackListModel::load()
         });
     }
 
+    QElapsedTimer loadTimer;
+    loadTimer.start();
     MixHouseTrackList fresh;
     if (!m_emptyPlaceholder) {
         // Capped: the panel shows a page of this, and an unbounded query on a large
@@ -517,6 +520,9 @@ void MixHouseTrackListModel::load()
     m_tracks = std::move(fresh);
     endResetModel();
     emit loaded();
+    if (loadTimer.elapsed() >= 50) {
+        LOGI() << "GlideMix library view: " << m_tracks.size() << " rows loaded in " << loadTimer.elapsed() << " ms";
+    }
 }
 
 void MixHouseTrackListModel::sortBy(int sortKey)
@@ -2132,7 +2138,7 @@ bool MixHouseTrackListModel::loadTrackToProject(int row) const
     if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
         return false;
     }
-    const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    const MixHouseTrack t = withBeatGrid(m_tracks[static_cast<size_t>(row)]);
     if (t.filePath.isEmpty()) {
         LOGW() << "loadTrackToProject: no file path for track " << t.title;
         return false;
@@ -3278,8 +3284,26 @@ std::vector<MixHouseCue> MixHouseTrackListModel::cuesFor(const MixHouseTrack& t,
     if (generated) {
         *generated = true;
     }
-    const bool grid = t.beats.valid && t.beats.beatLengthSec > 0.0;
-    return phraseCues(phrasesForExport(t), grid ? t.beats.firstBeatSec : 0.0, grid ? t.beats.beatLengthSec : 0.0);
+    const MixHouseTrack withGrid = withBeatGrid(t);
+    const bool grid = withGrid.beats.valid && withGrid.beats.beatLengthSec > 0.0;
+    return phraseCues(phrasesForExport(t), grid ? withGrid.beats.firstBeatSec : 0.0, grid ? withGrid.beats.beatLengthSec : 0.0);
+}
+
+MixHouseTrack MixHouseTrackListModel::withBeatGrid(const MixHouseTrack& t) const
+{
+    if (t.beats.valid || t.beatsBlob.isEmpty() || t.sampleRate > 0 || isExternalTrack(t)) {
+        return t;
+    }
+    IMixHouseLibrary::TrackQuery one;
+    one.trackId = t.id;
+    one.hiddenOnly = m_query.hiddenOnly;
+    const MixHouseTrackList fresh = library()->tracks(one);
+    if (fresh.empty()) {
+        return t;
+    }
+    MixHouseTrack out = fresh.front();
+    out.playlistPosition = t.playlistPosition;
+    return out;
 }
 
 QVariantList MixHouseTrackListModel::overviewCues(int row)

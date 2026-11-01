@@ -16,8 +16,9 @@ namespace au::mixhouse {
 /// macOS: AVAudioEngine + AVAudioPlayerNode reading the file directly
 /// (Core Audio decodes and resamples), on its own output stream -- fully
 /// independent of Audacity's project playback, the same way mixxx's
-/// preview deck is independent of its main decks. Other platforms: a stub
-/// whose load() fails, so clicking does nothing rather than crashing.
+/// preview deck is independent of its main decks. Windows: the Media
+/// Engine. Linux: decoded into memory, played on its own PortAudio stream.
+/// Other platforms: a stub whose load() fails, so clicking does nothing.
 ///
 /// Main thread only.
 class MixHousePreviewPlayer

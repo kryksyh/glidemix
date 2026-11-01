@@ -118,6 +118,12 @@ public:
     /// the playing track and the pulled one is redone from that bar.
     /// Returns what happened, for the log / status; empty = nothing to do.
     virtual std::string mixNow(double playhead) = 0;
+    /// Several edits as one undo step (the Project tab's reorder): between
+    /// beginEdit() and endEdit(), applyTransition and removeCrossfade push no
+    /// history of their own; endEdit() pushes one state named `name` ("" =
+    /// folded into the state already on top).
+    virtual void beginEdit() = 0;
+    virtual void endEdit(const std::string& name) = 0;
     /// Puts both volume lines back to full over the regions a crossfade owns.
     virtual bool removeCrossfade(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming) = 0;
 

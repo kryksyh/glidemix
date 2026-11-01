@@ -8,6 +8,7 @@
 #include "framework/global/log.h"
 
 #include "au3-audio-unit/AudioUnitInstance.h"
+#include "au3-utility/PluginCrashGuard.h"
 #include "audiounitcontrol.h"
 
 namespace au::effects {
@@ -44,6 +45,10 @@ void AudioUnitView::init()
     }
 
     const EffectId effectId = instancesRegister()->effectIdByInstanceId(m_instanceId);
+    // GlideMix: the plug-in builds its window here; if that crashes the
+    // app, the next start turns it off and names it
+    m_guardId = effectId.toStdString();
+    PluginCrashGuard::MarkedScope guard(m_guardId);
     const bool isGraphical = (configuration()->effectUIMode(effectId) == EffectUIMode::VendorUI);
 
     if (!instance->Initialize()) {
@@ -71,6 +76,7 @@ void AudioUnitView::init()
 
 void AudioUnitView::deinit()
 {
+    PluginCrashGuard::MarkedScope guard(m_guardId);
     m_auControl.reset();
 }
 

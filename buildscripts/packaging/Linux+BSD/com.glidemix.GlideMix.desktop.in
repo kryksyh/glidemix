@@ -1,0 +1,23 @@
+[Desktop Entry]
+# Write keys in the order specified in https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#recognized-keys
+# After editing, run this command to check for errors: $ desktop-file-validate [filename]
+Name=@DESKTOP_LAUNCHER_NAME@
+Type=Application
+# Version of Desktop Entry Spec, not GlideMix version. Don't upgrade prematurely.
+Version=1.0
+Icon=glidemix@MUSE_APP_INSTALL_SUFFIX@
+Exec=glidemix@MUSE_APP_INSTALL_SUFFIX@ %U
+Terminal=false
+MimeType=application/x-audacity;
+StartupNotify=true
+StartupWMClass=@WINDOW_MANAGER_CLASS@
+
+Categories=AudioVideo;Audio;Mixer;
+
+Keywords=DJ;mix;mixtape;beatmatch;transition;BPM;key;playlist;radio show;MP3;FLAC;WAV;
+
+GenericName=DJ Mix Editor
+GenericName[de]=DJ-Mix-Editor
+
+Comment=Prepare DJ mixes, mixtapes and radio shows
+Comment[de]=DJ-Mixe, Mixtapes und Radiosendungen vorbereiten

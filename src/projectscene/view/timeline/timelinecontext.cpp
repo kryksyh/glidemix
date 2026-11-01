@@ -352,9 +352,15 @@ void TimelineContext::revealTimeRange(double startSec, double endSec)
     if (endSec <= startSec || frameTime <= 0.0) {
         return;
     }
-    // The start, with a little of the song after it, is already in view.
-    const double margin = frameTime * 0.05;
-    if (startSec >= m_frameStartTime && startSec <= m_frameEndTime - margin) {
+    // The whole song is in view already: nothing to do.
+    if (startSec >= m_frameStartTime && endSec <= m_frameEndTime) {
+        return;
+    }
+    // GlideMix: a song that fits is centred (it used to stay half off the
+    // right edge when only its start was in view); a longer one starts
+    // near the left edge.
+    if (endSec - startSec <= frameTime * 0.9) {
+        moveToFrameTime(std::max(0.0, (startSec + endSec) / 2.0 - frameTime / 2.0));
         return;
     }
     moveToFrameTime(std::max(0.0, startSec - frameTime * 0.10));
