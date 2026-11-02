@@ -18,9 +18,13 @@ PUBLIC
    au3-tags
    au3-track
 PRIVATE
+   libid3tag::libid3tag
    wxBase
 )
 
 audacity_library( ${TARGET} "${SOURCES}" "${LIBRARIES}"
    "" ""
 )
+
+# ExportMP?.h changes with this define, so consumers need it too
+target_compile_definitions( ${TARGET} PUBLIC USE_LIBID3TAG )

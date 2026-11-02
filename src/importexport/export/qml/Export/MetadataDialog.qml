@@ -64,7 +64,7 @@ StyledDialogView {
             id: metadataView
 
             width: root.contentWidth
-            height: 524
+            height: 444
 
             keyRoleName: "tag"
             keyTitle: qsTrc("metadata", "tag")
@@ -94,6 +94,64 @@ StyledDialogView {
 
             onValueEdited: function (row, newVal) {
                 metadataModel.setTagValue(row, newVal)
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 16
+            Layout.rightMargin: 12
+            Layout.topMargin: 8
+
+            spacing: 12
+
+            Rectangle {
+                Layout.preferredWidth: 72
+                Layout.preferredHeight: 72
+
+                color: ui.theme.backgroundSecondaryColor
+                border.color: ui.theme.strokeColor
+                border.width: 1
+
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: 1
+
+                    source: metadataModel.artworkUrl
+                    sourceSize.width: 144
+                    sourceSize.height: 144
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    clip: true
+                }
+            }
+
+            StyledTextLabel {
+                //: Title of the picture embedded in exported audio files
+                text: qsTrc("metadata", "Artwork")
+            }
+
+            FlatButton {
+                text: qsTrc("metadata", "Choose photo…")
+
+                navigation.panel: root.navigation
+                navigation.column: root.navigationOrder + 20
+
+                onClicked: metadataModel.chooseArtwork()
+            }
+
+            FlatButton {
+                text: qsTrc("metadata", "Remove")
+                enabled: metadataModel.artworkUrl.toString() !== ""
+
+                navigation.panel: root.navigation
+                navigation.column: root.navigationOrder + 21
+
+                onClicked: metadataModel.removeArtwork()
+            }
+
+            Item {
+                Layout.fillWidth: true
             }
         }
 

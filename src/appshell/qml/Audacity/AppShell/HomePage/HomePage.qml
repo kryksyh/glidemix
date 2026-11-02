@@ -73,9 +73,6 @@ DockPage {
         case "learn":
             root.central = learnComp
             break
-        case "account":
-            root.central = accountComp
-            break
         }
     }
 
@@ -100,7 +97,6 @@ DockPage {
             HomeMenu {
                 currentPageName: root.section
                 iconsOnly: menuPanel.iconsOnly
-                cloudEnabled: projectsPageHelper.cloudEnabled
 
                 onSelected: function (name) {
                     root.setCurrentCentral(name)
@@ -110,13 +106,6 @@ DockPage {
     ]
 
     central: projetsComp
-
-    Component {
-        id: accountComp
-        Loader {
-            source: "AccountPage.qml"
-        }
-    }
 
     Component {
         id: projetsComp

@@ -7,11 +7,13 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QUrl>
 #include <QFileInfo>
 #include <QThread>
 
 #include <taglib/tfile.h>
+#include <taglib/tvariant.h>
 #include <taglib/fileref.h>
 #include <taglib/mpegfile.h>
 #include <taglib/id3v2tag.h>
@@ -308,4 +310,26 @@ QImage MixHouseCoverArtImageProvider::requestImage(const QString& id, QSize* siz
     return image;
 }
 
+}
+
+bool au::mixhouse::embedCoverArt(const QString& audioPath, const QString& imagePath)
+{
+    QFile image(imagePath);
+    if (!image.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    const QByteArray bytes = image.readAll();
+
+    TagLib::FileRef file = openTagFile(audioPath);
+    if (file.isNull()) {
+        return false;
+    }
+
+    TagLib::VariantMap picture;
+    picture["data"] = TagLib::ByteVector(bytes.constData(), static_cast<unsigned int>(bytes.size()));
+    picture["mimeType"] = TagLib::String(imagePath.endsWith(".png", Qt::CaseInsensitive) ? "image/png" : "image/jpeg");
+    picture["pictureType"] = TagLib::String("Front Cover");
+    picture["description"] = TagLib::String("");
+
+    return file.setComplexProperties("PICTURE", TagLib::List<TagLib::VariantMap>({ picture })) && file.save();
 }

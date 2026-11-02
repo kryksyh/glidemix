@@ -28,18 +28,11 @@ add_subdirectory(shared)
 add_subdirectory(au3wrap)
 
 add_subdirectory(audio)
-if (AU_BUILD_CLOUD_AUDIOCOM)
-    add_subdirectory(au3cloud)
-endif()
 add_subdirectory(context)
 add_subdirectory(mixhouse)
 add_subdirectory(broadcast)
 add_subdirectory(project)
 add_subdirectory(preferences)
-
-if (AU_BUILD_USAGEINFO_MODULE)
-    add_subdirectory(usageinfo)
-endif()
 
 if (AU_BUILD_PROJECTSCENE_MODULE)
    add_subdirectory(projectscene)

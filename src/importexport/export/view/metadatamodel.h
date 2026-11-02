@@ -5,6 +5,7 @@
 
 #include <QAbstractListModel>
 #include <QObject>
+#include <QUrl>
 
 #include "framework/global/async/asyncable.h"
 
@@ -22,6 +23,8 @@ namespace au::importexport {
 class MetadataModel : public QAbstractListModel, public muse::async::Asyncable, public muse::Contextable
 {
     Q_OBJECT
+
+    Q_PROPERTY(QUrl artworkUrl READ artworkUrl NOTIFY artworkChanged)
 
     muse::GlobalInject<project::IProjectConfiguration> projectConfiguration;
     muse::GlobalInject<importexport::IExportConfiguration> exportConfiguration;
@@ -56,10 +59,17 @@ public:
     Q_INVOKABLE void renameTag(int index, const QString& newTag);
     Q_INVOKABLE void setTagValue(int index, const QString& value);
 
+    QUrl artworkUrl() const;
+    Q_INVOKABLE void chooseArtwork();
+    Q_INVOKABLE void removeArtwork();
+
     QString buildXml() const;
     project::ProjectMeta parseXml(const QString& xml) const;
 
     bool isMetadataEmpty(const au::project::ProjectMeta& meta) const;
+
+signals:
+    void artworkChanged();
 
 private:
     inline static const std::array<std::string, 6> kStdTags =

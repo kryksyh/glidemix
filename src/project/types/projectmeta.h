@@ -26,6 +26,9 @@ struct ProjectMeta
 
     QPixmap thumbnail;
 
+    //! Picture the user chose for exported files; never written as a text tag
+    std::string artworkPath;
+
     // QString audioComUrl;
     // QString audacityVersion;
     // int audacityRevision = 0;
@@ -49,6 +52,7 @@ struct ProjectMeta
         equal &= comments == other.comments;
 
         equal &= thumbnail.toImage() == other.thumbnail.toImage();
+        equal &= artworkPath == other.artworkPath;
 
         equal &= additionalTags == other.additionalTags;
 
@@ -71,6 +75,8 @@ inline const std::string TRACK_NUMBER_TAG("TRACKNUMBER");
 inline const std::string YEAR_TAG("YEAR");
 // inline const std::string GENRE_TAG("GENRE"); // TODO
 inline const std::string COMMENTS_TAG("COMMENTS");
+//! Kept with the project's tags, left out of exported files
+inline const std::string ARTWORK_TAG("GLIDEMIX_ARTWORK");
 
 static const QList<std::string> standardTags {
     TITLE_TAG,
@@ -84,9 +90,10 @@ static const QList<std::string> standardTags {
 
 using MemberPtr = std::string ProjectMeta::*;
 
+//! Same order as `standardTags`
 inline static const std::array<MemberPtr, 6> kStdMembers = {
-    &project::ProjectMeta::artist,
     &project::ProjectMeta::trackTitle,
+    &project::ProjectMeta::artist,
     &project::ProjectMeta::album,
     &project::ProjectMeta::trackNumber,
     // &project::ProjectMeta::genre, // TODO

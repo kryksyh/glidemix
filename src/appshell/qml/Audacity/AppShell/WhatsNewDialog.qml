@@ -35,19 +35,8 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.23**\n\n"
-                      + "- **Help > What's new** opens this window whenever you want it.\n"
-                      + "- **Cancel** while loading a range from the library now stops the whole range and keeps the songs already loaded.\n\n"
-                      + "**GlideMix v1.1.22**\n\n"
-                      + "**Big mixes stay usable**\n"
-                      + "- With 30 songs or more, lanes, track headers and sliders no longer drift apart when you change the track view, zoom or scroll, and you keep your place while the lanes change height.\n"
-                      + "- A new **Reset view** button in front of the zoom sliders puts the view back: lanes at their default height, the first songs readable.\n\n"
-                      + "**Load a whole range from the library**\n"
-                      + "- Click a song, Shift-click another, right-click and choose Load to > Project: they join the end of the mix in the same order, each one blended into the next, and the view shows the first of them.\n\n"
-                      + "**The Project tab looks like the library**\n"
-                      + "- Cover art, waveform, year, genre, key, energy, duration and rating for every song in your mix. Scroll sideways for more; the transition stays pinned on the right.\n\n"
-                      + "**This window**\n"
-                      + "- After every update GlideMix now tells you what changed."
+                text: "**GlideMix v1.1.24**\n\n"
+                      + "We’ve polished the canvas and vaporized the bugs, making your GlideMix exports and artworks smoother than ever. Those glitches thought they were art, but we treated them like a bad sketch. Canvas cleared, bugs deleted. 🎨💥"
             }
         }
 

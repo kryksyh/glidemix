@@ -30,10 +30,10 @@ elseif(OS_IS_LIN)
     endforeach()
 
     install(FILES AupIcon/AU4_AupIcon_512x512.png 
-            RENAME application-x-audacity${MUSE_APP_INSTALL_SUFFIX}.png
+            RENAME application-x-glidemix${MUSE_APP_INSTALL_SUFFIX}.png
             DESTINATION share/icons/hicolor/512x512/mimetypes)
     install(FILES AupIcon/AU4_AupIcon.svg 
-            RENAME application-x-audacity${MUSE_APP_INSTALL_SUFFIX}.svg
+            RENAME application-x-glidemix${MUSE_APP_INSTALL_SUFFIX}.svg
             DESTINATION share/icons/hicolor/scalable/mimetypes)
 
     # Note: Must now run "gtk-update-icon-cache" to set the new icons.

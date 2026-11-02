@@ -65,6 +65,7 @@ private:
     const ExportPlugin* m_plugin{};
     int m_format{};
     MixerOptions::Downmix* m_mixerSpec{};
-    const Tags* m_tags{};
+    std::shared_ptr<Tags> m_tags;
+    std::string m_artworkPath;
 };
 }

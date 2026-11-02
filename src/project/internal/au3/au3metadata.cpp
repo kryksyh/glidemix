@@ -10,6 +10,7 @@
 #include "project/types/projectmeta.h"
 
 #include "au3wrap/au3types.h"
+#include "au3wrap/internal/wxtypes_convert.h"
 
 using namespace au::project;
 using namespace muse;
@@ -23,13 +24,13 @@ ProjectMeta Au3Metadata::tags() const
     Tags& au3Tags = Tags::Get(*project);
 
     for (auto row : au3Tags.GetRange()) {
-        auto tag = row.first.ToStdString();
-        if (tag == TITLE_TAG) {
-            au4Tags.trackTitle = row.second.ToStdString();
-        }
+        const std::string key = au3::wxToStdString(row.first);
+        const std::string val = au3::wxToStdString(row.second);
 
-        const std::string key = row.first.ToStdString();
-        const std::string val = row.second.ToStdString();
+        if (key == ARTWORK_TAG) {
+            au4Tags.artworkPath = val;
+            continue;
+        }
 
         bool assigned = false;
         // assign to standard fields if matched
@@ -60,7 +61,11 @@ void Au3Metadata::setTags(ProjectMeta au4Tags)
         const std::string& key = project::standardTags[i];
         const std::string& val = au4Tags.*(kStdMembers[i]);
 
-        au3Tags.SetTag(key, val);
+        au3Tags.SetTag(wxString::FromUTF8(key), wxString::FromUTF8(val));
+    }
+
+    if (!au4Tags.artworkPath.empty()) {
+        au3Tags.SetTag(wxString::FromUTF8(ARTWORK_TAG), wxString::FromUTF8(au4Tags.artworkPath));
     }
 
     for (auto it = au4Tags.additionalTags.cbegin(); it != au4Tags.additionalTags.cend(); ++it) {
@@ -71,7 +76,7 @@ void Au3Metadata::setTags(ProjectMeta au4Tags)
 
         const QString val = it.value().toString();
 
-        au3Tags.SetTag(key.toStdString(), val.toStdString());
+        au3Tags.SetTag(wxString::FromUTF8(key.toStdString()), wxString::FromUTF8(val.toStdString()));
     }
 }
 

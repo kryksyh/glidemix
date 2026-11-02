@@ -14,6 +14,7 @@
 #include "au3-import-export/ExportUtils.h"
 #include "au3-mixer/MixerOptions.h"
 #include "au3-tags/Tags.h"
+#include "project/types/projectmeta.h"
 #include "au3-track/Track.h"
 #include "au3-wave-track/WaveTrack.h"
 #include "au3-strings/TranslatableString.h"
@@ -270,7 +271,16 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
         m_t1 = trackeditProject->totalTime().to_double();
     }
 
-    m_tags = &Tags::Get(*au3Project);
+    // GlideMix: the artwork path stays with the project, the file gets the picture itself
+    m_tags = std::make_shared<Tags>();
+    m_artworkPath.clear();
+    for (const auto& row : Tags::Get(*au3Project).GetRange()) {
+        if (row.first == wxString::FromUTF8(project::ARTWORK_TAG)) {
+            m_artworkPath = row.second.ToStdString(wxConvUTF8);
+        } else {
+            m_tags->SetTag(row.first, row.second);
+        }
+    }
 
     auto exportedTracks = ExportUtils::FindExportWaveTracks(TrackList::Get(*au3Project), m_selectedOnly);
     if (exportedTracks.empty()) {
@@ -336,7 +346,7 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
                                    m_t0, m_t1, m_selectedOnly,
                                    m_sampleRate, m_numChannels,
                                    m_mixerSpec,
-                                   m_tags)) {
+                                   m_tags.get())) {
             return muse::make_ret(muse::Ret::Code::InternalError);
         }
 
@@ -382,6 +392,10 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
 
         if (result != ExportResult::Success) {
             return muse::make_ret(muse::Ret::Code::InternalError);
+        }
+        if (dispatcher() && !m_artworkPath.empty()) {
+            dispatcher()->dispatch("mixhouse-embed-artwork", muse::actions::ActionData::make_arg2<std::string, std::string>(
+                                       wxfilename.GetFullPath().ToStdString(wxConvUTF8), m_artworkPath));
         }
         // GlideMix: a tracklist (.txt and .cue) beside the exported mix,
         // written by the mixhouse module (it knows the songs).

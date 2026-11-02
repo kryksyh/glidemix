@@ -47,7 +47,7 @@ configure_file(${CMAKE_CURRENT_LIST_DIR}/com.glidemix.GlideMix.appdata.xml.in co
 install(FILES ${PROJECT_BINARY_DIR}/com.glidemix.GlideMix${MUSE_APP_INSTALL_SUFFIX}.appdata.xml DESTINATION share/metainfo)
 
 # Add .AUP4 to MIME database (GlideMix project files)
-configure_file(${CMAKE_CURRENT_LIST_DIR}/audacity.xml.in audacity${MUSE_APP_INSTALL_SUFFIX}.xml)
-install(FILES ${PROJECT_BINARY_DIR}/audacity${MUSE_APP_INSTALL_SUFFIX}.xml DESTINATION share/mime/packages COMPONENT doc)
+configure_file(${CMAKE_CURRENT_LIST_DIR}/glidemix.xml.in glidemix${MUSE_APP_INSTALL_SUFFIX}.xml)
+install(FILES ${PROJECT_BINARY_DIR}/glidemix${MUSE_APP_INSTALL_SUFFIX}.xml DESTINATION share/mime/packages COMPONENT doc)
 
 # Note: Must now run "update-mime-database" to apply changes.

@@ -65,16 +65,8 @@
 #include "importexport/import/importermodule.h"
 #include "importexport/export/exportermodule.h"
 #include "importexport/labels/labelsmodule.h"
-#ifdef AU_BUILD_CLOUD_AUDIOCOM
-#include "au3cloud/au3cloudmodule.h"
-#else
 #include "stubs/au3cloud/au3cloudstubmodule.h"
-#endif
-#ifdef AU_BUILD_USAGEINFO_MODULE
-#include "usageinfo/usageinfomodule.h"
-#else
 #include "stubs/usageinfo/usageinfostubmodule.h"
-#endif
 #include "automation/automationmodule.h"
 
 #if AU_MODULE_EFFECTS_NYQUIST

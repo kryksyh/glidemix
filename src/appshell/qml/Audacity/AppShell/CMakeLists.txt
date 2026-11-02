@@ -59,7 +59,6 @@ qt_add_qml_module(appshell_qml
         FirstLaunchSetup/TutorialsPage.qml
         FirstLaunchSetup/UnderConstructionPage.qml
         FirstLaunchSetup/WorkspaceLayoutPage.qml
-        HomePage/CloudItem.qml
         HomePage/GlideMixLearnPage.qml
         HomePage/HomeMenu.qml
         HomePage/HomePage.qml
@@ -96,13 +95,6 @@ qt_add_qml_module(appshell_qml
         TARGET muse_toast_qml
         TARGET muse_tours_qml
 )
-
-if (AU_BUILD_CLOUD_AUDIOCOM)
-    qt_target_qml_sources(appshell_qml
-        QML_FILES
-            HomePage/AccountPage.qml
-    )
-endif()
 
 if (OS_IS_MAC)
     qt_target_qml_sources(appshell_qml

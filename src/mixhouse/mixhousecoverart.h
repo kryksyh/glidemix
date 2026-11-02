@@ -38,6 +38,10 @@ namespace au::mixhouse {
 /// not an error).
 QImage extractEmbeddedCoverArt(const QString& filePath);
 
+/// GlideMix: writes a JPEG or PNG file into an audio file as its front cover,
+/// in whatever tag that format uses. False when either file can't be used.
+bool embedCoverArt(const QString& audioPath, const QString& imagePath);
+
 /// Resolves and decodes one track's cover art the way real mixxx's
 /// CoverInfo::loadImage() branches on CoverInfoRelative::Type, and caches the
 /// decoded QImage in memory keyed by track id: TagLib extraction + JPEG/PNG

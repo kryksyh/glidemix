@@ -8,7 +8,7 @@ Version=1.0
 Icon=glidemix@MUSE_APP_INSTALL_SUFFIX@
 Exec=glidemix@MUSE_APP_INSTALL_SUFFIX@ %U
 Terminal=false
-MimeType=application/x-audacity;
+MimeType=application/x-glidemix;
 StartupNotify=true
 StartupWMClass=@WINDOW_MANAGER_CLASS@
 

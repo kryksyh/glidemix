@@ -217,7 +217,7 @@ void dumpReport(const char* path)
         totalBytes += v.totalBytes;
     }
 
-    std::fprintf(f, "Audacity CRT leak report (aggregated by top %d call-stack frames)\n", kGroupDepth);
+    std::fprintf(f, "GlideMix CRT leak report (aggregated by top %d call-stack frames)\n", kGroupDepth);
     std::fprintf(f, "Total leaked blocks: %zu\n", totalCount);
     std::fprintf(f, "Total leaked bytes:  %zu\n", totalBytes);
     std::fprintf(f, "Unique call sites:   %zu\n\n", groups.size());

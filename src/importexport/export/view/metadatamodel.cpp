@@ -2,7 +2,14 @@
  * Audacity: A Digital Audio Editor
  */
 
+#include <algorithm>
+
+#include <QCryptographicHash>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QImage>
+#include <QStandardPaths>
 
 #include "global/translation.h"
 
@@ -13,6 +20,51 @@
 using namespace au::importexport;
 using namespace muse;
 using namespace muse::io;
+
+namespace {
+//! Longest side of an embedded picture; players and DJ gear don't need more
+constexpr int ARTWORK_MAX_SIDE = 1400;
+
+//! A copy in the app's data folder, so the picture stays when the original moves.
+//! Returns an empty string when the file is not a picture we can read.
+QString storeArtwork(const QString& sourcePath)
+{
+    QFile source(sourcePath);
+    if (!source.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const QByteArray bytes = source.readAll();
+
+    QImage image;
+    if (!image.loadFromData(bytes)) {
+        return {};
+    }
+
+    const QString dirPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/artwork";
+    if (!QDir().mkpath(dirPath)) {
+        return {};
+    }
+
+    const QString name = QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha1).toHex());
+    const QString suffix = QFileInfo(sourcePath).suffix().toLower();
+    const bool usable = suffix == "jpg" || suffix == "jpeg" || suffix == "png";
+
+    if (usable && std::max(image.width(), image.height()) <= ARTWORK_MAX_SIDE) {
+        const QString path = dirPath + "/" + name + "." + suffix;
+        QFile target(path);
+        if (target.exists()) {
+            return path;
+        }
+        return target.open(QIODevice::WriteOnly) && target.write(bytes) == bytes.size() ? path : QString();
+    }
+
+    const QString path = dirPath + "/" + name + ".jpg";
+    const QImage scaled = std::max(image.width(), image.height()) > ARTWORK_MAX_SIDE
+                          ? image.scaled(ARTWORK_MAX_SIDE, ARTWORK_MAX_SIDE, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+                          : image;
+    return scaled.convertToFormat(QImage::Format_RGB888).save(path, "JPG", 90) ? path : QString();
+}
+}
 
 MetadataModel::MetadataModel(QObject* parent)
     : QAbstractListModel(parent), muse::Contextable(muse::iocCtxForQmlObject(this))
@@ -88,10 +140,51 @@ void MetadataModel::load()
         toLoad = metadata()->tags();
     }
 
+    toLoad.artworkPath = projectMeta.artworkPath;
+
     m_meta = std::move(toLoad);
     m_additionalKeys = m_meta.additionalTags.keys();
 
     endResetModel();
+
+    emit artworkChanged();
+}
+
+QUrl MetadataModel::artworkUrl() const
+{
+    if (m_meta.artworkPath.empty()) {
+        return {};
+    }
+    return QUrl::fromLocalFile(QString::fromStdString(m_meta.artworkPath));
+}
+
+void MetadataModel::chooseArtwork()
+{
+    std::vector<std::string> filter {
+        muse::trc("metadata", "Images") + " (*.jpg *.jpeg *.png *.webp *.heic *.tif *.tiff *.bmp)"
+    };
+
+    const muse::io::path_t filePath = interactive()->selectOpeningFileSync(muse::trc("metadata", "Choose artwork"),
+                                                                           projectConfiguration()->userProjectsPath(), filter);
+    if (filePath.empty()) {
+        return;
+    }
+
+    const QString stored = storeArtwork(filePath.toQString());
+    if (stored.isEmpty()) {
+        interactive()->errorSync(muse::trc("metadata", "Choose artwork"),
+                                 muse::trc("metadata", "This picture could not be read. Please try a JPG or PNG file."));
+        return;
+    }
+
+    m_meta.artworkPath = stored.toStdString();
+    emit artworkChanged();
+}
+
+void MetadataModel::removeArtwork()
+{
+    m_meta.artworkPath.clear();
+    emit artworkChanged();
 }
 
 void MetadataModel::apply()

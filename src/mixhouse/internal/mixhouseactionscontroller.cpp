@@ -2,6 +2,7 @@
  * MixHouse DJ 2
  */
 #include "mixhousetracklist.h"
+#include "mixhouse/mixhousecoverart.h"
 #include "mixhouseactionscontroller.h"
 
 #include <QDir>
@@ -128,6 +129,12 @@ void MixHouseActionsController::init()
         }
         const MixHouseTracklist tracklist(iocContext());
         tracklist.write(args.arg<std::string>(0), args.arg<double>(1), args.arg<double>(2));
+    });
+    dispatcher()->reg(this, "mixhouse-embed-artwork", [](const muse::actions::ActionData& args) {
+        if (args.count() < 2) {
+            return;
+        }
+        embedCoverArt(QString::fromStdString(args.arg<std::string>(0)), QString::fromStdString(args.arg<std::string>(1)));
     });
     dispatcher()->reg(this, "mixhouse-keylock", [this]() {
         libraryConfiguration()->setKeylockEnabled(!libraryConfiguration()->keylockEnabled());

@@ -96,7 +96,7 @@
 
                 <!-- MIME associations -->
                 <RegistryKey Key="MIMEAssociations">
-                    <RegistryValue Name="application/x-audacity" Value="$(var.Aup4ProgId)" Type="string" />
+                    <RegistryValue Name="application/x-glidemix" Value="$(var.Aup4ProgId)" Type="string" />
                 </RegistryKey>
             </RegistryKey>
 
@@ -146,7 +146,7 @@
 
             <RegistryKey Root="$(var.RegistryRoot)" Key="SOFTWARE\Classes\.aup4">
                 <RegistryValue Value="$(var.Aup4ProgId)" Type="string" />
-                <RegistryValue Name="Content Type" Value="application/x-audacity" Type="string" />
+                <RegistryValue Name="Content Type" Value="application/x-glidemix" Type="string" />
             </RegistryKey>
 
             <!-- Add importable file types association -->

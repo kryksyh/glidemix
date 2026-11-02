@@ -23,12 +23,18 @@ require_dep(mpg123)
 require_dep(wavpack)
 require_dep(libsndfile)
 # TagLib -- embedded cover-art extraction for the MixHouse DJ library (Phase 8)
-# GlideMix: muse_deps has no TagLib recipe; ours lives in buildscripts/deps and
-# is put in place here, so a fresh clone builds.
-if (NOT EXISTS "${EXTDEPS_DIR}/recipes/taglib/spec.cmake")
-    file(COPY "${CMAKE_CURRENT_LIST_DIR}/../deps/recipes/taglib" DESTINATION "${EXTDEPS_DIR}/recipes")
-endif()
+# libid3tag -- ID3 tags in MP3 and MP2 exports
+# GlideMix: muse_deps at our pin has neither recipe; ours live in buildscripts/deps
+# and are put in place here, so a fresh clone builds.
+foreach(_recipe taglib libid3tag)
+    if (NOT EXISTS "${EXTDEPS_DIR}/recipes/${_recipe}/spec.cmake")
+        file(COPY "${CMAKE_CURRENT_LIST_DIR}/../deps/recipes/${_recipe}" DESTINATION "${EXTDEPS_DIR}/recipes")
+    endif()
+endforeach()
 require_dep(taglib)
+# zlib is also required by muse, but libid3tag needs it resolved first
+require_dep(zlib)
+require_dep(libid3tag)
 if (OS_IS_WIN)
     require_source_dep(asiosdk)
     require_dep(portaudio REBUILD)

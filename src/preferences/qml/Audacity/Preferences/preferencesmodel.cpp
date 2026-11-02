@@ -235,11 +235,6 @@ void PreferencesModel::load(const QString& currentPageId)
         makeItem("editing", QT_TRANSLATE_NOOP("preferences",
                                               "Audio editing"), IconCode::Code::IBEAM, "Preferences/EditPreferencesPage.qml"),
 
-#ifdef AU_BUILD_CLOUD_AUDIOCOM
-        makeItem("export", QT_TRANSLATE_NOOP("preferences", "Export"), IconCode::Code::SHARE_FILE,
-                 "Preferences/ExportPreferencesPage.qml"),
-#endif
-
         makeItem("shortcuts", QT_TRANSLATE_NOOP("preferences", "Shortcuts"), IconCode::Code::SHORTCUTS,
                  "Preferences/ShortcutsPreferencesPage.qml"),
 
