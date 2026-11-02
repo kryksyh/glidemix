@@ -44,6 +44,7 @@ public:
 
     bool followsTracks() const override { return m_followTracks; }
     void setFollowsTracks(bool follow) override;
+    std::vector<Handover> handovers() const override;
     void trackPlaced(double stretchRatio) override;
     void nudgeMasterBpm(double deltaBpm, double atTime) override;
 
@@ -74,6 +75,7 @@ private:
     void followTracksNow(bool force);
 
     bool m_followTracks = false;
+    bool m_realTempos = false;   ///< after Reset: no 8% rule, every track at its own BPM
     double m_masterFactor = 1.0;
     QString m_trackSignature;
     QTimer m_followTimer;

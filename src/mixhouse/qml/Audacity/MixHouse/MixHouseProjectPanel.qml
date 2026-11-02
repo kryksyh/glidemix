@@ -403,6 +403,27 @@ Item {
                     listView.dropAt = -1
                 }
             }
+
+            // Right-click: find the song in the library.
+            MouseArea {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: progressTrack.top
+                width: root.columnsViewWidth
+                acceptedButtons: Qt.RightButton
+                onClicked: function(mouse) {
+                    const inLibrary = model.trackId > 0
+                    songMenu.show(Qt.point(mouse.x, mouse.y), [
+                        { id: "0", title: qsTrc("mixhouse", "Show in Library"), enabled: inLibrary },
+                        { id: "1", title: qsTrc("mixhouse", "Show Album in Library"), enabled: inLibrary },
+                        { id: "2", title: qsTrc("mixhouse", "Show Artist in Library"), enabled: inLibrary }
+                    ])
+                }
+                ContextMenuLoader {
+                    id: songMenu
+                    onHandleMenuItem: function(itemId) { projectModel.showInLibrary(index, parseInt(itemId)) }
+                }
+            }
         }
 
         // Where a dragged row or dropped song goes.

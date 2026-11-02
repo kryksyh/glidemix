@@ -2,6 +2,8 @@
 
 #include <QRegularExpression>
 
+#include "mixhouse/mixhousefiletags.h"
+
 #include <algorithm>
 
 using namespace au::projectscene;
@@ -20,6 +22,7 @@ void DropController::probeAudioFiles(const QStringList& fileUrls)
 {
     m_lastDraggedUrls.clear();
     m_lastDraggedFilesInfo.clear();
+    m_lastDraggedTitles.clear();
 
     std::vector<muse::io::path_t> localPaths;
     localPaths.reserve(fileUrls.size());
@@ -45,6 +48,11 @@ void DropController::probeAudioFiles(const QStringList& fileUrls)
             continue;
         }
         m_lastDraggedFilesInfo.push_back(std::move(fileInfo));
+        // GlideMix: who it is while dragging, the file name when it has no tags.
+        // Read here, once per drag: the names are asked for on every enter.
+        const au::mixhouse::MixHouseFileTags tags = au::mixhouse::readFileTags(path.toQString());
+        m_lastDraggedTitles.push_back(!tags.fromTags ? muse::io::filename(path, false /* including extension */).toQString()
+                                      : tags.artist.isEmpty() ? tags.title : tags.artist + QStringLiteral(" - ") + tags.title);
     }
 }
 
@@ -65,14 +73,12 @@ QVariantList DropController::lastProbedFileNames() const
     QVariantList out;
     out.reserve(static_cast<int>(requiredTracksCount()));
 
-    auto urlIter  = m_lastDraggedUrls.cbegin();
+    auto titleIter = m_lastDraggedTitles.cbegin();
     auto infoIter = m_lastDraggedFilesInfo.cbegin();
-    for (; urlIter != m_lastDraggedUrls.cend() && infoIter != m_lastDraggedFilesInfo.cend();
-         ++urlIter, ++infoIter) {
-        std::string title = muse::io::filename(*urlIter, false /* including extension */).toStdString();
-
+    for (; titleIter != m_lastDraggedTitles.cend() && infoIter != m_lastDraggedFilesInfo.cend();
+         ++titleIter, ++infoIter) {
         for (int n = 0; n < infoIter->trackCount; ++n) {
-            out.push_back(QString::fromStdString(title));
+            out.push_back(*titleIter);
         }
     }
 

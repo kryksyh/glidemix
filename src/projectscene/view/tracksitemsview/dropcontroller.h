@@ -59,6 +59,7 @@ signals:
 private:
     std::vector<au::importexport::FileInfo> m_lastDraggedFilesInfo;
     QStringList m_lastDraggedUrls;
+    QStringList m_lastDraggedTitles;
     int m_trackCountBeforeImport = -1;
 
 private:

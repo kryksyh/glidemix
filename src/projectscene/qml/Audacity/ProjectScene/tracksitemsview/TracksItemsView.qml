@@ -514,6 +514,7 @@ Rectangle {
             frameStartTime: timeline.context.frameStartTime
             zoom: timeline.context.zoom
             backgroundColor: ui.theme.backgroundSecondaryColor
+            pointColor: ui.theme.accentColor
             labelColor: ui.theme.fontPrimaryColor
 
             // GlideMix: right-click on a point > Delete point.

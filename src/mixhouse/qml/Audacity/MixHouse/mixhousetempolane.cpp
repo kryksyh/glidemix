@@ -49,6 +49,8 @@ MixHouseTempoLane::MixHouseTempoLane(QQuickItem* parent)
     connect(&m_energyPoll, &QTimer::timeout, this, [this]() { refreshEnergy(); });
     connect(this, &MixHouseTempoLane::widthChanged, this, [this]() { refreshEnergy(); });
     connect(this, &QQuickItem::visibleChanged, this, [this]() { setShowEnergy(m_showEnergy); });
+    m_handoverPoll.setInterval(500);
+    connect(&m_handoverPoll, &QTimer::timeout, this, [this]() { refreshHandovers(); });
 }
 
 void MixHouseTempoLane::setShowTempo(bool show)
@@ -147,12 +149,79 @@ void MixHouseTempoLane::paintEnergy(QPainter* p)
                 QStringLiteral("ENERGY"));
 }
 
+void MixHouseTempoLane::refreshHandovers()
+{
+    if (!tempoMap() || !isVisible() || !m_showTempo) {
+        return;
+    }
+    std::vector<IMixHouseTempoMap::Handover> handovers = tempoMap()->handovers();
+    const bool same = handovers.size() == m_handovers.size()
+                      && std::equal(handovers.begin(), handovers.end(), m_handovers.begin(),
+                                    [](const IMixHouseTempoMap::Handover& a, const IMixHouseTempoMap::Handover& b) {
+        return a.start == b.start && a.end == b.end;
+    });
+    if (!same) {
+        m_handovers = std::move(handovers);
+        update();
+    }
+}
+
+void MixHouseTempoLane::paintHandovers(QPainter* p, const Points& points)
+{
+    QFont font = p->font();
+    font.setPixelSize(10);
+    font.setBold(false);
+    p->setFont(font);
+    const QFontMetricsF fm(font);
+    QColor tick = m_pointColor;
+    tick.setAlphaF(0.8);
+    QColor text = m_labelColor;
+    text.setAlphaF(0.75);
+    double labelEnd = -1e9;   // labels never run into each other: zoomed out, some give way
+
+    const auto mark = [&](double time, bool withLabel) {
+        const double x = timeToX(time);
+        if (x < -60.0 || x > width() + 10.0) {
+            return;
+        }
+        const double bpm = tempoMap()->bpmAt(time);
+        const double y = bpmToY(bpm);
+        p->setPen(QPen(tick, 1.0));
+        p->drawLine(QPointF(x, y - 5.0), QPointF(x, y + 5.0));
+
+        // A point here already says it.
+        const bool onPoint = std::any_of(points.begin(), points.end(), [&](const IMixHouseTempoMap::Point& point) {
+            return std::abs(timeToX(point.time) - x) < kHitRadius && bpmLabel(point.bpm) == bpmLabel(bpm);
+        });
+        if (!withLabel || onPoint || x + 3.0 < labelEnd) {
+            return;
+        }
+        const QString label = bpmLabel(bpm);
+        const bool above = y + 6.0 + fm.height() > height();
+        p->setPen(text);
+        p->drawText(QPointF(x + 3.0, above ? y - 7.0 : y + 6.0 + fm.ascent()), label);
+        labelEnd = x + 3.0 + fm.horizontalAdvance(label) + 6.0;
+    };
+    for (const IMixHouseTempoMap::Handover& h : m_handovers) {
+        mark(h.start, true);
+        if (h.end > h.start) {
+            // The same tempo at both ends: one number is enough.
+            mark(h.end, bpmLabel(tempoMap()->bpmAt(h.end)) != bpmLabel(tempoMap()->bpmAt(h.start)));
+        }
+    }
+}
+
 void MixHouseTempoLane::componentComplete()
 {
     QQuickPaintedItem::componentComplete();
     if (tempoMap()) {
-        tempoMap()->tempoMapChanged().onNotify(this, [this]() { update(); });
+        tempoMap()->tempoMapChanged().onNotify(this, [this]() {
+            refreshHandovers();
+            update();
+        });
     }
+    refreshHandovers();
+    m_handoverPoll.start();
     if (beatGrids()) {
         beatGrids()->beatGridsChanged().onNotify(this, [this]() { refreshEnergy(); });
     }
@@ -268,6 +337,8 @@ void MixHouseTempoLane::paint(QPainter* p)
     p->setPen(QPen(m_lineColor, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p->drawPath(path);
 
+    paintHandovers(p, points);
+
     // Points with their BPM; the readout flips below a point near the top.
     QFont font = p->font();
     font.setPixelSize(11);
@@ -281,7 +352,7 @@ void MixHouseTempoLane::paint(QPainter* p)
         }
         const bool active = (m_drag == Drag::Point && i == m_dragIndex) || i == m_selectedIndex;
         p->setPen(QPen(Qt::white, 1.5));
-        p->setBrush(m_lineColor);
+        p->setBrush(m_pointColor);
         p->drawEllipse(pt, active ? 6.0 : 5.0, active ? 6.0 : 5.0);
         p->setPen(m_labelColor);
         const bool below = pt.y() - 4.0 - fm.height() < 0.0;

@@ -2,7 +2,6 @@
  * GlideMix
  */
 #include "mixhouselexicon.h"
-#include "mixhouse/glidemixpaths.h"
 #include "mixhouse/mixhousesearchquery.h"
 
 #include <QDir>
@@ -82,9 +81,7 @@ MixHouseLexicon::~MixHouseLexicon()
 
 QString MixHouseLexicon::databasePath()
 {
-    // Lexicon is an Electron app: its data folder is the platform's per-user
-    // app data folder + "lexicon" (%APPDATA%\lexicon on Windows).
-    return paths::userAppDataRoot() + QStringLiteral("/lexicon/main.db");
+    return QDir::homePath() + QStringLiteral("/Library/Application Support/lexicon/main.db");
 }
 
 bool MixHouseLexicon::open() const

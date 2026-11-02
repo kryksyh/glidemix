@@ -49,6 +49,9 @@ void MixHouseProjectListModel::componentComplete()
         // Anchors moved, a grid fixed, an analysis finished.
         beatGrids()->beatGridsChanged().onNotify(this, [this]() { scheduleReload(); });
     }
+    if (tempoMap()) {
+        tempoMap()->tempoMapChanged().onNotify(this, [this]() { scheduleReload(); });
+    }
     if (projectHistory()) {
         projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent event) {
             // Undo and redo bring back a state as it was: only new edits are kept chained.
@@ -344,6 +347,19 @@ void MixHouseProjectListModel::reload()
     }
     addLooseUpTo(std::numeric_limits<double>::infinity(), static_cast<int>(songs.size()));
 
+    // Clips are stretched to the project tempo; playback then runs at line /
+    // project tempo. So a row shows what is heard, at the middle of its song,
+    // a half-tempo match staying at half.
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    const double projectBpm = project ? project->timeSignature().tempo : 0.0;
+    if (tempoMap() && !tempoMap()->isConstant() && projectBpm > 0.0) {
+        for (Row& row : rows) {
+            const double speed = tempoMap()->bpmAt((row.start + row.end) / 2.0) / projectBpm;
+            row.bpm *= speed;
+            row.stretch = ((1.0 + row.stretch / 100.0) * speed - 1.0) * 100.0;
+        }
+    }
+
     // Each song's transition out by name, as its row shows it.
     m_outNames.clear();
     for (const Row& row : rows) {
@@ -506,6 +522,22 @@ void MixHouseProjectListModel::revealRow(int row)
     const Row& r = m_rows[static_cast<size_t>(row)];
     const trackedit::ClipKey clip = r.overlay ? r.clip : m_songs[static_cast<size_t>(r.song)].inClip;
     trackAligner()->requestViewFit(r.start, r.end, clip.trackId);
+}
+
+void MixHouseProjectListModel::showInLibrary(int row, int mode)
+{
+    if (row < 0 || row >= rowCount() || !library()) {
+        return;
+    }
+    const int trackId = m_rows[static_cast<size_t>(row)].libraryTrackId;
+    if (trackId <= 0) {
+        return;
+    }
+    if (dispatcher()) {
+        dispatcher()->dispatch("dock-set-open",
+                               muse::actions::ActionData::make_arg2<QString, bool>(QStringLiteral("mixHouseLibraryPanel"), true));
+    }
+    library()->requestRevealTrack(trackId, static_cast<IMixHouseLibrary::RevealMode>(mode));
 }
 
 void MixHouseProjectListModel::seekRow(int row, double fraction)

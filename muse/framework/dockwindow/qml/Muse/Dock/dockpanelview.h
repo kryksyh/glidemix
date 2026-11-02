@@ -60,6 +60,8 @@ public:
     void setCurrentTabIndex(int index);
 
 public slots:
+    //! GlideMix: this panel's tab in front of the others in its group.
+    void raiseTab();
     void setGroupName(const QString& name);
     void setContextMenuModel(uicomponents::AbstractMenuModel* model);
     void setTitleBar(QQmlComponent* titleBar);

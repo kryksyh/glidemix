@@ -14,6 +14,8 @@ struct MixHouseFileTags {
     QString genre;
     QString year;
     bool fromTags = false;   ///< the title came from the file's tags
+    double replayGain = 0.0;       ///< REPLAYGAIN_TRACK_GAIN as a linear ratio, as library.replaygain keeps it; 0 = none
+    double replayGainPeak = -1.0;  ///< REPLAYGAIN_TRACK_PEAK; -1 = none, like library.replaygain_peak
 };
 
 MixHouseFileTags readFileTags(const QString& filePath);

@@ -27,6 +27,7 @@
 #include <windows.h>
 #endif
 #include <QDrag>
+#include <QThread>
 #include <QWindow>
 #include <QMouseEvent>
 #include <QCursor>
@@ -327,6 +328,9 @@ void MixHouseTrackListModel::load()
             m_scanScanned = scanned;
             m_scanAdded = added;
             emit scanProgressChanged();
+        });
+        library()->revealTrackRequested().onReceive(this, [this](int trackId, IMixHouseLibrary::RevealMode mode) {
+            emit revealTrackRequested(trackId, static_cast<int>(mode));
         });
         library()->scanFinished().onReceive(this, [this](const IMixHouseLibrary::ScanResult& result) {
             emit scanningChanged();
@@ -1881,6 +1885,82 @@ void MixHouseTrackListModel::setKeyFilters(const QStringList& requested)
     load();
 }
 
+void MixHouseTrackListModel::importTagsFromFiles(const QVariantList& rows, bool allMatching)
+{
+    if (m_importingTags) {
+        return;
+    }
+    const QList<int> ids = allMatching && m_externalSource.isEmpty() ? library()->matchingTracks(m_query).ids : resolveTrackIds(rows);
+    const QHash<int, QString> locations = library()->trackLocations(ids);
+    if (locations.isEmpty()) {
+        return;
+    }
+    m_importingTags = true;
+    setAnalysisMessage(muse::qtrc("mixhouse", "Reading the tags of %n song(s)…", nullptr, locations.size()));
+
+    using Read = std::vector<std::pair<int, MixHouseFileTags> >;
+    auto read = std::make_shared<Read>();
+    read->reserve(locations.size());
+    QThread* thread = QThread::create([locations, read]() {
+        for (auto it = locations.constBegin(); it != locations.constEnd(); ++it) {
+            const MixHouseFileTags tags = readFileTags(it.value());
+            // A moved or unreadable file has no tags to give.
+            if (tags.fromTags || !tags.artist.isEmpty() || !tags.album.isEmpty() || !tags.genre.isEmpty()
+                || !tags.year.isEmpty() || tags.replayGain > 0.0 || tags.replayGainPeak >= 0.0) {
+                read->emplace_back(it.key(), tags);
+            }
+        }
+    });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    connect(thread, &QThread::finished, this, [this, read]() {
+        m_importingTags = false;
+        const int changed = library()->applyFileTags(*read);
+        const int count = static_cast<int>(read->size());
+        const QString text = changed < 0 ? muse::qtrc("mixhouse", "The tags could not be saved to the library.")
+                             : changed == 0 ? muse::qtrc("mixhouse", "Tags read from %n song(s): already up to date.", nullptr, count)
+                             : muse::qtrc("mixhouse", "Tags read from %n song(s): %1 updated.", nullptr, count).arg(changed);
+        setAnalysisMessage(text);
+        QTimer::singleShot(8000, this, [this, text]() {
+            if (m_analysisMessage == text) {
+                setAnalysisMessage(QString());
+            }
+        });
+        load();
+    });
+    thread->start();
+}
+
+int MixHouseTrackListModel::rowOfTrack(int trackId) const
+{
+    for (size_t i = 0; i < m_tracks.size(); ++i) {
+        if (m_tracks[i].id == trackId) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+QVariantMap MixHouseTrackListModel::trackInfo(int trackId) const
+{
+    QVariantMap out;
+    IMixHouseLibrary::TrackQuery query;
+    query.trackId = trackId;
+    query.limit = 1;
+    const MixHouseTrackList found = library()->tracks(query);
+    if (!found.empty()) {
+        out["title"] = found.front().title;
+        out["album"] = found.front().album;
+        out["artist"] = found.front().artist;
+    }
+    return out;
+}
+
+QString MixHouseTrackListModel::lancelotKey(const QString& key) const
+{
+    const int keyId = keyIdFromText(key);
+    return keyId > 0 ? IMixHouseKeyMatch::camelot(keyId) : key;
+}
+
 static QVariantList toVariantList(const MixHouseNamedList& items)
 {
     QVariantList out;
@@ -2852,13 +2932,7 @@ void MixHouseTrackListModel::revealInFileBrowser(const QString& filePath) const
     // where this lives" gesture. Qt.openUrlExternally("file://" + path) on a
     // FILE (not a directory) instead launches its default player, which is
     // not the same thing at all.
-#ifdef Q_OS_WIN
-    // Explorer's equivalent: "/select," then the native path as its own
-    // argument (QProcess quotes it when it has spaces; Explorer accepts that).
-    QProcess::startDetached(QStringLiteral("explorer.exe"), { QStringLiteral("/select,"), QDir::toNativeSeparators(filePath) });
-#else
     QProcess::startDetached(QStringLiteral("/usr/bin/open"), { QStringLiteral("-R"), filePath });
-#endif
 }
 
 bool MixHouseTrackListModel::addTrackToAutoDj(int row, int loc)

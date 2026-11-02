@@ -14,6 +14,7 @@
 #include "async/notification.h"
 #include "async/channel.h"
 #include "modularity/imoduleinterface.h"
+#include "mixhousefiletags.h"
 #include "mixhousetypes.h"
 #include "mixhousesmartplaylist.h"
 #include "imixhouserekordboxphrases.h"
@@ -26,17 +27,9 @@ namespace au::mixhouse {
 inline bool mixHouseFolderTooBroadToScan(const QString& folder)
 {
     const QString path = QDir::cleanPath(folder);
-#ifdef Q_OS_WIN
-    // Windows: a drive (C:, C:/), a drive's Users folder, or the home folder.
-    const bool driveRoot = (path.size() == 2 || path.size() == 3) && path.at(1) == QLatin1Char(':');
-    const bool usersFolder = path.size() == 8 && path.at(1) == QLatin1Char(':')
-                             && path.mid(2).compare(QStringLiteral("/Users"), Qt::CaseInsensitive) == 0;
-    return driveRoot || usersFolder || path.compare(QDir::cleanPath(QDir::homePath()), Qt::CaseInsensitive) == 0;
-#else
     const bool volumeRoot = path.startsWith(QStringLiteral("/Volumes/")) && path.count(QLatin1Char('/')) == 2;
     return path == QStringLiteral("/") || path == QDir::cleanPath(QDir::homePath()) || path == QStringLiteral("/Users")
            || path == QStringLiteral("/Volumes") || volumeRoot;
-#endif
 }
 }
 
@@ -352,6 +345,17 @@ public:
     /// remembers them for Lexicon / rekordbox rows (tagEditsByLocation).
     virtual bool setTrackTags(int trackId, const QVariantMap& fields, bool writeFile, bool keepAsEdit) = 0;
     virtual QHash<QString, QVariantMap> tagEditsByLocation() const = 0;
+    /// Import From File Tags: the files of these tracks, to read off the main
+    /// thread, then what was read. A tag the file has replaces the library's
+    /// value; one it lacks leaves it. Ratings, BPM and key are never touched.
+    /// applyFileTags returns how many tracks really changed, -1 when it failed.
+    virtual QHash<int, QString> trackLocations(const QList<int>& trackIds) const = 0;
+    virtual int applyFileTags(const std::vector<std::pair<int, MixHouseFileTags> >& tags) = 0;
+
+    /// "Show in Library" from anywhere: the library panel goes to the track.
+    enum class RevealMode { Track, Album, Artist };
+    virtual void requestRevealTrack(int trackId, RevealMode mode) = 0;
+    virtual muse::async::Channel<int, RevealMode> revealTrackRequested() const = 0;
 
     /// GlideMix: smart playlists (rules, see mixhousesmartplaylist.h), in
     /// sidebar order. Saving one with id < 0 creates it; returns its id

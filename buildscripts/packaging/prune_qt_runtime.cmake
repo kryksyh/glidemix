@@ -89,18 +89,17 @@ endforeach()
 # GlideMix: the SQLite driver stays (the music library); the others go.
 file(REMOVE_RECURSE
     "${QT_DEPLOY_ROOT}/bin/qmltooling"
+    "${QT_DEPLOY_ROOT}/bin/sqldrivers"
     "${QT_DEPLOY_ROOT}/bin/styles"
     "${QT_DEPLOY_ROOT}/plugins/qmltooling"
+    "${QT_DEPLOY_ROOT}/plugins/sqldrivers"
     "${QT_DEPLOY_ROOT}/plugins/styles"
     "${QT_DEPLOY_ROOT}/GlideMix.app/Contents/PlugIns/qmltooling"
     "${QT_DEPLOY_ROOT}/GlideMix.app/Contents/PlugIns/styles"
     "${QT_DEPLOY_ROOT}/translations"
 )
 
-file(GLOB _unused_sql_drivers
-    "${QT_DEPLOY_ROOT}/bin/sqldrivers/*"
-    "${QT_DEPLOY_ROOT}/plugins/sqldrivers/*"
-    "${QT_DEPLOY_ROOT}/GlideMix.app/Contents/PlugIns/sqldrivers/*")
+file(GLOB _unused_sql_drivers "${QT_DEPLOY_ROOT}/GlideMix.app/Contents/PlugIns/sqldrivers/*")
 foreach(_driver IN LISTS _unused_sql_drivers)
     if(NOT _driver MATCHES "qsqlite")
         file(REMOVE "${_driver}")

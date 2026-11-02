@@ -428,7 +428,7 @@ DockPage {
                         height: 22
                         visible: tempoLaneHeader.tempoOn
                         text: qsTrc("mixhouse", "Reset")
-                        toolTipTitle: qsTrc("mixhouse", "Reset the tempo line to the project tempo")
+                        toolTipTitle: qsTrc("mixhouse", "Reset the tempo line to the tracks' own tempos")
                         onClicked: tempoLaneModel.reset()
                     }
 
@@ -662,6 +662,7 @@ DockPage {
 
             MixHouseLibraryPanel {
                 navigationSection: mixHouseLibraryPanel.navigationSection
+                onRaiseRequested: mixHouseLibraryPanel.raiseTab()
             }
         },
 

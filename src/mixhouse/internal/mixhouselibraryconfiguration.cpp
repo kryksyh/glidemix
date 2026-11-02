@@ -2,7 +2,6 @@
  * MixHouse DJ 2
  */
 #include "au3-mixtape-engine/MixtapeClipVoice.h"
-#include "mixhouse/glidemixpaths.h"
 #include "mixhouselibraryconfiguration.h"
 
 #include <algorithm>
@@ -408,7 +407,7 @@ QString MixHouseLibraryConfiguration::settingsDirectoryPath() const
     // Same real path MixHouseLibrary::defaultDatabasePath() computes,
     // directory component only -- see this method's own header comment
     // for why it's duplicated here instead of injected.
-    return paths::glidemixDataPath(QStringLiteral("Library"));
+    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Library");
 }
 
 QString MixHouseLibraryConfiguration::libraryFontFamily() const

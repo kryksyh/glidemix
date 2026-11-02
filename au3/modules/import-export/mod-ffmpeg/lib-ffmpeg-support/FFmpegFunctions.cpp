@@ -23,7 +23,7 @@
 #include <cstdlib>
 #endif
 
-#if defined(__WXMAC__) || defined(__WXMSW__)
+#if defined(__WXMAC__)
 static wxString BundledFFmpegDir();
 #endif
 
@@ -306,12 +306,11 @@ std::shared_ptr<FFmpegFunctions> FFmpegFunctions::Load(bool fromUserPathOnly)
     EnvSetter envSetter(fromUserPathOnly);
 #endif
 
-#if defined(__WXMAC__) || defined(__WXMSW__)
+#if defined(__WXMAC__)
     // GlideMix: the app's own FFmpeg first, whatever its version -- trying
     // every version before every folder picked a newer Homebrew FFmpeg over
     // it, so the developer's Mac never ran what testers get. An FFmpeg chosen
-    // in Preferences still comes first. (Windows: loaded by name, found
-    // through the PATH the EnvSetter above starts with the bundled folder.)
+    // in Preferences still comes first.
     if (!fromUserPathOnly && AVFormatPath.Read().empty()) {
         const wxString bundled = BundledFFmpegDir();
         for (int version : supportedVersions) {
@@ -356,25 +355,6 @@ static wxString BundledFFmpegDir()
     }
     return wxFileName(wxString::FromUTF8(resolved)).GetPath() + wxT("/../Frameworks/ffmpeg");
 }
-#elif defined(__WXMSW__)
-//! GlideMix: the FFmpeg that comes with the app, <exe dir>\ffmpeg (the
-//! avformat/avcodec/avutil/swresample DLLs). Asked of Windows for the same
-//! reason as on macOS: wxStandardPaths needs a wxApp.
-static wxString BundledFFmpegDir()
-{
-    std::vector<wchar_t> buffer(MAX_PATH);
-    while (buffer.size() <= 32768) {
-        const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0) {
-            return {};
-        }
-        if (length < buffer.size()) {
-            return wxFileName(wxString(buffer.data(), length)).GetPath() + wxT("\\ffmpeg");
-        }
-        buffer.resize(buffer.size() * 2);   // truncated: a long path
-    }
-    return {};
-}
 #endif
 
 std::vector<wxString> FFmpegFunctions::GetSearchPaths(bool fromUserPathOnly)
@@ -399,9 +379,6 @@ std::vector<wxString> FFmpegFunctions::GetSearchPaths(bool fromUserPathOnly)
     }
 
 #if defined(__WXMSW__)
-    // GlideMix: the FFmpeg that comes with the app (<exe dir>\ffmpeg).
-    paths.emplace_back(BundledFFmpegDir());
-
     wxRegKey reg(wxT("HKEY_LOCAL_MACHINE\\Software\\FFmpeg for Audacity"));
     wxString path;
 

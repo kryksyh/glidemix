@@ -2,9 +2,9 @@
  * GlideMix: the player on the new playback engine (stage 1).
  *
  * The default player (MIXTAPE_ENGINE=0 or the file use-old-engine in
- * ~/Library/Application Support/Glidemix, %APPDATA%\Glidemix on Windows, picks
- * Audacity's instead). Play, stop, pause, seek and the playhead run on
- * au3-mixtape-engine; loop and play region bookkeeping stay with Au3Player. While playing, the arrangement is
+ * ~/Library/Application Support/Glidemix picks Audacity's instead). Play, stop,
+ * pause, seek and the playhead run on au3-mixtape-engine; loop and play
+ * region bookkeeping stay with Au3Player. While playing, the arrangement is
  * re-copied every tick, so edits are heard without stopping the music.
  */
 #pragma once

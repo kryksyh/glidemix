@@ -20,6 +20,7 @@ using namespace au::mixhouse;
 namespace {
 constexpr double kFallbackBpm = 120.0;
 constexpr double kSameBpm = 1e-6;
+constexpr double kRealTempoSameBpm = 0.1;
 }
 
 double IMixHouseTempoMap::curveExponent(double curve)
@@ -87,6 +88,7 @@ void MixHouseTempoMap::onProjectChanged()
     // A new project starts with a flat line at its tempo. Nothing is saved yet
     // (persistence comes with project saving).
     m_points = { Point { 0.0, projectTempo(), 0.0 } };
+    m_realTempos = false;
     if (auto project = globalContext()->currentTrackeditProject()) {
         project->timeSignatureChanged().onReceive(this, [this](const trackedit::TimeSignature& ts) {
             followProjectTempo(ts.tempo);
@@ -178,6 +180,10 @@ void MixHouseTempoMap::reset()
     setFollowsTracks(false);
     m_masterFactor = 1.0;
     setPoints({ Point { 0.0, projectTempo(), 0.0 } }, true);
+    // Chris: Reset is each track's real BPM, near the project tempo or not. It
+    // stays that way until the line is drawn by hand or Follow tracks is pressed.
+    m_realTempos = true;
+    setFollowsTracks(true);
 }
 
 double MixHouseTempoMap::bpmAt(double time) const
@@ -353,6 +359,9 @@ void MixHouseTempoMap::setFollowsTracks(bool follow)
         return;
     }
     m_followTracks = follow;
+    if (!follow) {
+        m_realTempos = false;
+    }
     if (follow) {
         m_masterFactor = 1.0;
         // Clip moves and drops don't all reach a single notification here;
@@ -366,6 +375,38 @@ void MixHouseTempoMap::setFollowsTracks(bool follow)
         QObject::disconnect(&m_followTimer, nullptr, nullptr, nullptr);
     }
     m_changed.notify();
+}
+
+std::vector<IMixHouseTempoMap::Handover> MixHouseTempoMap::handovers() const
+{
+    std::vector<Handover> out;
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project) {
+        return out;
+    }
+    std::vector<Handover> clips;   // here: each clip's start and end
+    for (const trackedit::TrackId trackId : project->trackIdList()) {
+        for (const trackedit::Clip& clip : project->clipList(trackId)) {
+            if (clip.endTime > clip.startTime) {
+                clips.push_back({ clip.startTime, clip.endTime });
+            }
+        }
+    }
+    if (clips.empty()) {
+        return out;
+    }
+    std::sort(clips.begin(), clips.end(), [](const Handover& a, const Handover& b) { return a.start < b.start; });
+    double currentEnd = clips.front().end;
+    out.push_back({ clips.front().start, clips.front().start });
+    for (size_t i = 1; i < clips.size(); ++i) {
+        const Handover& next = clips[i];
+        if (next.end <= currentEnd) {
+            continue;   // a short clip inside the playing track: the track leads
+        }
+        out.push_back({ next.start, std::max(next.start, currentEnd) });
+        currentEnd = next.end;
+    }
+    return out;
 }
 
 void MixHouseTempoMap::trackPlaced(double stretchRatio)
@@ -398,9 +439,12 @@ void MixHouseTempoMap::followTracksNow(bool force)
     // line only moves where a far track takes over (points where the tempo
     // really changes, not one per 0.1 BPM of detection noise).
     const double project = projectTempo();
-    const auto lineBpm = [project](double bpm) {
-        return std::abs(bpm / project - 1.0) <= kFarTempo ? project : bpm;
+    const bool realTempos = m_realTempos;
+    const auto lineBpm = [project, realTempos](double bpm) {
+        return !realTempos && std::abs(bpm / project - 1.0) <= kFarTempo ? project : bpm;
     };
+    // Real BPMs: 0.1 of detection noise between two tracks is no tempo change.
+    const double sameBpm = realTempos ? kRealTempoSameBpm : kSameBpm;
     for (const trackedit::TrackId trackId : trackeditProject->trackIdList()) {
         for (const trackedit::Clip& clip : trackeditProject->clipList(trackId)) {
             const double bpm = lineBpm(beatGrids()->clipBpm(clip.key));
@@ -434,7 +478,7 @@ void MixHouseTempoMap::followTracksNow(bool force)
         if (next.end <= current.end) {
             continue;   // a short clip inside the playing track: the track leads
         }
-        if (std::abs(next.bpm - current.bpm) < kSameBpm) {
+        if (std::abs(next.bpm - current.bpm) < sameBpm) {
             current = next;   // same tempo: no point
             continue;
         }

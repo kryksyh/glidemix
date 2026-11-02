@@ -80,6 +80,10 @@ public:
     QHash<QString, std::pair<int, int> > ratingsAndColorsByLocation() const override;
     bool setTrackTags(int trackId, const QVariantMap& fields, bool writeFile, bool keepAsEdit) override;
     QHash<QString, QVariantMap> tagEditsByLocation() const override;
+    QHash<int, QString> trackLocations(const QList<int>& trackIds) const override;
+    int applyFileTags(const std::vector<std::pair<int, MixHouseFileTags> >& tags) override;
+    void requestRevealTrack(int trackId, RevealMode mode) override;
+    muse::async::Channel<int, RevealMode> revealTrackRequested() const override;
     std::vector<MixHouseSmartPlaylist> smartPlaylists() const override;
     int saveSmartPlaylist(const MixHouseSmartPlaylist& playlist) override;
     bool deleteSmartPlaylist(int id) override;
@@ -298,6 +302,7 @@ private:
     MixHouseLibraryScanner* m_scanWorker = nullptr;
     bool m_scanning = false;
     muse::async::Channel<int, int> m_scanProgress;
+    muse::async::Channel<int, RevealMode> m_revealTrackRequested;
     muse::async::Channel<ScanResult> m_scanFinished;
 
     // Background analysis pool (see startBackgroundAnalysis's own interface

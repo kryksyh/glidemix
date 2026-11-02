@@ -13,6 +13,7 @@
 #include <QQmlParserStatus>
 #include <QtQmlIntegration>
 
+#include "actions/iactionsdispatcher.h"
 #include "async/asyncable.h"
 #include "modularity/ioc.h"
 #include "context/iglobalcontext.h"
@@ -25,6 +26,7 @@
 #include "mixhouse/imixhouselibrary.h"
 #include "mixhouse/imixhouselibraryconfiguration.h"
 #include "mixhouse/imixhouserekordboxphrases.h"
+#include "mixhouse/imixhousetempomap.h"
 #include "mixhouse/imixhousetrackaligner.h"
 #include "mixhouse/imixhousetransitions.h"
 #include "mixhouse/imixhousetransitionconfiguration.h"
@@ -43,6 +45,7 @@ class MixHouseProjectListModel : public QAbstractListModel, public QQmlParserSta
 
     muse::ContextInject<context::IGlobalContext> globalContext { this };
     muse::ContextInject<IMixHouseBeatGrids> beatGrids { this };
+    muse::ContextInject<IMixHouseTempoMap> tempoMap { this };
     muse::ContextInject<IMixHouseTransitions> transitions { this };
     muse::ContextInject<IMixHouseLibrary> library { this };
     muse::GlobalInject<IMixHouseLibraryConfiguration> libraryConfiguration;
@@ -53,6 +56,7 @@ class MixHouseProjectListModel : public QAbstractListModel, public QQmlParserSta
     muse::ContextInject<trackedit::ITrackeditInteraction> trackeditInteraction { this };
     muse::ContextInject<trackedit::ITracksInteraction> tracksInteraction { this };
     muse::ContextInject<playback::IPlayback> playback { this };
+    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher { this };
 
     Q_PROPERTY(int songCount READ songCount NOTIFY songsChanged)
     //! The transitions a row's drop-down offers (Preferences > Transitions).
@@ -77,6 +81,9 @@ public:
     Q_INVOKABLE QVariantList overviewBuckets(int row, int bucketCount);
     //! Scrolls the timeline to the row's song.
     Q_INVOKABLE void revealRow(int row);
+    //! Opens the library at the row's song: `mode` 0 the track, 1 its album,
+    //! 2 its artist (IMixHouseLibrary::RevealMode).
+    Q_INVOKABLE void showInLibrary(int row, int mode);
     //! Moves the playhead into the row's song, `fraction` (0..1) of the way through.
     Q_INVOKABLE void seekRow(int row, double fraction);
     //! Drag-and-drop reorder: the song at `from` goes before the song now at

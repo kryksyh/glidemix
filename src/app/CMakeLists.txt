@@ -432,10 +432,6 @@ if (OS_IS_WIN)
 
     install(SCRIPT ${deploy_script})
 
-    # GlideMix: the music library is SQLite through Qt Sql. The deploy above
-    # leaves SQL drivers out; ship this one (prune_qt_runtime keeps it).
-    install(FILES $<TARGET_FILE:Qt6::QSQLiteDriverPlugin> DESTINATION bin/sqldrivers)
-
     install(SCRIPT
         "${PROJECT_SOURCE_DIR}/buildscripts/packaging/prune_qt_runtime.cmake"
     )

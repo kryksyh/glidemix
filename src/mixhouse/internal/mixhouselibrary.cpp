@@ -29,7 +29,6 @@
  *   crate_tracks:    crate_id, track_id
  */
 #include "mixhouselibrary.h"
-#include "mixhouse/glidemixpaths.h"
 #include "mixhouse/mixhousenativepath.h"
 
 #include <algorithm>
@@ -276,14 +275,15 @@ QString MixHouseLibrary::defaultDatabasePath()
     // sits next to it, the layout Mixxx uses. Kept out of Mixxx's sandbox
     // container: macOS asks for permission every time an app reads another
     // app's container.
-    return paths::glidemixDataPath(QStringLiteral("Library/library.sqlite"));
+    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Library/library.sqlite");
 }
 
 QString MixHouseLibrary::mixxxDatabasePath()
 {
     // Where Mixxx (and the parked MixHouse DJ fork, same bundle id) keeps its
-    // library -- only read once, to import it.
-    return paths::mixxxSettingsDir() + QStringLiteral("/mixxxdb.sqlite");
+    // library on macOS -- only read once, to import it.
+    return QDir::homePath() + QStringLiteral(
+        "/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx/mixxxdb.sqlite");
 }
 
 namespace {
@@ -1617,9 +1617,9 @@ au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFolder(
 
     QSqlQuery insLib(m_writeDb);
     insLib.prepare(QStringLiteral(
-        "INSERT INTO library (title, artist, album, genre, year, filetype, location, header_parsed, "
+        "INSERT INTO library (title, artist, album, genre, year, replaygain, replaygain_peak, filetype, location, header_parsed, "
         "mixxx_deleted, played, timesplayed, rating, bpm, duration, datetime_added) "
-        "VALUES (:title, :artist, :album, :genre, :year, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+        "VALUES (:title, :artist, :album, :genre, :year, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
 
     m_writeDb.transaction();
     while (it.hasNext()) {
@@ -1695,6 +1695,8 @@ au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFolder(
             insLib.bindValue(QStringLiteral(":album"), tags.album);
             insLib.bindValue(QStringLiteral(":genre"), tags.genre);
             insLib.bindValue(QStringLiteral(":year"), tags.year);
+            insLib.bindValue(QStringLiteral(":replaygain"), tags.replayGain);
+            insLib.bindValue(QStringLiteral(":replaygainPeak"), tags.replayGainPeak);
             insLib.bindValue(QStringLiteral(":parsed"), tags.fromTags ? 1 : 0);
         }
         insLib.bindValue(QStringLiteral(":filetype"), fi.suffix().toLower());
@@ -1769,9 +1771,9 @@ bool MixHouseLibrary::ensureTrackForFile(const QString& path, int& outLibraryId,
 
     QSqlQuery insLib(m_writeDb);
     insLib.prepare(QStringLiteral(
-        "INSERT INTO library (title, artist, album, genre, year, filetype, location, header_parsed, "
+        "INSERT INTO library (title, artist, album, genre, year, replaygain, replaygain_peak, filetype, location, header_parsed, "
         "mixxx_deleted, played, timesplayed, rating, bpm, duration, datetime_added) "
-        "VALUES (:title, :artist, :album, :genre, :year, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+        "VALUES (:title, :artist, :album, :genre, :year, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
     {
             // GlideMix: the file's tags (Artist, Title...), the file name only
             // when it has none -- the stream and the library showed file names.
@@ -1781,6 +1783,8 @@ bool MixHouseLibrary::ensureTrackForFile(const QString& path, int& outLibraryId,
             insLib.bindValue(QStringLiteral(":album"), tags.album);
             insLib.bindValue(QStringLiteral(":genre"), tags.genre);
             insLib.bindValue(QStringLiteral(":year"), tags.year);
+            insLib.bindValue(QStringLiteral(":replaygain"), tags.replayGain);
+            insLib.bindValue(QStringLiteral(":replaygainPeak"), tags.replayGainPeak);
             insLib.bindValue(QStringLiteral(":parsed"), tags.fromTags ? 1 : 0);
         }
     insLib.bindValue(QStringLiteral(":filetype"), fi.suffix().toLower());
@@ -3623,6 +3627,97 @@ QHash<QString, QVariantMap> MixHouseLibrary::tagEditsByLocation() const
         out.insert(q.value(0).toString(), QJsonDocument::fromJson(q.value(1).toString().toUtf8()).object().toVariantMap());
     }
     return out;
+}
+
+QHash<int, QString> MixHouseLibrary::trackLocations(const QList<int>& trackIds) const
+{
+    QHash<int, QString> out;
+    if (!ensureOpen()) {
+        return out;
+    }
+    const QSet<int> wanted(trackIds.begin(), trackIds.end());
+    QSqlQuery q(m_writeDb.isValid() && m_writeDb.isOpen() ? m_writeDb : m_db);
+    q.setForwardOnly(true);
+    if (!q.exec(QStringLiteral("SELECT l.id, t.location FROM library l JOIN track_locations t ON t.id = l.location"))) {
+        LOGE() << "trackLocations failed: " << q.lastError().text();
+        return out;
+    }
+    while (q.next()) {
+        const int id = q.value(0).toInt();
+        if (wanted.contains(id)) {
+            out.insert(id, q.value(1).toString());
+        }
+    }
+    return out;
+}
+
+int MixHouseLibrary::applyFileTags(const std::vector<std::pair<int, MixHouseFileTags> >& tags)
+{
+    if (!ensureWritable()) {
+        return -1;
+    }
+    QSqlQuery old(m_writeDb);
+    old.prepare(QStringLiteral(
+        "SELECT title, artist, album, genre, year, replaygain, replaygain_peak FROM library WHERE id = :id"));
+    int changed = 0;
+    QSqlQuery upd(m_writeDb);
+    upd.prepare(QStringLiteral(
+        "UPDATE library SET title = COALESCE(NULLIF(:title, ''), title), artist = COALESCE(NULLIF(:artist, ''), artist), "
+        "album = COALESCE(NULLIF(:album, ''), album), genre = COALESCE(NULLIF(:genre, ''), genre), "
+        "year = COALESCE(NULLIF(:year, ''), year), "
+        "replaygain = CASE WHEN :gainSet > 0 THEN :gain ELSE replaygain END, "
+        "replaygain_peak = CASE WHEN :peakSet >= 0 THEN :peak ELSE replaygain_peak END "
+        "WHERE id = :id"));
+    m_writeDb.transaction();
+    for (const auto& [trackId, t] : tags) {
+        old.bindValue(QStringLiteral(":id"), trackId);
+        if (!old.exec() || !old.next()) {
+            continue;
+        }
+        const auto differs = [&old](int column, const QString& value) {
+            return !value.isEmpty() && value != old.value(column).toString();
+        };
+        const auto differsNumber = [&old](int column, double value) {
+            return std::abs(value - old.value(column).toDouble()) > 1e-6;
+        };
+        if (!(differs(0, t.fromTags ? t.title : QString()) || differs(1, t.artist) || differs(2, t.album)
+              || differs(3, t.genre) || differs(4, t.year)
+              || (t.replayGain > 0.0 && differsNumber(5, t.replayGain))
+              || (t.replayGainPeak >= 0.0 && differsNumber(6, t.replayGainPeak)))) {
+            continue;
+        }
+        ++changed;
+        upd.bindValue(QStringLiteral(":title"), t.fromTags ? t.title : QString());
+        upd.bindValue(QStringLiteral(":artist"), t.artist);
+        upd.bindValue(QStringLiteral(":album"), t.album);
+        upd.bindValue(QStringLiteral(":genre"), t.genre);
+        upd.bindValue(QStringLiteral(":year"), t.year);
+        upd.bindValue(QStringLiteral(":gainSet"), t.replayGain);
+        upd.bindValue(QStringLiteral(":gain"), t.replayGain);
+        upd.bindValue(QStringLiteral(":peakSet"), t.replayGainPeak);
+        upd.bindValue(QStringLiteral(":peak"), t.replayGainPeak);
+        upd.bindValue(QStringLiteral(":id"), trackId);
+        if (!upd.exec()) {
+            LOGE() << "applyFileTags failed: " << upd.lastError().text();
+            m_writeDb.rollback();
+            return -1;
+        }
+    }
+    if (!m_writeDb.commit()) {
+        m_writeDb.rollback();
+        return -1;
+    }
+    return changed;
+}
+
+void MixHouseLibrary::requestRevealTrack(int trackId, RevealMode mode)
+{
+    m_revealTrackRequested.send(trackId, mode);
+}
+
+muse::async::Channel<int, IMixHouseLibrary::RevealMode> MixHouseLibrary::revealTrackRequested() const
+{
+    return m_revealTrackRequested;
 }
 
 std::vector<MixHouseSmartPlaylist> MixHouseLibrary::smartPlaylists() const

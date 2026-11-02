@@ -90,9 +90,9 @@ void MixHouseLibraryScanner::run()
         "VALUES (:location, :directory, :filename, :filesize, 0, 0)"));
     QSqlQuery insLib(db);
     insLib.prepare(QStringLiteral(
-        "INSERT INTO library (title, artist, album, genre, year, filetype, location, header_parsed, "
+        "INSERT INTO library (title, artist, album, genre, year, replaygain, replaygain_peak, filetype, location, header_parsed, "
         "mixxx_deleted, played, timesplayed, rating, bpm, duration, datetime_added) "
-        "VALUES (:title, :artist, :album, :genre, :year, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+        "VALUES (:title, :artist, :album, :genre, :year, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
 
     db.transaction();
     for (const QString& dir : std::as_const(m_directories)) {
@@ -172,6 +172,8 @@ void MixHouseLibraryScanner::run()
             insLib.bindValue(QStringLiteral(":album"), tags.album);
             insLib.bindValue(QStringLiteral(":genre"), tags.genre);
             insLib.bindValue(QStringLiteral(":year"), tags.year);
+            insLib.bindValue(QStringLiteral(":replaygain"), tags.replayGain);
+            insLib.bindValue(QStringLiteral(":replaygainPeak"), tags.replayGainPeak);
             insLib.bindValue(QStringLiteral(":parsed"), tags.fromTags ? 1 : 0);
         }
             insLib.bindValue(QStringLiteral(":filetype"), fi.suffix().toLower());

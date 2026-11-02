@@ -316,6 +316,15 @@ void DockPanelView::addPanelAsTab(DockPanelView* tab)
     tab->setVisible(true);
 }
 
+void DockPanelView::raiseTab()
+{
+    IF_ASSERT_FAILED(dockWidget()) {
+        return;
+    }
+
+    dockWidget()->setAsCurrentTab();
+}
+
 void DockPanelView::setCurrentTabIndex(int index)
 {
     IF_ASSERT_FAILED(dockWidget()) {

@@ -240,6 +240,49 @@ Item {
         root.currentViewKey = kind + ":" + refId
         root.pendingViewRestore = memory[root.currentViewKey] || null
     }
+    //! Show in Library from another tab: this panel's tab has to come forward.
+    signal raiseRequested()
+
+    // Show in Library: All Tracks, nothing filtering it, the track selected --
+    // or, for mode 1 and 2, only its album's or artist's songs (in the search
+    // box, so clearing it brings the rest back).
+    // Writes the box the way typing would: text shown, searchText following it.
+    // Through "" first: what was typed is not in currentText, so the same value
+    // would change nothing.
+    function setSearchBox(text) {
+        search.currentText = ""
+        search.currentText = text
+        search.searchText = text
+    }
+
+    function revealTrack(trackId, mode) {
+        root.rememberViewAndSwitch("all", -1)
+        root.pendingViewRestore = null
+        root.selectedSidebarRefIds = []
+        var nodes = sourceList.model
+        for (var i = 0; i < nodes.length; ++i) {
+            if (nodes[i].kind === "all") {
+                sourceList.currentIndex = i
+                break
+            }
+        }
+        keyWheel.clearSelection()
+        tracksModel.setPlaylist(-1)
+        tracksModel.setSearch("")
+        // An older song is past the 2000 rows All Tracks shows: its title finds it.
+        var info = tracksModel.trackInfo(trackId)
+        var text = mode === 1 ? (info.album || "") : mode === 2 ? (info.artist || "")
+                 : tracksModel.rowOfTrack(trackId) < 0 ? (info.title || "") : ""
+        root.setSearchBox(text)
+        tracksModel.setSearch(text)
+        var row = tracksModel.rowOfTrack(trackId)
+        if (row < 0) {
+            return
+        }
+        root.selectRow(row)
+        Qt.callLater(function() { trackTableView.positionViewAtRow(row, TableView.Contain) })
+    }
+
     function applyViewRestore() {
         var restore = root.pendingViewRestore
         if (!restore) {
@@ -271,6 +314,10 @@ Item {
         function onLoaded() {
             containingNodesTimer.restart()
             root.applyViewRestore()
+        }
+        function onRevealTrackRequested(trackId, mode) {
+            root.raiseRequested()
+            root.revealTrack(trackId, mode)
         }
     }
     property var selectedRows: []
@@ -2218,7 +2265,7 @@ Item {
                             var history = tracksModel.searchHistory()
                             if (history.length === 0) return
                             index = Math.max(-1, Math.min(history.length - 1, index + delta))
-                            search.searchText = index < 0 ? "" : history[index]
+                            root.setSearchBox(index < 0 ? "" : history[index])
                         }
                     }
 
@@ -2257,7 +2304,7 @@ Item {
                                     width: searchHistoryPopup.width
                                     height: 22
                                     onClicked: {
-                                        search.searchText = modelData
+                                        root.setSearchBox(modelData)
                                         searchHistoryPopup.visible = false
                                     }
                                     StyledTextLabel {
@@ -3935,6 +3982,8 @@ Item {
 
                     trackMenu.show(pos, [
                         { id: "search-menu", title: qsTrc("mixhouse", "Search related Tracks"), subitems: searchItems },
+                        { id: "show-in-library", title: qsTrc("mixhouse", "Show in Library"),
+                          enabled: trackMenu.targetData.trackId >= 0 && root.currentViewKey !== "all:-1" },
                         {},
                         // "Load to Deck" is genuinely functional: it hands the
                         // track's actual file to Audacity's own import
@@ -3954,7 +4003,8 @@ Item {
                         { id: "rating-menu", title: qsTrc("mixhouse", "Rating"), subitems: ratingItems },
                         { id: "color-menu", title: qsTrc("mixhouse", "Select Color"), subitems: colorItems },
                         { id: "metadata-menu", title: qsTrc("mixhouse", "Metadata"), subitems: [
-                            { id: "", title: qsTrc("mixhouse", "Import From File Tags"), enabled: false },
+                            { id: "import-file-tags", title: qsTrc("mixhouse", "Import From File Tags"),
+                              enabled: trackMenu.targetData.trackId >= 0 },
                             { id: "", title: qsTrc("mixhouse", "Import From MusicBrainz"), enabled: false },
                             { id: "", title: qsTrc("mixhouse", "Export To File Tags"), enabled: false },
                             {},
@@ -4047,6 +4097,10 @@ Item {
                         tracksModel.removeFromCollectionAndLibraryWithConfirm(trackMenu.targetRows)
                     } else if (itemId === "collection-trash") {
                         tracksModel.moveTracksToTrashWithConfirm(trackMenu.targetRows)
+                    } else if (itemId === "import-file-tags") {
+                        tracksModel.importTagsFromFiles(trackMenu.targetRows, trackMenu.targetAllMatching)
+                    } else if (itemId === "show-in-library") {
+                        root.revealTrack(trackMenu.targetData.trackId, 0)
                     } else if (itemId === "edit-tags") {
                         editTagsPopup.openFor(trackMenu.targetRows)
                     } else if (itemId === "properties") {
@@ -4091,9 +4145,11 @@ Item {
                     } else if (itemId.indexOf("search:") === 0) {
                         var field = itemId.slice(7)
                         if (field === "key") {
-                            keyWheel.clearSelection()
-                            tracksModel.setKeyFilters([trackMenu.targetData.musicalKey])
+                            // Through the wheel, so it shows the key and offers Reset.
+                            keyWheel.selectKeys([tracksModel.lancelotKey(trackMenu.targetData.musicalKey)])
                         } else {
+                            // In the box, so the filter shows and can be cleared.
+                            root.setSearchBox(trackMenu.targetData[field])
                             tracksModel.setSearch(trackMenu.targetData[field])
                         }
                     } else if (itemId.indexOf("web:") === 0) {

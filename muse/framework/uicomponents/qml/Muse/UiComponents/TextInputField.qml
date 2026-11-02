@@ -74,6 +74,8 @@ FocusScope {
     function clear() {
         valueInput.text = ""
         currentText = ""
+        // GlideMix: the assignment above ended the binding; currentText must keep showing.
+        valueInput.text = Qt.binding(function() { return root.currentText === undefined ? "" : root.currentText })
         textCleared()
     }
 

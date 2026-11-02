@@ -254,6 +254,16 @@ public:
     //! The rekordbox collection XML shown under Rekordbox XML.
     Q_INVOKABLE void setRekordboxXmlPath(const QString& path);
     Q_INVOKABLE void setKeyFilters(const QStringList& keys);
+    //! Metadata > Import From File Tags: reads in the background, a line beside
+    //! Analyze says how it went. `allMatching`: Select All, however many that is.
+    Q_INVOKABLE void importTagsFromFiles(const QVariantList& rows, bool allMatching);
+    //! The row of a track in this view, -1 when it is not in it.
+    Q_INVOKABLE int rowOfTrack(int trackId) const;
+    //! title, album and artist of a track, in this view or not (it shows at most
+    //! 2000 rows), for Show in Library.
+    Q_INVOKABLE QVariantMap trackInfo(int trackId) const;
+    //! A key as the wheel names it, whatever notation it is written in.
+    Q_INVOKABLE QString lancelotKey(const QString& key) const;
     /// The sidebar, as Mixxx builds it: a fixed feature hierarchy, NOT a flat
     /// list of playlist rows. Returned as a flat list carrying `level` so QML can
     /// indent it, with expandable parents collapsed by default.
@@ -708,6 +718,8 @@ public:
 signals:
     void analysisMessageChanged();
     void loaded();
+    //! `mode`: 0 the track, 1 its album, 2 its artist (IMixHouseLibrary::RevealMode).
+    void revealTrackRequested(int trackId, int mode);
     void rekordboxLoadProgressChanged();
     void uiColumnCountChanged();
     void analyzingChanged();
@@ -873,6 +885,7 @@ private:
     };
     std::optional<DropTotals> m_dropTotals;
     QString m_analysisMessage;
+    bool m_importingTags = false;
     QString m_browseFolder;
     MixHouseTrackList browseFolderTracks() const;
     QList<int> resolveOrImportTrackIds(const QVariantList& rows);

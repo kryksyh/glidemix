@@ -14,7 +14,6 @@
 
 #include "mixxxeffects.h"
 #include "dsp/control/mixtapecontrols.h"
-#include "mixhouse/glidemixpaths.h"
 
 #include "global/settings.h"
 #include "log.h"
@@ -24,14 +23,16 @@ using namespace au::effects;
 namespace {
 QString mixxxEffectsXmlPath()
 {
-    // As MixHouseLibrary::mixxxDatabasePath (sandboxed bundle on macOS).
-    return au::mixhouse::paths::mixxxSettingsDir() + QStringLiteral("/effects.xml");
+    // Mixxx on macOS (sandboxed bundle), as MixHouseLibrary::mixxxDatabasePath.
+    return QDir::homePath()
+           + QStringLiteral("/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx/effects.xml");
 }
 
 //! A value from Mixxx's mixxx.cfg ("[Group]" section, "Key value" lines).
 QString mixxxConfigValue(const QString& group, const QString& key)
 {
-    QFile file(au::mixhouse::paths::mixxxSettingsDir() + QStringLiteral("/mixxx.cfg"));
+    QFile file(QDir::homePath()
+               + QStringLiteral("/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx/mixxx.cfg"));
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         return {};
     }

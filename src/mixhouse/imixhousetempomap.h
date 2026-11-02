@@ -49,7 +49,9 @@ public:
     /// release (and then a flat line becomes the project tempo).
     virtual void setPoints(const Points& points, bool completed) = 0;
 
-    /// Flattens the line to the project tempo (the lane's Reset button).
+    /// Back to each track's real BPM (kFarTempo does not apply): the line follows
+    /// the tracks again, and is flat at the project tempo while there are none
+    /// (the lane's Reset button).
     virtual void reset() = 0;
 
     virtual double bpmAt(double time) const = 0;
@@ -65,6 +67,16 @@ public:
     /// outgoing BPM to the incoming one across the overlap (Beatmix). While on,
     /// the line is rebuilt whenever tracks move, are added or removed.
     virtual bool followsTracks() const = 0;
+
+    /// Where the mix hands over, for the lane's read-only markers: the first
+    /// track's start, then each overlap (or, across a gap, the next track's
+    /// start, with start == end). Project seconds, in order.
+    struct Handover {
+        double start = 0.0;
+        double end = 0.0;
+    };
+    virtual std::vector<Handover> handovers() const = 0;
+
     virtual void setFollowsTracks(bool follow) = 0;
 
     /// Tracks this far from the project tempo (8%) play at their own tempo

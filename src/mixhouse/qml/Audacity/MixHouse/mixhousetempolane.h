@@ -29,6 +29,10 @@ namespace au::mixhouse {
 /// GlideMix: the same field also shows the mix's energy (1-10) behind the
 /// tempo line -- each playing song's energy rating, lower in its quiet parts
 /// and fades (IMixHouseBeatGrids::energyCurve); blue calm .. red peak.
+///
+/// GlideMix: dim read-only markers show the line's tempo where the mix hands
+/// over from one track to the next, with or without a point there (MixMeister's
+/// row of tempos under the tracks, on our line).
 class MixHouseTempoLane : public QQuickPaintedItem, public muse::Contextable, public muse::async::Asyncable
 {
     Q_OBJECT
@@ -37,6 +41,8 @@ class MixHouseTempoLane : public QQuickPaintedItem, public muse::Contextable, pu
     Q_PROPERTY(double frameStartTime READ frameStartTime WRITE setFrameStartTime NOTIFY viewChanged)
     Q_PROPERTY(double zoom READ zoom WRITE setZoom NOTIFY viewChanged)
     Q_PROPERTY(QColor lineColor MEMBER m_lineColor NOTIFY colorsChanged)
+    //! The points and the handover markers: the theme's accent colour.
+    Q_PROPERTY(QColor pointColor MEMBER m_pointColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor labelColor MEMBER m_labelColor NOTIFY colorsChanged)
     Q_PROPERTY(QColor backgroundColor MEMBER m_backgroundColor NOTIFY colorsChanged)
     //! TEMPO: the tempo line and its points (editable); ENERGY: the energy fill.
@@ -100,16 +106,23 @@ private:
     //! moves and fades have no notification of their own here).
     void refreshEnergy();
     void paintEnergy(QPainter* p);
+    //! Re-reads the handovers; repaints only when they moved (clip moves have
+    //! no notification of their own here).
+    void refreshHandovers();
+    void paintHandovers(QPainter* p, const IMixHouseTempoMap::Points& points);
 
     static constexpr double kEnergyColumnPx = 5.0;   // 4 px bars, 1 px gaps
     bool m_showTempo = true;
     bool m_showEnergy = false;
     std::vector<double> m_energy;
     QTimer m_energyPoll;
+    std::vector<IMixHouseTempoMap::Handover> m_handovers;
+    QTimer m_handoverPoll;
 
     double m_frameStartTime = 0.0;
     double m_zoom = 1.0;
     QColor m_lineColor { 0xb7, 0xff, 0x01 };   // the volume line's yellow (audio_envelope_line)
+    QColor m_pointColor { 0xb7, 0xff, 0x01 };
     QColor m_labelColor { 0xc8, 0xc8, 0xc8 };  // parked kLabelText
     QColor m_backgroundColor { 0x0c, 0x12, 0x18 };
 

@@ -2,7 +2,6 @@
  * GlideMix
  */
 #include "mixhouserekordboxphrases.h"
-#include "mixhouse/glidemixpaths.h"
 
 #include <QDataStream>
 #include <QSaveFile>
@@ -252,7 +251,7 @@ MixHouseRekordboxPhrases::~MixHouseRekordboxPhrases()
 
 QString MixHouseRekordboxPhrases::analysisRoot()
 {
-    return au::mixhouse::paths::rekordboxAnalysisDir();
+    return QDir::homePath() + QStringLiteral("/Library/Pioneer/rekordbox/share/PIONEER/USBANLZ");
 }
 
 //! GlideMix: walking rekordbox's analysis folders takes 5-12 s on a big
@@ -262,7 +261,7 @@ QString MixHouseRekordboxPhrases::analysisRoot()
 //! background and replaces it when done.
 static QString indexCachePath()
 {
-    return au::mixhouse::paths::glidemixDataPath(QStringLiteral("Library/rekordbox-index.bin"));
+    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Library/rekordbox-index.bin");
 }
 
 static constexpr quint32 kIndexCacheVersion = 1;
