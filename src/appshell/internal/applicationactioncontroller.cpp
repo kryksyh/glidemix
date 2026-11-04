@@ -238,21 +238,11 @@ bool ApplicationActionController::eventFilter(QObject* watched, QEvent* event)
             event->accept();
             return true;
         }
-#ifdef Q_OS_MAC
-        // On macos closing the last window does not exit the app
-        if (!projectFilesController()->closeOpenedProject()) {
-            event->ignore();
-            return true;
-        }
-        // Instead we hide the window, it will be shown when needed
-        mainWindow()->qWindow()->setVisible(false);
-        event->accept();
-        return true;
-#else
+        // GlideMix: closing the last window quits, on the Mac too. It used to hide
+        // the window and leave the app running, which nobody expected.
         const bool accepted = quit();
         event->setAccepted(accepted);
         return true;
-#endif
     }
 
     if (event->type() == QEvent::Quit) {

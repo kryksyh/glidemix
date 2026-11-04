@@ -13,8 +13,9 @@
 
 namespace au::mixhouse {
 //! Lexicon DJ's library, read straight from its own database
-//! (~/Library/Application Support/lexicon/main.db), read-only. Nothing is
-//! copied into the GlideMix library; Lexicon stays the source of truth.
+//! (~/Library/Application Support/lexicon/main.db; %APPDATA%\lexicon\main.db
+//! on Windows), read-only. Nothing is copied into the GlideMix library;
+//! Lexicon stays the source of truth.
 class IMixHouseLexicon : MODULE_EXPORT_INTERFACE, public IMixHouseExternalLibrary
 {
     INTERFACE_ID(IMixHouseLexicon)

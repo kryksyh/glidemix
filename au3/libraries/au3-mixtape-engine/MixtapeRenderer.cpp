@@ -5,6 +5,8 @@
 #include "MixtapeDemo.h"
 #include "MixtapeLoudness.h"
 
+#include <thread>
+#include <condition_variable>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -77,6 +79,7 @@ constexpr int kTpHalf = kTpTaps / 2;
 Renderer::Renderer(double outputRate, size_t outputChannels)
     : mOutputRate{outputRate}
     , mOutputChannels{outputChannels}
+    , mLimitCeiling{kLimitCeiling}
 {
     Limiter& l = mLimiter;
     l.release = static_cast<float>(std::exp(-1.0 / (kLimitReleaseSec * outputRate)));
@@ -109,7 +112,7 @@ float Renderer::TruePeakAt(size_t position) const
         for (int k = 0; k < kTpTaps; ++k) {
             around = std::max(around, std::abs(ring[(position + size + static_cast<size_t>(k) - static_cast<size_t>(kTpHalf)) % size]));
         }
-        if (around < 0.5f * kLimitCeiling) {
+        if (around < 0.5f * mLimitCeiling) {
             continue;
         }
         for (const auto& phase : phases) {
@@ -137,7 +140,7 @@ void Renderer::Limit(float* const* out, size_t frames)
         // and the gain it needs.
         const size_t judged = (l.write + size - kTpHalf) % size;
         const float peak = TruePeakAt(judged);
-        const float needed = peak > kLimitCeiling ? kLimitCeiling / peak : 1.0f;
+        const float needed = peak > mLimitCeiling ? mLimitCeiling / peak : 1.0f;
 
         // The smallest gain needed over the look-ahead window...
         const size_t n = l.index++;
@@ -171,7 +174,208 @@ void Renderer::Limit(float* const* out, size_t frames)
     }
 }
 
+//! GlideMix: exporting has no deadline and no clip depends on another until
+//! the mix, so each clip's voice renders ahead on a core of its own, in timeline
+//! order, instead of waiting for the playhead to reach it. A thread only exists
+//! while clips are left to render. The render thread takes finished audio out
+//! block by block, so effects, latency, faders and the limiter run as always
+//! and the file comes out sample for sample the same.
+struct Renderer::OfflineVoices
+{
+    //! What may wait in memory for the mix; a clip the mix needs now always starts.
+    static constexpr size_t kMemoryBudget = 1536u * 1024u * 1024u;
+
+    struct Clip {
+        const ClipSnapshot* clip = nullptr;
+        size_t firstBlock = 0;
+        size_t lastBlock = 0;
+        size_t bytes = 0;
+        bool claimed = false;
+        std::atomic<size_t> blocksDone{ 0 };
+        std::vector<std::vector<float> > planes;
+    };
+
+    OfflineVoices(std::shared_ptr<const Arrangement> arrangement_, std::shared_ptr<const PlaybackSpeedCurve> curve_,
+                  double rate_, size_t channels_, size_t frames_, double start)
+        : arrangement(std::move(arrangement_)), curve(std::move(curve_)), rate(rate_), channels(channels_), frames(frames_)
+    {
+        double end = start;
+        for (const TrackSnapshot& track : arrangement->tracks) {
+            for (const ClipSnapshot& clip : track.clips) {
+                end = std::max(end, clip.playEnd);
+            }
+        }
+        for (double t = start; t < end;) {
+            const double next = curve ? curve->SolveIntegralOfInverse(t, frames / rate) : t + frames / rate;
+            if (!(next > t)) {
+                break;
+            }
+            spans.push_back({ t, next });
+            t = next;
+        }
+        for (const TrackSnapshot& track : arrangement->tracks) {
+            for (const ClipSnapshot& snapshot : track.clips) {
+                auto entry = std::make_unique<Clip>();
+                entry->clip = &snapshot;
+                bool any = false;
+                for (size_t b = 0; b < spans.size(); ++b) {
+                    if (snapshot.playEnd > spans[b].first && snapshot.playStart < spans[b].second) {
+                        entry->firstBlock = any ? entry->firstBlock : b;
+                        entry->lastBlock = b;
+                        any = true;
+                    }
+                }
+                if (any) {
+                    entry->bytes = (entry->lastBlock - entry->firstBlock + 1) * frames * channels * sizeof(float);
+                    byClip[&snapshot] = entry.get();
+                    clips.push_back(std::move(entry));
+                }
+            }
+        }
+        std::stable_sort(clips.begin(), clips.end(), [](const auto& a, const auto& b) { return a->firstBlock < b->firstBlock; });
+        const size_t cores = std::max<size_t>(std::thread::hardware_concurrency(), 2);
+        const size_t threads = std::min(cores - 1, clips.size());
+        for (size_t i = 0; i < threads; ++i) {
+            workers.emplace_back([this] { Work(); });
+        }
+    }
+
+    ~OfflineVoices()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            stop = true;
+        }
+        wake.notify_all();
+        for (auto& worker : workers) {
+            worker.join();
+        }
+    }
+
+    void Work()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        while (!stop) {
+            const auto next = std::find_if(clips.begin(), clips.end(), [](const auto& c) { return !c->claimed; });
+            if (next == clips.end()) {
+                return;
+            }
+            Clip& entry = **next;
+            if (memoryUsed > 0 && memoryUsed + entry.bytes > kMemoryBudget && entry.firstBlock > mixBlock) {
+                wake.wait(lock);
+                continue;
+            }
+            entry.claimed = true;
+            memoryUsed += entry.bytes;
+            lock.unlock();
+            RenderClip(entry);
+            lock.lock();
+        }
+    }
+
+    void RenderClip(Clip& entry)
+    {
+        const size_t blocks = entry.lastBlock - entry.firstBlock + 1;
+        entry.planes.assign(channels, std::vector<float>(blocks * frames, 0.0f));
+        ClipVoice voice(rate, channels);
+        voice.SetPreferResample(true);
+        {
+            // Rubber Band plans its FFTs when created: one at a time.
+            static std::mutex creating;
+            std::lock_guard<std::mutex> lock(creating);
+            voice.Assign(*entry.clip, curve != nullptr);
+        }
+        std::vector<float*> ptrs(channels);
+        const float unity[8] = { 1, 1, 1, 1, 1, 1, 1, 1 };
+        for (size_t b = 0; b < blocks; ++b) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (stop) {
+                    return;
+                }
+            }
+            const auto [t0, t1] = spans[entry.firstBlock + b];
+            const double span = t1 - t0;
+            const auto frameAt = [&](double t) {
+                return span > 0 ? std::clamp<int64_t>(std::llround((t - t0) / span * frames), 0, static_cast<int64_t>(frames)) : 0;
+            };
+            const int64_t firstFrame = frameAt(std::max(t0, entry.clip->playStart));
+            const int64_t endFrame = frameAt(std::min(t1, entry.clip->playEnd));
+            if (endFrame > firstFrame) {
+                for (size_t o = 0; o < channels; ++o) {
+                    ptrs[o] = entry.planes[o].data() + b * frames + firstFrame;
+                }
+                voice.RenderAdd(ptrs.data(), static_cast<size_t>(endFrame - firstFrame),
+                                t0 + span * firstFrame / frames, t0 + span * endFrame / frames, unity, curve.get());
+            }
+            entry.blocksDone.store(b + 1, std::memory_order_release);
+            done.notify_all();
+        }
+    }
+
+    //! Render thread: adds this clip's part of block `block` to `buffers`.
+    void Take(const ClipSnapshot* clip, size_t block, std::vector<std::vector<float> >& buffers)
+    {
+        const auto found = byClip.find(clip);
+        if (found == byClip.end() || block < found->second->firstBlock || block > found->second->lastBlock) {
+            return;
+        }
+        Clip& entry = *found->second;
+        const size_t index = block - entry.firstBlock;
+        if (entry.blocksDone.load(std::memory_order_acquire) <= index) {
+            std::unique_lock<std::mutex> lock(mutex);
+            mixBlock = block;
+            wake.notify_all();
+            done.wait(lock, [&] { return entry.blocksDone.load(std::memory_order_acquire) > index; });
+        }
+        for (size_t o = 0; o < channels; ++o) {
+            const float* src = entry.planes[o].data() + index * frames;
+            float* dst = buffers[o].data();
+            for (size_t i = 0; i < frames; ++i) {
+                dst[i] += src[i];
+            }
+        }
+        if (block == entry.lastBlock) {
+            entry.planes.clear();
+            entry.planes.shrink_to_fit();
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                memoryUsed -= entry.bytes;
+            }
+            wake.notify_all();
+        }
+    }
+
+    void BlockStarted(size_t block)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        mixBlock = block;
+    }
+
+    const std::shared_ptr<const Arrangement> arrangement;
+    const std::shared_ptr<const PlaybackSpeedCurve> curve;
+    const double rate;
+    const size_t channels;
+    const size_t frames;
+    std::vector<std::pair<double, double> > spans;   //!< each block's timeline span
+    std::vector<std::unique_ptr<Clip> > clips;       //!< earliest first
+    std::map<const ClipSnapshot*, Clip*> byClip;
+    std::vector<std::thread> workers;
+    std::mutex mutex;
+    std::condition_variable wake;   //!< memory freed, or the mix waits for a clip
+    std::condition_variable done;   //!< a block finished
+    size_t memoryUsed = 0;
+    size_t mixBlock = 0;
+    size_t nextBlock = 0;           //!< render thread only
+    bool stop = false;
+};
+
 Renderer::~Renderer() = default;
+
+void Renderer::SetLimitCeiling(float ceiling)
+{
+    mLimitCeiling = ceiling;
+}
 
 void Renderer::SetArrangement(std::shared_ptr<const Arrangement> arrangement)
 {
@@ -214,6 +418,9 @@ std::pair<double, double> Renderer::Render(float* const* out, size_t frames)
         if (mTrackBuffers.size() < tracks.size()) {
             mTrackBuffers.resize(tracks.size());
         }
+        if (mOffline && !mOfflineVoices) {
+            mOfflineVoices = std::make_unique<OfflineVoices>(mCurrent, curve, mOutputRate, mOutputChannels, frames, t0);
+        }
         // Stage 1 (render thread): which clips play in this block; voices are
         // created or re-assigned here so the map isn't touched in parallel.
         mJobs.clear();
@@ -227,6 +434,10 @@ std::pair<double, double> Renderer::Render(float* const* out, size_t frames)
             job.track = ti;
             for (const ClipSnapshot& clip : track.clips) {
                 if (clip.playEnd <= t0 || clip.playStart >= t1) {
+                    continue;
+                }
+                if (mOfflineVoices) {
+                    job.voices.push_back({ nullptr, &clip });   // already rendering ahead
                     continue;
                 }
                 const VoiceKey key{ track.trackId, clip.clipId };
@@ -269,15 +480,30 @@ std::pair<double, double> Renderer::Render(float* const* out, size_t frames)
                                  t0 + span * firstFrame / frames, t0 + span * endFrame / frames, unity, curve.get());
             }
         };
+        if (mOfflineVoices) {
+            const size_t block = mOfflineVoices->nextBlock++;
+            mOfflineVoices->BlockStarted(block);
+            for (const TrackJob& job : mJobs) {
+                auto& buffers = mTrackBuffers[job.track];
+                for (size_t o = 0; o < mOutputChannels; ++o) {
+                    std::fill_n(buffers[o].data(), frames, 0.0f);
+                }
+                for (const auto& voice : job.voices) {
+                    mOfflineVoices->Take(voice.second, block, buffers);
+                }
+            }
+        }
         // Worth the hand-off only for tracks running the stretcher: waking the
         // pool every 256 frames cost more than resampled or untouched clips
         // themselves (four threads half busy on a 2-core PC for 3 tracks).
         size_t busy = 0;
-        for (const TrackJob& job : mJobs) {
+        for (const TrackJob& job : mOfflineVoices ? std::vector<TrackJob> {} : mJobs) {
             busy += std::any_of(job.voices.begin(), job.voices.end(),
                                 [](const auto& v) { return v.first->Stretches(); }) ? 1 : 0;
         }
-        if (busy > 1) {
+        if (mOfflineVoices) {
+            // Stage 2 ran on the voices' own threads.
+        } else if (busy > 1) {
             mPool.Run(mJobs.size(), renderTrack);
         } else {
             for (size_t j = 0; j < mJobs.size(); ++j) {

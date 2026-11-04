@@ -220,7 +220,7 @@ bool ClipVoice::Resamples() const
     // going through Rubber Band. A 44.1 kHz track on a 48 kHz output ran the
     // stretcher just to change the rate: five such tracks took half of a
     // 2-core i3 and the transitions crackled.
-    return !Bypass() && !mAlwaysStretch && mClip.centShift == 0 && (SmallMachine() || std::getenv("MIXTAPE_RESAMPLE"))
+    return !Bypass() && !mAlwaysStretch && mClip.centShift == 0 && (mPreferResample || SmallMachine() || std::getenv("MIXTAPE_RESAMPLE"))
            && std::abs(mClip.stretchRatio - 1.0) < kResampleStretch;
 }
 

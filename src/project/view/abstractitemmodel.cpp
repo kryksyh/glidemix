@@ -32,6 +32,7 @@ const QString AbstractItemModel::THUMBNAIL_URL_KEY("thumbnailUrl");
 const QString AbstractItemModel::FILE_SIZE_KEY("fileSize");
 const QString AbstractItemModel::DURATION_KEY("duration");
 const QString AbstractItemModel::TIME_SINCE_MODIFIED_KEY("timeSinceModified");
+const QString AbstractItemModel::TRACK_COUNT_KEY("trackCount");
 const QString AbstractItemModel::IS_CREATE_NEW_KEY("isCreateNew");
 const QString AbstractItemModel::IS_NO_RESULTS_FOUND_KEY("isNoResultsFound");
 const QString AbstractItemModel::IS_CLOUD_KEY("isCloud");

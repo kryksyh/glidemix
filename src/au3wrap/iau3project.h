@@ -68,5 +68,6 @@ public:
     virtual ~IAu3ProjectReader() = default;
 
     virtual std::optional<std::vector<uint8_t> > readProjectThumbnail(const muse::io::path_t& projectPath) const = 0;
+    virtual std::optional<size_t> readProjectSongCount(const muse::io::path_t& projectPath) const = 0;
 };
 }

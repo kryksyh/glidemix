@@ -23,5 +23,6 @@ public:
     ~EffectsProviderInitializer() override = default;
 
     void callAfterSplashScreen() override;
+    void validatePendingPlugins() override;
 };
 }

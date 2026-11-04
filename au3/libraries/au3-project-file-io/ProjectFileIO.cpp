@@ -15,6 +15,7 @@ Paul Licameli split from AudacityProject.cpp
 #include <sqlite3.h>
 #include <optional>
 #include <cstring>
+#include <set>
 
 #if defined(__WXMSW__)
 #include <wx/msw/wrapwin.h>
@@ -45,6 +46,7 @@ Paul Licameli split from AudacityProject.cpp
 #include "au3-wave-track/SampleBlock.h"
 #include "au3-files/TempDirectory.h"
 #include "au3-transactions/TransactionScope.h"
+#include "au3-wave-track/WaveClip.h"
 #include "au3-wave-track/WaveTrack.h"
 #include "au3-wave-track/WaveTrackUtilities.h"
 #include "au3-basic-ui/BasicUI.h"
@@ -1497,9 +1499,44 @@ public:
 
     std::vector<uint8_t> result;
 };
+
+// GlideMix: every clip name in a project. Lanes say nothing about songs: one
+// lane can hold several, and a song can sit on several lanes.
+class ClipNamesHandler final : public XMLTagHandler
+{
+public:
+    bool HandleXMLTag(const std::string_view& tag, const AttributesList& attrs) override
+    {
+        if (tag == WaveClip::WaveClip_tag) {
+            for (const auto& [attr, value] : attrs) {
+                if (attr == "name" && !value.ToWString().empty()) {
+                    names.insert(value.ToWString());
+                }
+            }
+        }
+        return true;
+    }
+
+    XMLTagHandler* HandleXMLChild(const std::string_view& tag) override
+    {
+        return (tag == WaveTrack::WaveTrack_tag || tag == WaveClip::WaveClip_tag) ? this : nullptr;
+    }
+
+    std::set<wxString> names;
+};
+
+// A pasted clip is named "<song>.1" when its lane already holds "<song>".
+bool IsCopyOfAnotherClip(const wxString& name, const std::set<wxString>& names)
+{
+    const auto dot = name.find_last_of('.');
+    if (dot == wxString::npos || dot + 1 == name.length() || !name.Mid(dot + 1).IsNumber()) {
+        return false;
+    }
+    const wxString original = name.Left(dot);
+    return names.count(original) > 0 || IsCopyOfAnotherClip(original, names);
 }
 
-std::optional<std::vector<uint8_t> > ProjectFileIO::ReadThumbnail(const FilePath& fileName)
+bool DecodeSavedProject(const FilePath& fileName, XMLTagHandler& handler)
 {
     // We won´t change the database. This will avoid shm and wal files to be created, and we won´t have to worry about them.
     wxString uri = wxFileSystem::FileNameToURL(fileName) + "?immutable=1";
@@ -1510,29 +1547,49 @@ std::optional<std::vector<uint8_t> > ProjectFileIO::ReadThumbnail(const FilePath
     auto closeDb = finally([db] { sqlite3_close(db); });
 
     if (openRc != SQLITE_OK) {
-        return std::nullopt;
+        return false;
     }
 
-    int64_t rowId = 0;
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(
             db, "SELECT ROWID FROM main.project WHERE id = 1;",
             -1, &stmt, nullptr)
         != SQLITE_OK) {
-        return std::nullopt;
+        return false;
     }
 
     auto finalizeStmt = finally([stmt] { sqlite3_finalize(stmt); });
 
     if (sqlite3_step(stmt) != SQLITE_ROW) {
-        return std::nullopt;
+        return false;
     }
-    rowId = sqlite3_column_int64(stmt, 0);
+    const int64_t rowId = sqlite3_column_int64(stmt, 0);
 
     BufferedProjectBlobStream stream(db, "main", "project", rowId);
+    return ProjectSerializer::Decode(stream, &handler);
+}
+}
+
+std::optional<size_t> ProjectFileIO::ReadSongCount(const FilePath& fileName)
+{
+    ClipNamesHandler handler;
+    if (!DecodeSavedProject(fileName, handler)) {
+        return std::nullopt;
+    }
+
+    size_t count = 0;
+    for (const wxString& name : handler.names) {
+        if (!IsCopyOfAnotherClip(name, handler.names)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::optional<std::vector<uint8_t> > ProjectFileIO::ReadThumbnail(const FilePath& fileName)
+{
     ThumbnailOnlyHandler handler;
-    bool success = ProjectSerializer::Decode(stream, &handler);
-    if (!success) {
+    if (!DecodeSavedProject(fileName, handler)) {
         return std::nullopt;
     }
 

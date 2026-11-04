@@ -107,6 +107,13 @@ void RecentProjectsModel::updateRecentProjects()
         obj[IS_CREATE_NEW_KEY] = false;
         obj[IS_NO_RESULTS_FOUND_KEY] = false;
 
+        // GlideMix: read from the saved file, so projects made earlier show it too.
+        if (const std::optional<size_t> songs = au3ProjectReader()->readProjectSongCount(file.path)) {
+            obj[TRACK_COUNT_KEY] = *songs == 1
+                                   ? muse::qtrc("project", "1 track")
+                                   : muse::qtrc("project", "%1 tracks").arg(static_cast<qulonglong>(*songs));
+        }
+
         auto* menuModel = new RecentProjectContextMenuModel(isCloud, file.path.toQString(), file.displayNameOverride,
                                                             cloudProjectId, this);
         menuModel->setDeleteHandler([this](const QString& path) { deleteProject(path); });

@@ -98,17 +98,17 @@ const UiActionList ProjectUiActions::m_actions = {
              au::context::UiCtxAny,
              au::context::CTX_ANY,
              //: Action title: shown as a menu item or a button label; keep it short
-             TranslatableString("action", "&Save"),
+             TranslatableString("action", "&Save project"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Save")
+             TranslatableString("action_description", "Save project")
              ),
     UiAction("file-save-as",
              au::context::UiCtxAny,
              au::context::CTX_ANY,
              //: Action title: shown as a menu item or a button label; keep it short
-             TranslatableString("action", "Save &as…"),
+             TranslatableString("action", "Save project &as…"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Save as…")
+             TranslatableString("action_description", "Save project as…")
              ),
     UiAction("export-audio",
              au::context::UiCtxAny,

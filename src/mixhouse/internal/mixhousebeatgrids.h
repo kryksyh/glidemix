@@ -79,6 +79,8 @@ public:
     double syncGridSec() const override;
     double magneticClipStart(const trackedit::ClipKey& clip, double proposedStart, double thresholdSec) const override;
     void moveClipAnchor(const trackedit::ClipKey& clip, int which, double projectTime, bool completed) override;
+    std::optional<std::pair<double, double> > takeClipAnchorMove(const trackedit::ClipKey& clip) override;
+    void putClipAnchorMove(const trackedit::ClipKey& clip, const std::pair<double, double>& anchors) override;
     void resetClipAnchors(const trackedit::ClipKey& clip) override;
     void adjustSelectedClips(Adjust adjust) override;
     int splitSelectedAtGridJumps() override;

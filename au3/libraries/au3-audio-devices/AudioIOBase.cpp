@@ -242,8 +242,9 @@ void AudioIOBase::HandleDeviceChange()
         }
     }
 
-    // finally, try just for playback
-    if (error) {
+    // finally, try just for playback (GlideMix: the mixer is for the input, so not
+    // before the microphone is allowed; opening this would ask too)
+    if (error && inputAllowed) {
         error = Pa_OpenStream(&stream,
                               NULL, &playbackParameters,
                               highestSampleRate, paFramesPerBufferUnspecified,
@@ -451,6 +452,18 @@ bool AudioIOBase::IsPlaybackRateSupported(int devIndex, long rate)
     pars.sampleFormat = paFloat32;
     pars.suggestedLatency = devInfo->defaultHighOutputLatency;
     pars.hostApiSpecificStreamInfo = NULL;
+
+#ifdef __APPLE__
+    // GlideMix: asking PortAudio opens the device, and that brought up the
+    // microphone prompt at launch. Until it's allowed, read what the device reports.
+    bool supported = false;
+    if (!MicrophoneAccessGranted() && OutputDeviceRateKnown(devInfo->name, static_cast<double>(rate), &supported)) {
+        if (supported) {
+            mCachedPlaybackRates[devIndex].push_back(rate);
+        }
+        return supported;
+    }
+#endif
 
     // JKC: PortAudio Errors handled OK here.  No need to report them
 

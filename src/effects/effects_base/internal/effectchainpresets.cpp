@@ -21,6 +21,8 @@
 
 #include "au3wrap/internal/wxtypes_convert.h"
 
+#include "mixhouse/glidemixpaths.h"
+
 #include "log.h"
 
 using namespace au::effects;
@@ -38,13 +40,13 @@ const std::string kMixtapeStudio = "GlideMix";
 
 QString presetsDirectory()
 {
-    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Effects/chains");
+    return au::mixhouse::paths::glidemixDataPath(QStringLiteral("Effects/chains"));
 }
 
 QString mixxxSettingsDirectory()
 {
-    // Mixxx on macOS (sandboxed bundle), as MixHouseLibrary::mixxxDatabasePath.
-    return QDir::homePath() + QStringLiteral("/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx");
+    // As MixHouseLibrary::mixxxDatabasePath (sandboxed bundle on macOS).
+    return au::mixhouse::paths::mixxxSettingsDir();
 }
 
 std::optional<EffectChainPresets::Chain> readChain(const QString& path)
@@ -149,6 +151,17 @@ bool writeChain(const QString& path, const EffectChainPresets::Chain& chain)
     xml.writeEndElement();
     xml.writeEndDocument();
     return file.commit();
+}
+
+//! AudioUnits exist only on macOS (EffectFamily has no AudioUnit elsewhere).
+bool isAudioUnitFamily(EffectFamily family)
+{
+#ifdef Q_OS_MACOS
+    return family == EffectFamily::AudioUnit;
+#else
+    Q_UNUSED(family);
+    return false;
+#endif
 }
 
 std::vector<std::string> splitTilde(const std::string& id)
@@ -308,7 +321,7 @@ EffectId EffectChainPresets::resolve(const Effect& effect) const
         }
 #ifdef Q_OS_MACOS
         for (const EffectMeta& meta : effectsProvider()->effectMetaList()) {
-            if (meta.family == EffectFamily::AudioUnit && meta.vendor.toStdString() == parts[0]
+            if (isAudioUnitFamily(meta.family) && meta.vendor.toStdString() == parts[0]
                 && meta.title.toStdString() == parts[1] && meta.isLoadable()) {
                 return meta.id;
             }
@@ -370,11 +383,7 @@ Ret EffectChainPresets::saveTrackAsPreset(TrackId trackId, const std::string& na
         effect->SaveSettings(state->GetSettings(), parms);
 
         Effect entry;
-#ifdef Q_OS_MACOS
-        const bool isAudioUnit = meta.family == EffectFamily::AudioUnit;
-#else
-        const bool isAudioUnit = false;   // AudioUnits exist on macOS only
-#endif
+        const bool isAudioUnit = isAudioUnitFamily(meta.family);
         const std::string mixxxId = mixxxEffectIds() ? mixxxEffectIds()->mixxxIdForEffectId(effectId) : std::string();
         if (!mixxxId.empty()) {
             entry.id = mixxxId;

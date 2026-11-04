@@ -3,6 +3,7 @@
 */
 #pragma once
 
+#include "mixhouse/imixhouselibrary.h"
 #include "context/iglobalcontext.h"
 #include "uicomponents/qml/Muse/UiComponents/abstractmenumodel.h"
 
@@ -22,6 +23,7 @@ class ClipContextMenuModel : public muse::uicomponents::AbstractMenuModel
     muse::ContextInject<context::IGlobalContext> globalContext{ this };
     muse::ContextInject<mixhouse::IMixHouseKeyMatch> keyMatch{ this };   // GlideMix: Match Key
     muse::ContextInject<mixhouse::IMixHouseClipColors> clipColors{ this };   // GlideMix: colour intensity
+    muse::ContextInject<mixhouse::IMixHouseLibrary> library{ this };   // GlideMix: Show in Library
     muse::ContextInject<mixhouse::IMixHouseBeatGrids> beatGrids{ this };   // GlideMix: IN / OUT anchors
     muse::GlobalInject<mixhouse::IMixHouseLibraryConfiguration> mixhouseConfiguration;   // GlideMix: phrase ribbon
 

@@ -4,8 +4,10 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "async/asyncable.h"
 #include "modularity/ioc.h"
@@ -105,6 +107,20 @@ private:
     //! applyPreset's body, for a preset that is not necessarily in presets().
     bool applyPresetValue(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                           const MixHouseTransitionPreset& preset);
+
+    //! Undo and redo of a Mix Now's anchor move, which history doesn't hold.
+    void syncMixNowAnchors(trackedit::HistoryEvent event);
+    //! Undo and redo of the transitions' names.
+    void syncTransitionNames(trackedit::HistoryEvent event);
+    std::map<size_t, std::map<ZoneKey, std::string> > m_namesAtState;
+
+    struct MixNowMove {
+        trackedit::ClipKey outgoing;
+        trackedit::ClipKey incoming;
+        double pulledStart = 0.0;   ///< where the Mix Now put the incoming clip
+        std::optional<std::pair<double, double> > undone;   ///< the move, while undone
+    };
+    std::vector<MixNowMove> m_mixNowMoves;
 
     muse::async::Notification m_zonesChanged;
     std::map<std::pair<trackedit::ClipKey, trackedit::ClipKey>, std::string> m_applied;

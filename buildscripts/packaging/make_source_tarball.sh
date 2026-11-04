@@ -21,7 +21,7 @@ tar -xf "$TMP/muse.tar" -C "$TMP/x"
 # Our own build notes and CI recipes stay out (the GPL asks for the source
 # and the build scripts we use, not a guide): the Windows port handover,
 # Audacity's build guide and CI scripts, internal review notes and work logs.
-( cd "$TMP/x/$NAME" && rm -rf WINDOWS_PORT.md BUILDING.md ci_build.bat ci_build.cmake .github buildscripts/ci muse/.github muse/buildscripts/ci \
+( cd "$TMP/x/$NAME" && rm -rf CL[A]UDE.md WINDOWS_PORT.md BUILDING.md ci_build.bat ci_build.cmake .github buildscripts/ci muse/.github muse/buildscripts/ci \
     docs/mixhouse-plugin-automation-review.md DEVLOG-*.md \
     docs/HANDOFF.md docs/tools-*.md docs/mixmeister-*.md docs/glidemixer-*.md docs/linux-build.md )
 cat > "$TMP/x/$NAME/BUILDING-GLIDEMIX.txt" <<TXT
@@ -42,6 +42,12 @@ version is at https://github.com/cristitm76/glidemix-releases
 "GlideMix" and the GlideMix logo are not covered by the GPL: a build you
 share must use another name and icon.
 TXT
+# None of our tooling's names in the public source (Audacity's own credits
+# name the composer Risset, so those lines stay).
+if grep -rIi "cl[a]ude" "$TMP/x/$NAME" | grep -vi "risset" | cut -c1-200 | grep .; then
+    echo "The source still names our tooling: not packed."
+    exit 1
+fi
 mkdir -p "$OUT"
 tar -C "$TMP/x" -cJf "$OUT/$NAME.tar.xz" "$NAME"
 ls -lh "$OUT/$NAME.tar.xz"

@@ -29,7 +29,9 @@
 
 #ifdef MIXHOUSE_HAVE_BEAT_THIS
 #include "beat_this_api.h"
+#ifdef __APPLE__
 #include <sys/sysctl.h>   // hw.memsize, for the model pool size (macOS-only feature)
+#endif
 #endif
 
 // GlideMix: Fast (small model, default) or Accurate (full model) analysis.
@@ -110,6 +112,7 @@ constexpr double kOnsetBeatTolerance = 0.25;
 int maxConcurrentBeatThis()
 {
     static const int count = [] {
+#ifdef __APPLE__
         size_t size = sizeof(uint64_t);
         uint64_t bytes = 0;
         if (sysctlbyname("hw.memsize", &bytes, &size, nullptr, 0) != 0) {
@@ -117,6 +120,12 @@ int maxConcurrentBeatThis()
         }
         const int byRam = static_cast<int>(bytes / (8ULL << 30));
         return std::clamp(byRam, 2, 6);
+#else
+        // Windows: the smallest pool until RAM is read here too
+        // (GlobalMemoryStatusEx); kept out so no <windows.h> joins this
+        // unity-built file.
+        return 2;
+#endif
     }();
     return count;
 }

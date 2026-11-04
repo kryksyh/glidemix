@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# GlideMix (beta): a self-contained, ad-hoc signed app in a DMG, for testers.
+# GlideMix (beta): a self-contained, self-signed app in a DMG, for testers.
 #
 #   buildscripts/packaging/MacOS/make_glidemix_alpha.sh [build-dir] [out-dir]
 #
 # Builds the release, installs it (Qt's deploy step copies Qt and the other
-# libraries into the app), signs everything ad-hoc (free, no Apple account:
+# libraries into the app), signs everything with our own certificate (free, no Apple account:
 # enough for Apple Silicon to run it; testers open it once with "Open Anyway")
 # and makes GlideMix-Beta-v<version>.dmg with an install note.
 
@@ -94,32 +94,40 @@ fi
 echo "== Remove debug symbols"
 find "$APP/Contents" -type d -name "*.dSYM" -prune -exec rm -rf {} +
 
-echo "== Sign ad-hoc"
+echo "== Sign"
+# Always the same certificate (self-signed, in the login keychain), so macOS
+# keeps its identity from build to build and doesn't ask for the microphone
+# again after an update. Without it: ad-hoc, and each build is a new app.
+SIGN_ID="$(security find-identity -p codesigning | awk '/"GlideMix Code Signing"/ { print $2; exit }')"
+if [ -z "$SIGN_ID" ]; then
+    echo "   No GlideMix Code Signing certificate: signing ad-hoc"
+    SIGN_ID="-"
+fi
 # Inside out: libraries and plug-ins first, then the app with its entitlements
 # (microphone, and loading other people's audio plug-ins).
 find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 \
-    | xargs -0 -P 4 -I {} codesign --force --sign - '{}'
+    | xargs -0 -P 4 -I {} codesign --force --sign "$SIGN_ID" '{}'
 # Sparkle (macOS updates): its helpers first, inside out, as Sparkle asks.
 SPK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 if [ -d "$SPK" ]; then
-    codesign --force --options runtime --sign - "$SPK/XPCServices/Installer.xpc"
-    codesign --force --options runtime --preserve-metadata=entitlements --sign - "$SPK/XPCServices/Downloader.xpc"
-    codesign --force --options runtime --sign - "$SPK/Autoupdate"
-    codesign --force --options runtime --sign - "$SPK/Updater.app"
+    codesign --force --options runtime --sign "$SIGN_ID" "$SPK/XPCServices/Installer.xpc"
+    codesign --force --options runtime --preserve-metadata=entitlements --sign "$SIGN_ID" "$SPK/XPCServices/Downloader.xpc"
+    codesign --force --options runtime --sign "$SIGN_ID" "$SPK/Autoupdate"
+    codesign --force --options runtime --sign "$SIGN_ID" "$SPK/Updater.app"
 fi
 find "$APP/Contents/Frameworks" -maxdepth 1 -name "*.framework" -print0 2>/dev/null \
-    | xargs -0 -I {} codesign --force --sign - '{}'
+    | xargs -0 -I {} codesign --force --sign "$SIGN_ID" '{}'
 # The key analyzer is a program of its own: hardened, with what PyTorch needs.
 while IFS= read -r -d '' f; do
     if file "$f" | grep -q Mach-O; then
-        codesign --force --sign - "$f"
+        codesign --force --sign "$SIGN_ID" "$f"
     fi
 done < <(find "$KEY_DIR" -type f -perm +111 ! -name "*.dylib" ! -name "*.so" -print0)
 codesign --force --options runtime --entitlements "$HERE/key_analyzer_entitlements.plist" \
-    --sign - "$KEY_DIR/openkeyscan-analyzer"
+    --sign "$SIGN_ID" "$KEY_DIR/openkeyscan-analyzer"
 codesign --force --deep --options runtime \
     --entitlements "$HERE/macosx_entitlements.plist" \
-    --sign - "$APP"
+    --sign "$SIGN_ID" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "== DMG"
@@ -131,7 +139,7 @@ ln -s /Applications "$DMG_DIR/Applications"
 cat > "$DMG_DIR/How to open GlideMix.txt" <<'TXT'
 GlideMix Beta -- how to open it the first time
 
-This preview is not signed with an Apple Developer ID yet, so macOS asks
+This beta is not signed with an Apple Developer ID yet, so macOS asks
 you to confirm once:
 
 1. Drag GlideMix into Applications.
@@ -148,7 +156,7 @@ music is in.
 Stem separation: Preferences > Stems > Install stems engine
 (a free download of about 1 GB).
 
-Feedback and bugs: tell Chris.
+Feedback and bugs: support@glidemix.com
 TXT
 DMG="$OUT/GlideMix-Beta-v$VERSION.dmg"
 rm -f "$DMG"

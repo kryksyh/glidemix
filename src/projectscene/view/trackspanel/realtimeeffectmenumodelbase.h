@@ -8,6 +8,7 @@
 #include "trackedit/trackedittypes.h"
 #include "effects/effects_base/ieffectviewcontroller.h"
 #include "effects/effects_base/ieffectsmenuprovider.h"
+#include "effects/effects_base/ieffectsproviderinitializer.h"
 #include "effects/effects_base/irealtimeeffectservice.h"
 #include "effects/effects_base/effectstypes.h"
 #include <QObject>
@@ -19,6 +20,7 @@ class RealtimeEffectMenuModelBase : public muse::uicomponents::AbstractMenuModel
     Q_PROPERTY(bool isMasterTrack READ isMasterTrack WRITE prop_setIsMasterTrack NOTIFY isMasterTrackChanged)
 
     muse::ContextInject<effects::IEffectsMenuProvider> effectsMenuProvider{ this };
+    muse::ContextInject<effects::IEffectsProviderInitializer> effectsProviderInitializer{ this };
     muse::ContextInject<IRealtimeEffectPanelTrackSelection> trackSelection{ this };
 
 public:
@@ -26,6 +28,8 @@ public:
 
     Q_INVOKABLE void init();
     Q_INVOKABLE void load() final override;
+    //! GlideMix: the first Add effect asks about the plug-ins found at launch.
+    Q_INVOKABLE void validatePendingPlugins() { effectsProviderInitializer()->validatePendingPlugins(); invalidateMenu(); }
 
 protected:
     std::optional<au::trackedit::TrackId> trackId() const;

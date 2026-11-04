@@ -1,6 +1,7 @@
 #ifndef AU_PROJECT_PROJECTACTIONSCONTROLLER_H
 #define AU_PROJECT_PROJECTACTIONSCONTROLLER_H
 
+#include "mixhouse/imixhouselicence.h"
 #include "framework/global/async/asyncable.h"
 #include "framework/global/modularity/ioc.h"
 #include "framework/global/io/ifilesystem.h"
@@ -37,6 +38,7 @@ class ProjectActionsController : public IProjectFilesController, public muse::ac
     public muse::Contextable
 {
     muse::GlobalInject<muse::IApplication> application;
+    muse::GlobalInject<au::mixhouse::IMixHouseLicence> licence;
     muse::GlobalInject<IProjectConfiguration> configuration;
     muse::GlobalInject<muse::io::IFileSystem> fileSystem;
     muse::GlobalInject<importexport::ExportConfiguration> exportConfiguration;

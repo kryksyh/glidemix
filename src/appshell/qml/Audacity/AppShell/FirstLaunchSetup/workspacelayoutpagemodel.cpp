@@ -55,7 +55,7 @@ void WorkspaceLayoutPageModel::load()
     WorkspaceInfo classic;
     classic.m_code = "Classic";
     classic.m_title = qtrc("appshell/gettingstarted", "Classic");
-    classic.m_description = qtrc("appshell/gettingstarted", "The traditional layout, with every toolbar in view");
+    classic.m_description = qtrc("appshell/gettingstarted", "The full layout, with every toolbar in view");
 #ifdef MUSE_MODULE_WORKSPACE
     classic.m_selected = (currentWorkspaceName == "Classic");
 #else
@@ -163,7 +163,7 @@ QString WorkspaceLayoutPageModel::availableWorkspaceText()
 
 QString WorkspaceLayoutPageModel::additionalInfoText()
 {
-    return qtrc("appshell/gettingstarted", "You can change between these layouts at any time using our new ‘workspaces’ feature.");
+    return qtrc("appshell/gettingstarted", "You can change layout at any time from the Workspace menu.");
 }
 
 QString WorkspaceLayoutPageModel::additionalInfoAccessibleName()

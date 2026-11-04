@@ -68,6 +68,17 @@ std::optional<std::vector<uint8_t> > Au3ProjectReader::readProjectThumbnail(cons
     return ProjectFileIO::ReadThumbnail(fileName);
 }
 
+std::optional<size_t> Au3ProjectReader::readProjectSongCount(const muse::io::path_t& projectPath) const
+{
+    const std::string sstr = projectPath.toStdString();
+    const FilePath fileName = wxString::FromUTF8(sstr.c_str(), sstr.size());
+    if (fileName.empty()) {
+        return std::nullopt;
+    }
+
+    return ProjectFileIO::ReadSongCount(fileName);
+}
+
 muse::Ret Au3ProjectCreator::removeUnsavedData(const muse::io::path_t& projectPath) const
 {
     // Helper method to remove autosave data from a project file without keeping it open

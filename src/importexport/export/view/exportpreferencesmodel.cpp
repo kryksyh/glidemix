@@ -503,6 +503,12 @@ void ExportPreferencesModel::setFileDialogPath(const QString& path)
 
 void ExportPreferencesModel::updateCurrentSampleRate()
 {
+    // GlideMix: the demo always exports MP3 at this rate; show the truth.
+    if (ExportPluginHelpers::IsDemo()) {
+        exportConfiguration()->setExportSampleRate(44100);
+        return;
+    }
+
     auto project = globalContext()->currentTrackeditProject();
     if (!project) {
         return;
@@ -636,6 +642,11 @@ std::string loudnessReportText(const ExportPluginHelpers::Loudness& loudness)
         text += "\n\n";
         text += muse::trc("export", "Demo version: saved as MP3 at 96 kbps, with the \"Glide Mix demo\" voice, "
                                     "and at most the first 20 minutes. A licence (Help > Licence...) exports full quality.");
+    }
+    if (ExportPluginHelpers::IsLossyExport()) {
+        text += "\n\n";
+        text += muse::trc("export", "The peaks are measured before encoding. This format can raise them, more at low "
+                                    "bitrates, so the limit here is -2 dBTP instead of -1.");
     }
     if (loudness.truePeakDb > -1.0) {
         text += "\n\n";

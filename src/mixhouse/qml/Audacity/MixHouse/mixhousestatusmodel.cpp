@@ -50,6 +50,18 @@ MixHouseStatusModel::MixHouseStatusModel(QObject* parent)
 
 void MixHouseStatusModel::componentComplete()
 {
+    // GlideMix: the demo's voice would sound like a bug if nobody said so first.
+    if (playbackController() && licence() && licence()->tier() == LicenceTier::Demo) {
+        playbackController()->isPlayingChanged().onNotify(this, [this]() {
+            static bool told = false;
+            if (!told && playbackController()->isPlaying()) {
+                told = true;
+                m_message = muse::qtrc("mixhouse", "Demo version: a voice says \u201cGlide Mix demo\u201d every 2 minutes. A licence removes it: Help > Licence");
+                m_messageTimer.start(20000);
+                refresh();
+            }
+        });
+    }
     if (library()) {
         m_scanning = library()->isScanning();
         m_analysing = library()->isAnalyzing();

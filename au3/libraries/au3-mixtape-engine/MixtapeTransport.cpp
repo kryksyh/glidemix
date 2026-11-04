@@ -279,11 +279,18 @@ void Transport::RenderLoop()
     }
     // ... or, without restarting: while the file
     // ~/Library/Application Support/Glidemix/dump-audio exists, append
-    // to the path written in it (checked every ~0.2 s).
+    // to the path written in it (checked every ~0.2 s). On Windows:
+    // %APPDATA%\Glidemix\dump-audio.
     std::string triggerFile;
+#ifdef _WIN32
+    if (const char* appData = std::getenv("APPDATA")) {
+        triggerFile = std::string(appData) + "\\Glidemix\\dump-audio";
+    }
+#else
     if (const char* home = std::getenv("HOME")) {
         triggerFile = std::string(home) + "/Library/Application Support/Glidemix/dump-audio";
     }
+#endif
     bool triggerDump = false;
     size_t sinceCheck = 0;
     std::vector<float> interleaved(kRenderBlock * channels);

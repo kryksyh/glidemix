@@ -35,14 +35,17 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.25**\n\n"
-                      + "- **Tempo line:** BPM markers at every transition, so you can see the tempo without scrolling back. Points and markers follow your theme color.\n"
-                      + "- **Reset** on the tempo line now returns every track to its real BPM, and the Project tab shows the tempo each song really plays at.\n"
-                      + "- **Import From File Tags** works: right-click songs > Metadata. Changed a tag in another app? Pull it into your library.\n"
-                      + "- **ReplayGain:** tags are read when songs are added, and Import From File Tags fills in songs already in your library.\n"
-                      + "- **Show in Library:** right-click a Project tab song to find the track, its album or its artist. Playlist songs get Show in Library too.\n"
-                      + "- **Search related Tracks:** no more stuck filters. The search shows on the key wheel or in the search box, and one click clears it.\n"
-                      + "- **Drag preview:** dragging a song onto the timeline now shows artist and title.\n"
+                text: "**GlideMix v1.1.26**\n\n"
+                      + "- **Export is much faster.** A 16-minute mix now takes under 30 seconds on our Mac.\n"
+                      + "- **Plug-ins:** fixed a bug that could slow the app down or stop it working.\n"
+                      + "- **Stems:** fixed an install failure on some Macs.\n"
+                      + "- **MP3 exports** no longer clip at normal bitrates.\n"
+                      + "- **Starts cleaner:** you get to your music with fewer questions, and closing the window quits on the Mac too.\n"
+                      + "- **Home** shows how many songs each project holds. The File menu says **Save project**.\n"
+                      + "- **Transitions:** the pill shows the name, and one Undo fully reverses Mix Now.\n"
+                      + "- **Library:** a dot marks songs already in the project, the list shows its song count and length, and hover the search box for its filters. Timeline songs get Show in Library.\n"
+                      + "- **Backups:** the library now keeps its last four backups.\n"
+                      + "- macOS may ask for permission one last time after this update.\n"
             }
         }
 

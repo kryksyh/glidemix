@@ -247,15 +247,10 @@ void StartupScenario::onStartupPageOpened(StartupModeType modeType)
 
 void StartupScenario::showStartupDialogsIfNeed(StartupModeType)
 {
-    // Runs once (callAfterSplashScreen guards itself). The demo version
-    // first shows what a licence unlocks (Help > Licence…).
+    // Runs once (callAfterSplashScreen guards itself). GlideMix: the demo's
+    // licence window waits for the first export; the status line tells about the
+    // voice at the first Play.
     const auto scanPlugins = [this]() {
-        if (licence() && licence()->tier() == au::mixhouse::LicenceTier::Demo) {
-            auto reminder = interactive()->open(muse::Uri("audacity://licence"));
-            reminder.onResolve(this, [this](const muse::Val&) { effectsProviderInitializer()->callAfterSplashScreen(); });
-            reminder.onReject(this, [this](int, const std::string&) { effectsProviderInitializer()->callAfterSplashScreen(); });
-            return;
-        }
         effectsProviderInitializer()->callAfterSplashScreen();
     };
 

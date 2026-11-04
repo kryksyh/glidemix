@@ -164,6 +164,98 @@ void StretchKeepsPitch()
     Require(std::abs(first - 1.0) < 0.02 && std::abs(last - 6.0) < 0.02, "stretched clip in the wrong place");
 }
 
+//! GlideMix: three songs, some stretched, overlapping and apart, as an export sees them.
+std::shared_ptr<const Arrangement> ThreeSongs(WaveClip& a, WaveClip& b, WaveClip& c)
+{
+    auto arrangement = std::make_shared<Arrangement>();
+    arrangement->generation = 1;
+    int64_t id = 1;
+    for (WaveClip* clip : { &a, &b, &c }) {
+        TrackSnapshot track;
+        track.trackId = id++;
+        track.clips.push_back(SnapshotClip(*clip));
+        arrangement->tracks.push_back(std::move(track));
+    }
+    return arrangement;
+}
+
+//! Both channels of `seconds` of the mix, in export's block size.
+std::vector<float> RenderBoth(Renderer& renderer, double seconds)
+{
+    const size_t block = kRenderBlockFrames;
+    const size_t total = (static_cast<size_t>(seconds * kRate) / block + 1) * block;
+    std::vector<float> left(total), right(total);
+    for (size_t done = 0; done < total; done += block) {
+        float* out[2] = { left.data() + done, right.data() + done };
+        renderer.Render(out, block);
+    }
+    left.insert(left.end(), right.begin(), right.end());
+    return left;
+}
+
+void LossyCeilingHoldsAtMinusTwo()
+{
+    // Two in-phase 0.5 sines sum to full scale: well over the ceiling.
+    auto clip = SineClip(2.0, 997.0, 0.0);
+    auto arrangement = std::make_shared<Arrangement>();
+    for (int t = 0; t < 2; ++t) {
+        TrackSnapshot track;
+        track.trackId = t + 1;
+        track.clips.push_back(SnapshotClip(*clip));
+        arrangement->tracks.push_back(track);
+    }
+    Renderer renderer(kRate, 2);
+    renderer.SetLimitCeiling(Renderer::kLossyLimitCeiling);
+    renderer.SetArrangement(arrangement);
+    const auto out = RenderLeft(renderer, 2.0);
+    float peak = 0.0f;
+    for (const float sample : out) {
+        peak = std::max(peak, std::abs(sample));
+    }
+    std::cout << "  peak " << 20.0 * std::log10(peak) << " dB\n";
+    Require(peak <= Renderer::kLossyLimitCeiling + 1e-3f, "over the lossy ceiling");
+}
+
+void ExportMatchesOneCore()
+{
+    auto a = SineClip(6.0, 440.0, 0.0);
+    a->StretchBy(1.25);
+    auto b = SineClip(5.0, 660.0, 6.0);
+    auto c = SineClip(5.0, 330.0, 10.0);
+    c->StretchBy(0.8);
+    const auto arrangement = ThreeSongs(*a, *b, *c);
+
+    Renderer oneCore(kRate, 2);
+    oneCore.SetArrangement(arrangement);
+    const auto expected = RenderBoth(oneCore, 16.0);
+
+    Renderer everyCore(kRate, 2);
+    everyCore.SetOffline(true);
+    everyCore.SetArrangement(arrangement);
+    const auto actual = RenderBoth(everyCore, 16.0);
+
+    Require(expected.size() == actual.size(), "different lengths");
+    for (size_t i = 0; i < expected.size(); ++i) {
+        Require(expected[i] == actual[i], "export differs from one core at sample " + std::to_string(i));
+    }
+}
+
+void ExportResamplesNearItsTempo()
+{
+    auto clip = SineClip(4.0, 440.0, 1.0);
+    clip->StretchBy(1.001);
+    Renderer renderer(kRate, 2);
+    renderer.SetOffline(true);
+    renderer.SetArrangement(OneClip(*clip));
+    const auto out = RenderLeft(renderer, 6.0, kRenderBlockFrames);
+    const double f = Frequency(out, 2.0, 4.0);
+    std::cout << "  stretched x1.001: " << f << " Hz (440 / 1.001 = 439.56)\n";
+    Require(std::abs(f - 439.56) < 0.5, "resampled clip at the wrong pitch: " + std::to_string(f));
+    const auto [first, last] = AudibleRange(out);
+    std::cout << "  audible " << first << " .. " << last << " s (expected 1.000 .. 5.004)\n";
+    Require(std::abs(first - 1.0) < 0.02 && std::abs(last - 5.004) < 0.02, "resampled clip in the wrong place");
+}
+
 void CentShiftChangesPitchOnly()
 {
     auto clip = SineClip(3.0, 440.0, 0.0);
@@ -942,6 +1034,9 @@ int main(int argc, char** argv)
     const std::pair<const char*, std::function<void()> > tests[] = {
         { "unstretched clip is sample exact", UnstretchedIsSampleExact },
         { "stretch keeps pitch and lands in place", StretchKeepsPitch },
+        { "export on every core matches one core, sample for sample", ExportMatchesOneCore },
+        { "lossy export's ceiling holds at -2 dB", LossyCeilingHoldsAtMinusTwo },
+        { "export resamples a clip near its tempo, in place", ExportResamplesNearItsTempo },
         { "cent shift changes pitch only", CentShiftChangesPitchOnly },
         { "edit while playing is heard next block", EditWhilePlayingTakesEffectNextBlock },
         { "bass line removes the bass and leaves the highs", BassLineRemovesTheBassAndLeavesTheHighs },

@@ -5,6 +5,13 @@
 
 #include <QCoreApplication>
 
+#include <csignal>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "backgroundprocess.h"
 #include "modularity/ioc.h"
 #include "framework/audioplugins/iregisteraudiopluginsscenario.h"
@@ -56,6 +63,18 @@ int PluginRegistrationApp::runSelfTest(const muse::modularity::ContextPtr& ctxId
 
 int PluginRegistrationApp::processAudioPluginRegistration(const muse::modularity::ContextPtr& ctxId)
 {
+    // GlideMix: this process only checks one plug-in, and a plug-in that crashes
+    // it fails the check. It must end quietly: the system's "GlideMix quit
+    // unexpectedly" looked like the app itself had crashed.
+#ifdef _WIN32
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    std::signal(SIGABRT, [](int) { _exit(1); });
+#else
+    for (const int sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT }) {
+        std::signal(sig, [](int) { _exit(1); });
+    }
+#endif
+
     std::shared_ptr<AudacityCmdOptions> options = std::dynamic_pointer_cast<AudacityCmdOptions>(m_appOptions);
     IF_ASSERT_FAILED(options) {
         return 1;

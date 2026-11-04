@@ -27,7 +27,9 @@ RealtimeEffectListItemModel::RealtimeEffectListItemModel(QObject* parent, effect
         const auto project = globalContext()->currentProject();
         if (!state || !project) { return; }
         const auto& focus = project->viewState()->pluginAutomationFocus();
-        const auto instance = state->GetInstance();
+        // GlideMix: never GetInstance() here. With nothing holding the instance it
+        // built a new plug-in every 16 ms; a touch needs an open window, which holds one.
+        const auto instance = state->ExistingInstance();
         const auto touched = instance ? instance->TakeParameterInteraction() : 0;
         // Ableton: "Clicking on a track's mixer or device controls will
         // display this control's envelope" -- the lane follows the control the

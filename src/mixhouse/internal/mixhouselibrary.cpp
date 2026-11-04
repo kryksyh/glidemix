@@ -29,6 +29,7 @@
  *   crate_tracks:    crate_id, track_id
  */
 #include "mixhouselibrary.h"
+#include "mixhouse/glidemixpaths.h"
 #include "mixhouse/mixhousenativepath.h"
 
 #include <algorithm>
@@ -275,15 +276,14 @@ QString MixHouseLibrary::defaultDatabasePath()
     // sits next to it, the layout Mixxx uses. Kept out of Mixxx's sandbox
     // container: macOS asks for permission every time an app reads another
     // app's container.
-    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Library/library.sqlite");
+    return paths::glidemixDataPath(QStringLiteral("Library/library.sqlite"));
 }
 
 QString MixHouseLibrary::mixxxDatabasePath()
 {
     // Where Mixxx (and the parked MixHouse DJ fork, same bundle id) keeps its
-    // library on macOS -- only read once, to import it.
-    return QDir::homePath() + QStringLiteral(
-        "/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx/mixxxdb.sqlite");
+    // library -- only read once, to import it.
+    return paths::mixxxSettingsDir() + QStringLiteral("/mixxxdb.sqlite");
 }
 
 namespace {
@@ -1451,10 +1451,25 @@ bool MixHouseLibrary::backupOnce()
     // live collection and a bad write would be unrecoverable otherwise.
     QElapsedTimer timer;
     timer.start();
+    // GlideMix: the last four sessions, newest without a number, so one bad
+    // session can't take the only good copy with it. The new copy is finished
+    // before anything older is touched.
     const QString backup = m_path + QStringLiteral(".mixhouse-backup");
-    QFile::remove(backup);
-    if (!QFile::copy(m_path, backup)) {
-        LOGE() << "could not back up the library before writing: " << backup;
+    const QString fresh = backup + QStringLiteral(".new");
+    QFile::remove(fresh);
+    if (!QFile::copy(m_path, fresh)) {
+        LOGE() << "could not back up the library before writing: " << fresh;
+        QFile::remove(fresh);
+        return false;
+    }
+    constexpr int kOlderCopies = 3;
+    QFile::remove(backup + QStringLiteral(".%1").arg(kOlderCopies));
+    for (int i = kOlderCopies - 1; i >= 1; --i) {
+        QFile::rename(backup + QStringLiteral(".%1").arg(i), backup + QStringLiteral(".%1").arg(i + 1));
+    }
+    QFile::rename(backup, backup + QStringLiteral(".1"));
+    if (!QFile::rename(fresh, backup)) {
+        LOGE() << "could not put the new library backup in place: " << backup;
         return false;
     }
     LOGI() << "library backed up to " << backup << " in " << timer.elapsed() << " ms";

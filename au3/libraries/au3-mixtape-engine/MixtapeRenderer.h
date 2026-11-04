@@ -57,6 +57,10 @@ public:
     //! GlideMix: rendering to a file (export): no output level and no
     //! output tap (meters, broadcast); the limiter still applies.
     void SetOffline(bool offline) { mOffline = offline; }
+    //! Before rendering: the limiter's true-peak ceiling, linear.
+    void SetLimitCeiling(float ceiling);
+    //! An export to a lossy format: encoders overshoot, so more room (-2 dBTP).
+    static constexpr float kLossyLimitCeiling = 0.7898f;   // -2.05 dB: reads -2.0 or less
 
     //! Render thread: every finished block of both outputs, for anything that
     //! listens to what is playing rather than making it -- the broadcaster.
@@ -131,6 +135,7 @@ private:
         size_t index = 0;
     };
     Limiter mLimiter;
+    float mLimitCeiling;
     void Limit(float* const* out, size_t frames);
     float TruePeakAt(size_t position) const;
 
@@ -139,6 +144,9 @@ private:
     Overlay mOverlay;
     bool mIsCue = false;
     bool mOffline = false;
+    //! Export only: every clip rendered ahead on its own core, see the .cpp.
+    struct OfflineVoices;
+    std::unique_ptr<OfflineVoices> mOfflineVoices;
     std::shared_ptr<const Arrangement> mPending;   // guarded by atomic_load/store
     std::shared_ptr<const Arrangement> mCurrent;   // render thread only
     double mTime = 0.0;

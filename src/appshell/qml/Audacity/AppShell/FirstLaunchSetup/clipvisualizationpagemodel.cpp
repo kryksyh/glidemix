@@ -32,7 +32,7 @@ void ClipVisualizationPageModel::load()
     ClipStyleInfo classic;
     classic.m_style = static_cast<int>(ClipStyles::Style::CLASSIC);
     classic.m_title = qtrc("appshell/gettingstarted", "Classic");
-    classic.m_description = qtrc("appshell/gettingstarted", "The clips you know and love");
+    classic.m_description = qtrc("appshell/gettingstarted", "All clips in one color");
     classic.m_imagePath = "resources/ClipVisuals_ClassicClips.png";
     classic.m_selected = false;
     m_clipStyles.append(classic);

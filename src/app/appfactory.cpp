@@ -21,7 +21,14 @@
 #include "framework/uicomponents/uicomponentsmodule.h"
 #include "framework/dockwindow/dockmodule.h"
 #include "framework/toast/toastmodule.h"
+// GlideMix: the cloud module is the stub when audio.com is off (MUSE_MODULE_CLOUD
+// follows AU_BUILD_CLOUD_AUDIOCOM); its header must match the library linked,
+// or MSVC fails to link (clang let the mismatch through).
+#ifdef AU_BUILD_CLOUD_AUDIOCOM
 #include "framework/cloud/cloudmodule.h"
+#else
+#include "framework/stubs/cloud/cloudstubmodule.h"
+#endif
 #include "framework/network/networkmodule.h"
 #ifdef MUSE_MODULE_UPDATE
 #include "framework/update/updatemodule.h"

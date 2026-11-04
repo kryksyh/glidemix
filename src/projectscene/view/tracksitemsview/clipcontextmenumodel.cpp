@@ -32,6 +32,7 @@ constexpr const char* TRACK_COLOR_ITEM = "mixtape-clip-track-color";
 constexpr const char* RESET_COLORS_ITEM = "mixtape-clip-reset-colors";
 constexpr const char* ANCHOR_ITEM_PREFIX = "mixtape-anchor:";
 constexpr const char* PHRASE_RIBBON_ITEM = "mixtape-toggle-phrase-ribbon";
+constexpr const char* SHOW_IN_LIBRARY_ITEM = "mixtape-show-in-library";
 // GlideMix: the track menu's Track visualization, here too (Chris, 2026-10-27).
 constexpr const char* TRACK_VIEW_WAVEFORM_ACTION = "action://trackedit/track-view-waveform";
 constexpr const char* TRACK_VIEW_SPECTROGRAM_ACTION = "action://trackedit/track-view-spectrogram";
@@ -128,6 +129,7 @@ void ClipContextMenuModel::load()
     };
 
     MenuItemList items {
+        makeSimpleItem(SHOW_IN_LIBRARY_ITEM, muse::TranslatableString("clip", "Show in Library")),
         makeItemWithArg("clip-properties"),
         makeItemWithArg("rename-item", muse::TranslatableString("clip", "Rename clip")),
         makeMenu(muse::TranslatableString("clip", "Color"), {
@@ -336,6 +338,21 @@ MenuItemList ClipContextMenuModel::makeKeyItems()
 
 void ClipContextMenuModel::handleMenuItem(const QString& itemId)
 {
+    if (itemId == QString::fromUtf8(SHOW_IN_LIBRARY_ITEM)) {
+        mixhouse::IMixHouseBeatGrids::ClipFile file;
+        if (!beatGrids() || !library() || !library()->isAvailable() || !beatGrids()->clipFile(m_clipKey.key, file)) {
+            return;
+        }
+        mixhouse::IMixHouseLibrary::TrackQuery query;
+        query.location = file.path;
+        const mixhouse::MixHouseTrackList found = library()->tracks(query);
+        if (!found.empty()) {
+            dispatcher()->dispatch("dock-set-open", muse::actions::ActionData::make_arg2<QString, bool>(
+                                       QStringLiteral("mixHouseLibraryPanel"), true));
+            library()->requestRevealTrack(found.front().id, mixhouse::IMixHouseLibrary::RevealMode(0));
+        }
+        return;
+    }
     if (itemId == QString::fromUtf8(PHRASE_RIBBON_ITEM)) {
         if (mixhouseConfiguration()) {
             const bool visible = !mixhouseConfiguration()->phraseRibbonVisible();

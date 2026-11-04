@@ -27,9 +27,17 @@ namespace au::mixhouse {
 inline bool mixHouseFolderTooBroadToScan(const QString& folder)
 {
     const QString path = QDir::cleanPath(folder);
+#ifdef Q_OS_WIN
+    // Windows: a drive (C:, C:/), a drive's Users folder, or the home folder.
+    const bool driveRoot = (path.size() == 2 || path.size() == 3) && path.at(1) == QLatin1Char(':');
+    const bool usersFolder = path.size() == 8 && path.at(1) == QLatin1Char(':')
+                             && path.mid(2).compare(QStringLiteral("/Users"), Qt::CaseInsensitive) == 0;
+    return driveRoot || usersFolder || path.compare(QDir::cleanPath(QDir::homePath()), Qt::CaseInsensitive) == 0;
+#else
     const bool volumeRoot = path.startsWith(QStringLiteral("/Volumes/")) && path.count(QLatin1Char('/')) == 2;
     return path == QStringLiteral("/") || path == QDir::cleanPath(QDir::homePath()) || path == QStringLiteral("/Users")
            || path == QStringLiteral("/Volumes") || volumeRoot;
+#endif
 }
 }
 

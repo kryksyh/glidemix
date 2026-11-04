@@ -33,7 +33,8 @@ FocusScope {
     property string name: ""
     property string path: ""
     property string thumbnailUrl: ""
-    property alias timeSinceModified: timeSinceModified.text
+    property string timeSinceModified: ""
+    property string trackCount: ""
     property string placeholder: ""
     property bool isCreateNew: false
     property bool isNoResultsFound: false
@@ -256,9 +257,9 @@ FocusScope {
             }
 
             StyledTextLabel {
-                id: timeSinceModified
-
                 anchors.horizontalCenter: parent.horizontalCenter
+
+                text: [root.trackCount, root.timeSinceModified].filter(Boolean).join(" · ")
 
                 font.capitalization: Font.AllUppercase
 

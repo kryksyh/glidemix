@@ -1578,6 +1578,28 @@ void MixHouseBeatGrids::insertAtTransition(const trackedit::ClipKey& key, bool r
            << (incoming ? "the songs after it pushed back" : "at the end of the mix");
 }
 
+std::optional<std::pair<double, double> > MixHouseBeatGrids::takeClipAnchorMove(const trackedit::ClipKey& key)
+{
+    const QString file = gridForClipName(clipName(key), false).filePath;
+    const auto it = m_anchorDrag.find(file);
+    if (it == m_anchorDrag.end()) {
+        return std::nullopt;
+    }
+    const std::pair<double, double> anchors = it.value();
+    m_anchorDrag.erase(it);
+    if (m_ripple.clip == key) {
+        m_ripple = RippleDrag {};
+    }
+    m_beatGridsChanged.notify();
+    return anchors;
+}
+
+void MixHouseBeatGrids::putClipAnchorMove(const trackedit::ClipKey& key, const std::pair<double, double>& anchors)
+{
+    m_anchorDrag.insert(gridForClipName(clipName(key), false).filePath, anchors);
+    m_beatGridsChanged.notify();
+}
+
 void MixHouseBeatGrids::moveClipAnchor(const trackedit::ClipKey& key, int which, double projectTime, bool completed)
 {
     const bool starting = !m_ripple.active || m_ripple.clip != key || m_ripple.which != which;

@@ -23,7 +23,7 @@ Rectangle {
     readonly property var cards: [
         { icon: IconCode.LEARN, title: qsTrc("appshell", "Getting started"),
           text: qsTrc("appshell", "What GlideMix does and how a mix comes together, with pictures."),
-          button: qsTrc("appshell", "Open the guide"), url: "https://glidemix.com/#features" },
+          button: qsTrc("appshell", "Open the guide"), url: "https://glidemix.com/manual#first-mix" },
         { icon: IconCode.LEARN, title: qsTrc("appshell", "Using rekordbox or Lexicon?"),
           text: qsTrc("appshell", "Fastest start: analyse your library there first, then open it here. Those songs keep their grids, keys and cues and need no analysis."),
           button: qsTrc("appshell", "How it works"), url: "https://glidemix.com/manual#rekordbox-lexicon" },

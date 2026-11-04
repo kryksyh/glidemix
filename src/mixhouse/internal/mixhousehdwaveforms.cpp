@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhousehdwaveforms.h"
+#include "mixhouse/glidemixpaths.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -36,7 +37,7 @@ MixHouseHdWaveforms::~MixHouseHdWaveforms()
 
 QString MixHouseHdWaveforms::cacheDir()
 {
-    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Library/Waveforms");
+    return paths::glidemixDataPath(QStringLiteral("Library/Waveforms"));
 }
 
 //! Named after the file and its size and date, so an edited file is analysed again.

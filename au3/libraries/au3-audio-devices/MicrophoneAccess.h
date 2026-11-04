@@ -10,3 +10,9 @@
 
 //! False on macOS until the user has allowed the microphone; always true elsewhere.
 AUDIO_DEVICES_API bool MicrophoneAccessGranted();
+
+#ifdef __APPLE__
+//! Whether the named output device runs at `rate`, from what it reports, without
+//! opening it: opening any device can bring up the same prompt. False if it isn't found.
+AUDIO_DEVICES_API bool OutputDeviceRateKnown(const char* deviceName, double rate, bool* supported);
+#endif

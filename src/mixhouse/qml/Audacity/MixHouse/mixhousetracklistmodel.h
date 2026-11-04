@@ -21,6 +21,7 @@
 #include "modularity/ioc.h"
 #include "importexport/export/iexportconfiguration.h"
 #include "mixhouse/imixhouselibrary.h"
+#include "mixhouse/imixhousebeatgrids.h"
 #include "mixhouse/imixhousegrideditor.h"
 #include "mixhouse/imixhouselexicon.h"
 #include "mixhouse/imixhouserekordboxxml.h"
@@ -49,6 +50,7 @@ class MixHouseTrackListModel : public QAbstractListModel, public muse::Injectabl
     Q_PROPERTY(int trackCount READ trackCount NOTIFY loaded)
     Q_PROPERTY(bool available READ available NOTIFY loaded)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY loaded)
+    Q_PROPERTY(QString resultSummary READ resultSummary NOTIFY loaded)
     Q_PROPERTY(int sortKey READ sortKey NOTIFY loaded)
     Q_PROPERTY(bool sortAscending READ sortAscending NOTIFY loaded)
     // TableView needs the model to report a real columnCount() (QAbstractListModel
@@ -107,6 +109,7 @@ class MixHouseTrackListModel : public QAbstractListModel, public muse::Injectabl
     muse::Inject<trackedit::ITrackNavigationController> trackNavigationController = { this };
     muse::Inject<trackedit::ITrackeditInteraction> trackeditInteraction = { this };
     muse::Inject<trackedit::IProjectHistory> projectHistory = { this };
+    muse::Inject<IMixHouseBeatGrids> beatGrids = { this };
     muse::Inject<IMixHouseTempoMap> tempoMap = { this };
     muse::Inject<IMixHouseTrackAligner> trackAligner = { this };
     // Registered via globalIoc() (see IMixHouseLibraryConfiguration's own
@@ -124,7 +127,7 @@ public:
         BpmRole, KeyRole, KeyIdRole, DurationRole, RatingRole,
         HasBeatgridRole, FilePathRole, ColorRole,
         FirstBeatSecRole, BeatLengthSecRole, ConstantTempoRole,
-        AlbumArtistRole, ComposerRole, GroupingRole, TrackNumberRole,
+        AlbumArtistRole, ComposerRole, GroupingRole, TrackNumberRole, InProjectRole,
         FileTypeRole, CommentRole, BitrateRole, ReplayGainRole,
         DateAddedRole, TimesPlayedRole, LastPlayedAtRole, BpmLockedRole,
         TrackIdRole, CoverArtTypeRole, SampleRateRole,
@@ -710,6 +713,8 @@ public:
     Q_INVOKABLE int matchingCount() const;
     bool available() const;
     QString statusMessage() const;
+    //! GlideMix: "120 songs, 8:12:05" for what the list shows.
+    QString resultSummary() const;
     int sortKey() const { return static_cast<int>(m_query.sort); }
     bool sortAscending() const { return m_query.ascending; }
     int uiColumnCount() const { return m_uiColumnCount; }
@@ -806,6 +811,9 @@ private:
     void emitAnalysisProgressChanged(int trackId, bool allRoles = false);
 
     MixHouseTrackList m_tracks;
+    //! GlideMix: the files on the timeline, for the mark in the list.
+    void updateProjectFiles();
+    QSet<QString> m_projectFiles;
     IMixHouseLibrary::TrackQuery m_query;
     int m_uiColumnCount = 1;
     /// Decoded Waveform Overview data, cached by real library.id (NOT row --

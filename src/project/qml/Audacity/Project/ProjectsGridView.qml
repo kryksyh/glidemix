@@ -165,6 +165,7 @@ Item {
                 isCreateNew: item.isCreateNew
                 isNoResultsFound: item.isNoResultsFound
                 timeSinceModified: item.timeSinceModified ?? ""
+                trackCount: item.trackCount ?? ""
                 contextMenuModel: item.contextMenuModel
                 showIndicator: item.showIndicator ?? false
                 indicatorButton: root.indicatorButton

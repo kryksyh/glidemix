@@ -34,6 +34,7 @@ PRIVATE
    $<$<BOOL:${AU_USE_PORTMIXER}>:portmixer>
    wxBase
    "$<$<PLATFORM_ID:Darwin>:-framework AVFoundation>"
+   "$<$<PLATFORM_ID:Darwin>:-framework CoreAudio>"
 )
 audacity_library( ${TARGET} "${SOURCES}" "${LIBRARIES}"
    "" ""

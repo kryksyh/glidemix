@@ -246,6 +246,13 @@ void MixHouseTrackListModel::load()
     // only once no matter how many times load() itself gets called.
     if (!m_subscribedToExternal && rekordboxXml()) {
         m_subscribedToExternal = true;
+        if (projectHistory()) {
+            projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent) { updateProjectFiles(); });
+        }
+        if (globalContext()) {
+            globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() { updateProjectFiles(); });
+        }
+        updateProjectFiles();   // a project may be open already
         // A rekordbox XML read finishes in the background: refresh the
         // sidebar (and the table, when it shows that XML).
         rekordboxXml()->changed().onNotify(this, [this]() {
@@ -356,7 +363,7 @@ void MixHouseTrackListModel::load()
             if (libraryConfiguration()->showScanSummaryDialog() && result.scanned > 0) {
                 const std::string title = muse::trc("mixhouse", "Library scan finished");
                 std::string text = muse::qtrc("mixhouse",
-                    "Scanned %1 file(s): %2 added to the library, %3 already known.")
+                    "Scanned %1 file(s): %2 added to the library, %3 already known.", nullptr, result.scanned)
                     .arg(result.scanned).arg(result.added).arg(result.skipped).toStdString();
         if (result.unreadable > 0) {
             text += "\n" + muse::qtrc("mixhouse", "%n file(s) could not be read as audio (damaged or not audio) and were not added.",
@@ -2932,7 +2939,13 @@ void MixHouseTrackListModel::revealInFileBrowser(const QString& filePath) const
     // where this lives" gesture. Qt.openUrlExternally("file://" + path) on a
     // FILE (not a directory) instead launches its default player, which is
     // not the same thing at all.
+#ifdef Q_OS_WIN
+    // Explorer's equivalent: "/select," then the native path as its own
+    // argument (QProcess quotes it when it has spaces; Explorer accepts that).
+    QProcess::startDetached(QStringLiteral("explorer.exe"), { QStringLiteral("/select,"), QDir::toNativeSeparators(filePath) });
+#else
     QProcess::startDetached(QStringLiteral("/usr/bin/open"), { QStringLiteral("-R"), filePath });
+#endif
 }
 
 bool MixHouseTrackListModel::addTrackToAutoDj(int row, int loc)
@@ -3761,9 +3774,9 @@ void MixHouseTrackListModel::moveTracksToTrashWithConfirm(const QVariantList& ro
 
     // Real mixxx (Qt >= 5.15): "Move these files to the trash bin?" -- the
     // OS Trash, recoverable, not a permanent unlink.
-    const std::string dlgTitle = muse::trc("mixhouse", "Delete Track File(s) from Disk?");
+    const std::string dlgTitle = muse::trc("mixhouse", "Delete track files from disk?");
     const std::string question = muse::qtrc("mixhouse",
-        "%1 track file(s) will be moved to the Trash and purged from the library database.")
+        "%1 track file(s) will be moved to the Trash and purged from the library database.", nullptr, count)
         .arg(count).toStdString();
     const int moveBtn = int(muse::IInteractive::Button::Ok);
     auto promise = interactive()->question(dlgTitle, question,
@@ -3864,7 +3877,7 @@ void MixHouseTrackListModel::analyzeTracksWithConfirm(const QVariantList& rows)
     }
     const int count = static_cast<int>(trackIds.size() + externalFiles.size());
 
-    const std::string dlgTitle = muse::qtrc("mixhouse", "Analyze %1 track(s)?").arg(count).toStdString();
+    const std::string dlgTitle = muse::qtrc("mixhouse", "Analyze %1 track(s)?", nullptr, count).arg(count).toStdString();
     const std::string question = muse::trc("mixhouse",
         "Detects each track's BPM and beatgrid (Queen Mary DSP), "
         "musical key (OpenKeyScan) and waveform from its audio. Existing values will be "
@@ -4104,7 +4117,7 @@ void MixHouseTrackListModel::addDroppedUrls(const QVariantList& urls, int playli
         return;
     }
     if (libraryConfiguration()->showScanSummaryDialog()) {
-        std::string text = muse::qtrc("mixhouse", "Scanned %1 file(s): %2 added to the library, %3 already known.")
+        std::string text = muse::qtrc("mixhouse", "Scanned %1 file(s): %2 added to the library, %3 already known.", nullptr, result.scanned)
                            .arg(result.scanned).arg(result.added).arg(result.skipped).toStdString();
         if (result.unreadable > 0) {
             text += "\n" + muse::qtrc("mixhouse", "%n file(s) could not be read as audio (damaged or not audio) and were not added.",
@@ -4213,13 +4226,13 @@ void MixHouseTrackListModel::addDroppedUrlsAsNewLists(const QVariantList& urls, 
     const DropTotals totals = *m_dropTotals;
     m_dropTotals.reset();
     if (totals.lists > 0 && libraryConfiguration()->showScanSummaryDialog()) {
-        std::string text = muse::qtrc("mixhouse", "Scanned %1 file(s): %2 added to the library, %3 already known.")
+        std::string text = muse::qtrc("mixhouse", "Scanned %1 file(s): %2 added to the library, %3 already known.", nullptr, totals.scanned)
                            .arg(totals.scanned).arg(totals.added).arg(totals.skipped).toStdString();
         if (totals.unreadable > 0) {
             text += "\n" + muse::qtrc("mixhouse", "%n file(s) could not be read as audio (damaged or not audio) and were not added.",
                                         nullptr, totals.unreadable).toStdString();
         }
-        text += "\n" + muse::qtrc("mixhouse", "%n list(s) made, with %1 track(s).", nullptr, totals.lists)
+        text += "\n" + muse::qtrc("mixhouse", "%n list(s) made, with %1 songs.", nullptr, totals.lists)
                 .arg(totals.listed).toStdString();
         interactive()->info(muse::trc("mixhouse", "Library scan finished"), text);
     }
@@ -4417,6 +4430,7 @@ QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
     case ComposerRole:    return t.composer;
     case GroupingRole:    return t.grouping;
     case TrackNumberRole: return t.trackNumber;
+    case InProjectRole:   return m_projectFiles.contains(t.filePath);
     case FileTypeRole:    return t.fileType;
     case CommentRole:     return t.comment;
     case BitrateRole:     return t.bitrate;
@@ -4445,7 +4459,7 @@ QHash<int, QByteArray> MixHouseTrackListModel::roleNames() const
         { FirstBeatSecRole, "firstBeatSec" }, { BeatLengthSecRole, "beatLengthSec" },
         { ConstantTempoRole, "constantTempo" },
         { AlbumArtistRole, "albumArtist" }, { ComposerRole, "composer" },
-        { GroupingRole, "grouping" }, { TrackNumberRole, "trackNumber" },
+        { GroupingRole, "grouping" }, { TrackNumberRole, "trackNumber" }, { InProjectRole, "inProject" },
         { FileTypeRole, "fileType" }, { CommentRole, "comment" },
         { BitrateRole, "bitrate" }, { ReplayGainRole, "replaygain" },
         { DateAddedRole, "dateAdded" }, { TimesPlayedRole, "timesPlayed" },
@@ -4469,6 +4483,50 @@ int MixHouseTrackListModel::matchingCount() const
     return static_cast<int>(library()->matchingTracks(m_query).ids.size());
 }
 bool MixHouseTrackListModel::available() const { return library()->isAvailable(); }
+
+QString MixHouseTrackListModel::resultSummary() const
+{
+    const int count = matchingCount();
+    if (count <= 0) {
+        return QString();
+    }
+    const QString songs = count == 1 ? muse::qtrc("mixhouse", "1 song")
+                          : muse::qtrc("mixhouse", "%1 songs").arg(QLocale().toString(count));
+    // Only the rows loaded can be added up.
+    if (count > static_cast<int>(m_tracks.size())) {
+        return songs;
+    }
+    double seconds = 0.0;
+    for (const MixHouseTrack& t : m_tracks) {
+        seconds += std::max(0.0, t.durationSec);
+    }
+    const qint64 total = static_cast<qint64>(seconds);
+    return songs + QStringLiteral(", %1:%2:%3").arg(total / 3600)
+           .arg((total / 60) % 60, 2, 10, QLatin1Char('0')).arg(total % 60, 2, 10, QLatin1Char('0'));
+}
+
+void MixHouseTrackListModel::updateProjectFiles()
+{
+    QSet<QString> files;
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (project && beatGrids()) {
+        for (const trackedit::TrackId trackId : project->trackIdList()) {
+            for (const trackedit::Clip& clip : project->clipList(trackId)) {
+                IMixHouseBeatGrids::ClipFile file;
+                if (beatGrids()->clipFile(clip.key, file)) {
+                    files.insert(file.path);
+                }
+            }
+        }
+    }
+    if (files == m_projectFiles) {
+        return;
+    }
+    m_projectFiles = std::move(files);
+    if (rowCount() > 0) {
+        emit dataChanged(index(0), index(rowCount() - 1), { InProjectRole });
+    }
+}
 
 QString MixHouseTrackListModel::statusMessage() const
 {

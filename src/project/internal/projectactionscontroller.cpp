@@ -1598,6 +1598,14 @@ bool ProjectActionsController::dispatchAudioPreviewToWindowWithProject(const mus
 
 void ProjectActionsController::exportAudio()
 {
+    // GlideMix: the demo shows what a licence unlocks when the mix is ready to
+    // leave the app, once per run.
+    static bool licenceShown = false;
+    if (!licenceShown && licence() && licence()->tier() == au::mixhouse::LicenceTier::Demo) {
+        licenceShown = true;
+        interactive()->openSync(muse::UriQuery("audacity://licence"));
+    }
+
     if (audioComService()->enabled() && exportConfiguration()->askExportLocationType()) {
         muse::UriQuery query(ASK_LOCATION_TYPE_URI);
         query.addParam("purpose", Val(std::string("export")));

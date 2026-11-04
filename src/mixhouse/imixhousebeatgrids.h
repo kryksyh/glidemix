@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include <QColor>
@@ -75,6 +77,10 @@ public:
     /// Drags anchor `which` (0 intro, 1 outro) to `projectTime`, on the
     /// track's beats while SYNC is on. Saved for the file when `completed`.
     virtual void moveClipAnchor(const trackedit::ClipKey& clip, int which, double projectTime, bool completed) = 0;
+    /// A not yet saved anchor move (Mix Now's), taken back for undo: its (intro, outro), if there is one.
+    virtual std::optional<std::pair<double, double> > takeClipAnchorMove(const trackedit::ClipKey& clip) = 0;
+    /// Puts a taken move back, for redo.
+    virtual void putClipAnchorMove(const trackedit::ClipKey& clip, const std::pair<double, double>& anchors) = 0;
     /// Back to the default anchors.
     virtual void resetClipAnchors(const trackedit::ClipKey& clip) = 0;
 

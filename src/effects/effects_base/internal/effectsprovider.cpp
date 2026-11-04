@@ -26,59 +26,97 @@
 using namespace muse;
 using namespace au::effects;
 
+namespace {
+// GlideMix: the first scan finds everything already installed; after
+// that, only what was added since, so say so and name them.
+bool askToValidatePlugins(muse::IInteractive& interactive, const muse::io::paths_t& newPlugins, bool firstScan)
+{
+    std::string title;
+    std::string text;
+    if (firstScan) {
+        title = muse::trc("appshell", "Validate audio plugins");
+        text = (newPlugins.size() == 1
+                ? muse::qtrc("appshell", "GlideMix found 1 audio plugin on this computer. It needs a quick check "
+                                         "before it can be used. Validate it now, or skip and do it later?")
+                : muse::qtrc("appshell", "GlideMix found %1 audio plugins on this computer. They need a quick check "
+                                         "before they can be used. Validate them now, or skip and do it later?")
+                .arg(newPlugins.size())).toStdString();
+    } else {
+        QStringList names;
+        for (const auto& path : newPlugins) {
+            const QString name = QFileInfo(path.toQString()).completeBaseName();
+            if (!name.isEmpty() && !names.contains(name)) {
+                names << name;
+            }
+        }
+        constexpr int kShown = 5;
+        QString list = names.mid(0, kShown).join(QStringLiteral(", "));
+        if (names.size() > kShown) {
+            list += muse::qtrc("appshell", " and %1 more").arg(names.size() - kShown);
+        }
+        const bool one = names.size() == 1;
+        title = one ? muse::trc("appshell", "New audio plugin found") : muse::trc("appshell", "New audio plugins found");
+        text = (one
+                ? muse::qtrc("appshell", "GlideMix found a new audio plugin: %1.\n\nIt needs a quick check before "
+                                         "it can be used. Validate it now, or skip and do it later?")
+                : muse::qtrc("appshell", "GlideMix found new audio plugins: %1.\n\nThey need a quick check before "
+                                         "they can be used. Validate them now, or skip and do it later?"))
+               .arg(list).toStdString();
+    }
+    auto ret = interactive.questionSync(title, text,
+                                        { muse::IInteractive::ButtonData(
+                                              muse::IInteractive::Button::Cancel,
+                                              muse::trc("appshell", "Skip this time"),
+                                              false),
+                                          muse::IInteractive::ButtonData(
+                                              muse::IInteractive::Button::Apply, muse::trc("appshell", "Validate"),
+                                              true) },
+                                        int(muse::IInteractive::Button::NoButton),
+                                        {},
+                                        muse::trc("appshell", "Audio plugin validation"));
+    return ret.standardButton() == muse::IInteractive::Button::Apply;
+}
+}
+
+bool EffectsProvider::validatePendingPlugins(const muse::modularity::ContextPtr&, muse::IInteractive& interactive,
+                                             muse::audioplugins::IRegisterAudioPluginsScenario& registerAudioPluginsScenario)
+{
+    if (m_pendingPluginPaths.empty()) {
+        return false;
+    }
+    if (!askToValidatePlugins(interactive, m_pendingPluginPaths, !thirdPartyPluginsKnown())) {
+        m_pendingPluginPaths.clear();   // this session; the next start finds them again
+        return false;
+    }
+    const muse::io::paths_t paths = std::move(m_pendingPluginPaths);
+    m_pendingPluginPaths.clear();
+    const muse::Ret ret = registerAudioPluginsScenario.registerNewPlugins(paths, true);
+    if (!ret) {
+        LOGE() << "Failed to register new plugins: " << ret.toString();
+    }
+    reloadEffects();
+    return true;
+}
+
+bool EffectsProvider::thirdPartyPluginsKnown() const
+{
+    for (const auto& plugin : knownPluginsRegister()->pluginInfoList()) {
+        const auto family = utils::effectFamilyFromCacheType(plugin.meta.type);
+        if (family != EffectFamily::Nyquist && family != EffectFamily::Builtin && family != EffectFamily::Extension) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void EffectsProvider::initOnce(const muse::modularity::ContextPtr& ctx, muse::IInteractive& interactive,
                                muse::audioplugins::IRegisterAudioPluginsScenario& registerAudioPluginsScenario)
 {
-    // GlideMix: the first scan finds everything already installed; after
-    // that, only what was added since, so say so and name them.
-    const auto doScanThirdPartyPlugins = [&interactive](const muse::io::paths_t& newPlugins, bool firstScan) {
-        std::string title;
-        std::string text;
-        if (firstScan) {
-            title = muse::trc("appshell", "Validate audio plugins");
-            text = (newPlugins.size() == 1
-                    ? muse::qtrc("appshell", "GlideMix found 1 audio plugin on this computer. It needs a quick check "
-                                             "before it can be used. Validate it now, or skip and do it later?")
-                    : muse::qtrc("appshell", "GlideMix found %1 audio plugins on this computer. They need a quick check "
-                                             "before they can be used. Validate them now, or skip and do it later?")
-                    .arg(newPlugins.size())).toStdString();
-        } else {
-            QStringList names;
-            for (const auto& path : newPlugins) {
-                const QString name = QFileInfo(path.toQString()).completeBaseName();
-                if (!name.isEmpty() && !names.contains(name)) {
-                    names << name;
-                }
-            }
-            constexpr int kShown = 5;
-            QString list = names.mid(0, kShown).join(QStringLiteral(", "));
-            if (names.size() > kShown) {
-                list += muse::qtrc("appshell", " and %1 more").arg(names.size() - kShown);
-            }
-            const bool one = names.size() == 1;
-            title = one ? muse::trc("appshell", "New audio plugin found") : muse::trc("appshell", "New audio plugins found");
-            text = (one
-                    ? muse::qtrc("appshell", "GlideMix found a new audio plugin: %1.\n\nIt needs a quick check before "
-                                             "it can be used. Validate it now, or skip and do it later?")
-                    : muse::qtrc("appshell", "GlideMix found new audio plugins: %1.\n\nThey need a quick check before "
-                                             "they can be used. Validate them now, or skip and do it later?"))
-                   .arg(list).toStdString();
-        }
-        auto ret = interactive.questionSync(title, text,
-                                            { muse::IInteractive::ButtonData(
-                                                  muse::IInteractive::Button::Cancel,
-                                                  muse::trc("appshell", "Skip this time"),
-                                                  false),
-                                              muse::IInteractive::ButtonData(
-                                                  muse::IInteractive::Button::Apply, muse::trc("appshell", "Validate"),
-                                                  true) },
-                                            int(muse::IInteractive::Button::NoButton),
-                                            {},
-                                            muse::trc("appshell", "Audio plugin validation"));
-        return ret.standardButton() == muse::IInteractive::Button::Apply;
-    };
-
-    doScanPlugins(ctx, registerAudioPluginsScenario, doScanThirdPartyPlugins);
+    // GlideMix: nothing is asked at launch. What is new waits for the first
+    // Add effect (validatePendingPlugins).
+    m_deferNewPlugins = true;
+    doScanPlugins(ctx, registerAudioPluginsScenario);
+    m_deferNewPlugins = false;
 
     turnOffPluginsThatCrashedLastRun(interactive);
 
@@ -236,18 +274,13 @@ EffectsProvider::NewPluginsRegistered EffectsProvider::doScanPlugins(
         registerAudioPluginsScenario.registerPlugin(path);
     }
 
-    if (!thirdPartyPluginPaths.empty()) {
-        // Nothing third-party known yet: this is the first scan.
-        bool firstScan = true;
-        for (const auto& plugin : knownPluginsRegister()->pluginInfoList()) {
-            const auto family = utils::effectFamilyFromCacheType(plugin.meta.type);
-            if (family != EffectFamily::Nyquist && family != EffectFamily::Builtin && family != EffectFamily::Extension) {
-                firstScan = false;
-                break;
-            }
-        }
+    m_pendingPluginPaths.clear();
+    if (!thirdPartyPluginPaths.empty() && m_deferNewPlugins) {
+        m_pendingPluginPaths = thirdPartyPluginPaths;
+        thirdPartyPluginPaths.clear();
+    } else if (!thirdPartyPluginPaths.empty()) {
         const bool validate = (doScanThirdPartyPlugins == nullptr
-                               || doScanThirdPartyPlugins(thirdPartyPluginPaths, firstScan));
+                               || doScanThirdPartyPlugins(thirdPartyPluginPaths, !thirdPartyPluginsKnown()));
         const muse::Ret ret = registerAudioPluginsScenario.registerNewPlugins(thirdPartyPluginPaths, validate);
         if (!ret) {
             LOGE() << "Failed to register new plugins: " << ret.toString();

@@ -43,6 +43,10 @@ public:
 
     using EffectFilter = std::function<bool (const EffectMeta&)>;
 
+    //! GlideMix: plug-ins found at launch wait for this: asks, and validates. True if any were validated.
+    virtual bool validatePendingPlugins(const muse::modularity::ContextPtr& ctx, muse::IInteractive& interactive,
+                                        muse::audioplugins::IRegisterAudioPluginsScenario& registerAudioPluginsScenario) = 0;
+
     /**
      * @brief Soft rescan: plugins already in the configuration aren't reevaluated. Use `forgetPlugins` beforehand to force re-evaluation.
      */

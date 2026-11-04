@@ -114,6 +114,12 @@ list( APPEND LIBRARIES
       portaudio::portaudio
 )
 
+if( WIN32 )
+   # GlideMix: px_win_common.c calls the Windows mixer API (mixerOpen, ...),
+   # which lives in winmm; PortAudio built as a DLL does not pass it on.
+   list( APPEND LIBRARIES winmm )
+endif()
+
 if( PA_HAS_ALSA )
    list( APPEND LIBRARIES ALSA::ALSA )
 endif()

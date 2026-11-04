@@ -161,6 +161,7 @@ Rectangle {
             }
 
             onClicked: function () {
+                menuModel.validatePendingPlugins()
                 menuModel.load()
                 effectMenuLoader.toggleOpened(menuModel)
             }

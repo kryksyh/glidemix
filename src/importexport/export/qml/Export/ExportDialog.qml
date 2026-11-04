@@ -421,6 +421,8 @@ StyledDialogView {
                     StyledDropdown {
                         id: sampleRateDropdown
 
+                        enabled: !exportPreferencesModel.isDemo   // the demo's rate is fixed
+
                         Layout.preferredWidth: root.smallDropdownWidth
 
                         textRole: "name"

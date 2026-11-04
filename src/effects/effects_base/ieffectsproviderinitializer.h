@@ -14,5 +14,6 @@ public:
     virtual ~IEffectsProviderInitializer() = default;
 
     virtual void callAfterSplashScreen() = 0;
+    virtual void validatePendingPlugins() = 0;
 };
 }

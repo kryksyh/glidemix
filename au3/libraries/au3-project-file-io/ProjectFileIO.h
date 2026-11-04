@@ -187,6 +187,11 @@ public:
     // Returns none if the file has no thumbnail or cannot be read.
     static std::optional<std::vector<uint8_t> > ReadThumbnail(const FilePath& fileName);
 
+    // GlideMix: how many different songs a project file holds, without opening it fully.
+    // Stems and split or pasted clips keep their song's name, so they count once.
+    // Returns none if the file cannot be read.
+    static std::optional<size_t> ReadSongCount(const FilePath& fileName);
+
     // Object manages the temporary backing-up of project paths while
     // trying to overwrite with new contents, and restoration in case of failure
     class PROJECT_FILE_IO_API BackupProject

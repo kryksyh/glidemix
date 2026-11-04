@@ -234,6 +234,18 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
         return muse::make_ret(muse::Ret::Code::InternalError);
     }
 
+    // GlideMix: MP3 and the like get a lower limiter ceiling. They overshoot it
+    // when encoded: a -1 dBTP mix came out of the encoder at +0.6 dB.
+    ExportPluginHelpers::SetLossyExport([&formatName]() {
+        const QString name = QString::fromStdString(formatName);
+        for (const char* lossy : { "MP3", "MP2", "Ogg", "Opus", "M4A", "AAC", "AC3", "AMR", "WMA" }) {
+            if (name.contains(QLatin1String(lossy), Qt::CaseInsensitive)) {
+                return true;
+            }
+        }
+        return false;
+    }());
+
     int formatIdx = formatIndex(formatName);
     if (formatIdx == -1) {
         return muse::make_ret(muse::Ret::Code::InternalError);
@@ -336,7 +348,8 @@ muse::Ret Au3Exporter::exportData(const muse::io::path_t& path, const Options& o
         }
     }
 
-    m_sampleRate = exportSampleRate;
+    // GlideMix: the demo's MP3 keeps CD rate, whatever the dialog last held (MP3 has no 96 kHz).
+    m_sampleRate = demo ? 44100 : exportSampleRate;
 
     try {
         auto processor = m_plugin->CreateProcessor(m_format);

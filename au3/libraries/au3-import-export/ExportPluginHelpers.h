@@ -46,6 +46,9 @@ public:
     using MixRenderHook = std::function<std::shared_ptr<const WideSampleSequence>(
                                             const AudacityProject&, double t0, double t1, double rate, bool tracksAsked)>;
     static void SetMixRenderHook(MixRenderHook hook);
+    //! GlideMix: the next export is to a lossy format (its encoder overshoots).
+    static void SetLossyExport(bool lossy);
+    static bool IsLossyExport();
 
     //! GlideMix: how loud the last export rendered through the hook was,
     //! measured as it was written (EBU R128).

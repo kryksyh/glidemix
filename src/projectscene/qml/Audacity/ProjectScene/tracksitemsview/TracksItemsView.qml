@@ -1874,7 +1874,11 @@ Rectangle {
                         StyledTextLabel {
                             id: pillLabel
                             anchors.verticalCenter: parent.verticalCenter
-                            text: model.crossfaded ? qsTrc("mixhouse", "CROSSFADE") : qsTrc("mixhouse", "BEATMATCH")
+                            // GlideMix: the chosen transition's name, cut short when long.
+                            text: !model.crossfaded ? qsTrc("mixhouse", "BEATMATCH")
+                                  : model.preset ? model.preset.toUpperCase() : qsTrc("mixhouse", "CROSSFADE")
+                            width: Math.min(implicitWidth, 160)
+                            elide: Text.ElideRight
                             color: zoneItem.accent
                             font.pixelSize: 10
                             font.bold: true

@@ -244,7 +244,12 @@ list(APPEND MODULE_SRC
 # Shift is left out.
 set(MIXTAPE_RUBBERBAND_ROOT "${CMAKE_CURRENT_LIST_DIR}/mixxx/thirdparty/rubberband-macos-arm64"
     CACHE PATH "Prefix holding include/rubberband and lib/librubberband.a (plus fftw3, samplerate)")
-set(MIXXX_DSP_DEFINITIONS "MIXXX;T_LINUX")
+# fidlib's target macro: T_MSVC under Visual C++ (as Mixxx's own build does).
+if (MSVC)
+    set(MIXXX_DSP_DEFINITIONS "MIXXX;T_MSVC")
+else()
+    set(MIXXX_DSP_DEFINITIONS "MIXXX;T_LINUX")
+endif()
 set(MIXXX_DSP_INCLUDES "${MIXXX_DSP_DIR};${MIXXX_DSP_DIR}/lib/reverb;${MIXXX_DSP_DIR}/lib/fidlib")
 if (APPLE AND EXISTS "${MIXTAPE_RUBBERBAND_ROOT}/lib/librubberband.a")
     list(APPEND MIXXX_DSP_SRC ${MIXXX_DSP_DIR}/effects/backends/builtin/pitchshifteffect.cpp)
@@ -257,13 +262,27 @@ if (APPLE AND EXISTS "${MIXTAPE_RUBBERBAND_ROOT}/lib/librubberband.a")
         "${MIXTAPE_RUBBERBAND_ROOT}/lib/libfftw3.a"
         "-framework Accelerate")
     message(STATUS "GlideMix: DJ Effects Pitch Shift uses Rubber Band from ${MIXTAPE_RUBBERBAND_ROOT}")
+elseif (NOT APPLE)
+    # Windows / Linux: Rubber Band built from source (built-in FFT and resampler).
+    include(${CMAKE_CURRENT_LIST_DIR}/../../../buildscripts/cmake/GlideMixRubberBand.cmake)
+    list(APPEND MIXXX_DSP_SRC ${MIXXX_DSP_DIR}/effects/backends/builtin/pitchshifteffect.cpp)
+    list(APPEND MODULE_SRC ${MIXXX_DSP_DIR}/effects/backends/builtin/pitchshifteffect.cpp)
+    list(APPEND MIXXX_DSP_DEFINITIONS MIXTAPE_HAS_RUBBERBAND)
+    list(APPEND MIXXX_DSP_INCLUDES "${rubberband_SOURCE_DIR}")
+    set(MIXTAPE_RUBBERBAND_LIBS glidemix_rubberband)
+    message(STATUS "GlideMix: DJ Effects Pitch Shift uses Rubber Band built from source")
 endif()
 set_source_files_properties(${MIXXX_DSP_SRC} PROPERTIES
     INCLUDE_DIRECTORIES "${MIXXX_DSP_INCLUDES}"
     COMPILE_DEFINITIONS "${MIXXX_DSP_DEFINITIONS}"
     SKIP_PRECOMPILE_HEADERS ON
     SKIP_UNITY_BUILD_INCLUSION ON)
-set_source_files_properties(${MIXXX_DSP_DIR}/lib/fidlib/fidlib.c PROPERTIES COMPILE_OPTIONS "-fno-finite-math-only;-w")
+if (MSVC)
+    # MSVC has no -ffinite-math by default to undo; /w silences fidlib as -w does.
+    set_source_files_properties(${MIXXX_DSP_DIR}/lib/fidlib/fidlib.c PROPERTIES COMPILE_OPTIONS "/w")
+else()
+    set_source_files_properties(${MIXXX_DSP_DIR}/lib/fidlib/fidlib.c PROPERTIES COMPILE_OPTIONS "-fno-finite-math-only;-w")
+endif()
 
 # Note: NOTE_TRACK_API would only be needed with USE_MIDI, which AU4 does not enable.
 set(MODULE_LINK

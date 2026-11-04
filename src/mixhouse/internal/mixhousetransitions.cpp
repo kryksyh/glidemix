@@ -37,7 +37,9 @@ void MixHouseTransitions::init()
 {
     // Every edit that can create, move or remove an overlap ends in a history
     // state (adds, drops, drags, undo/redo).
-    projectHistory()->historyChanged().onReceive(this, [this](auto) {
+    projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent event) {
+        syncMixNowAnchors(event);
+        syncTransitionNames(event);
         // The project's clips are all there by its first history state: the
         // saved names can be matched to them now.
         if (m_namesFor != au3Project()) {
@@ -49,10 +51,51 @@ void MixHouseTransitions::init()
         m_applied.clear();
         m_disabled.clear();
         m_effects.clear();
+        m_mixNowMoves.clear();
+        m_namesAtState.clear();
         m_namesFor = nullptr;
         restoreSavedNames();
         m_zonesChanged.notify();
     });
+}
+
+void MixHouseTransitions::syncTransitionNames(trackedit::HistoryEvent event)
+{
+    // The names aren't part of a history state: each state remembers them.
+    const size_t state = projectHistory()->currentStateIndex();
+    if (event == trackedit::HistoryEvent::RestoredState) {
+        const auto found = m_namesAtState.find(state);
+        if (found != m_namesAtState.end()) {
+            m_applied = found->second;
+        }
+        return;
+    }
+    m_namesAtState.erase(m_namesAtState.upper_bound(state), m_namesAtState.end());
+    m_namesAtState[state] = m_applied;
+}
+
+void MixHouseTransitions::syncMixNowAnchors(trackedit::HistoryEvent event)
+{
+    const auto project = globalContext()->currentTrackeditProject();
+    if (!project || !beatGrids()) {
+        return;
+    }
+    // The anchor a Mix Now moved isn't part of a history state: undo and redo
+    // follow the pulled clip, which is.
+    for (auto it = m_mixNowMoves.begin(); it != m_mixNowMoves.end();) {
+        if (event == trackedit::HistoryEvent::NewState) {
+            it = it->undone ? m_mixNowMoves.erase(it) : std::next(it);   // its redo is gone
+            continue;
+        }
+        const bool pulled = std::abs(project->clip(it->incoming).startTime - it->pulledStart) < 1e-6;
+        if (!pulled && !it->undone) {
+            it->undone = beatGrids()->takeClipAnchorMove(it->outgoing);
+        } else if (pulled && it->undone) {
+            beatGrids()->putClipAnchorMove(it->outgoing, *it->undone);
+            it->undone.reset();
+        }
+        ++it;
+    }
 }
 
 void* MixHouseTransitions::au3Project() const
@@ -813,10 +856,10 @@ std::string MixHouseTransitions::mixNow(double playhead)
     }
     Zone before;
     const bool wasCrossfaded = findZone(current->clip.key, incoming->clip.key, before) && before.crossfaded;
+    beginEdit();   // one undo step for the pull and the transition
     for (const Item* item : moving) {
         trackeditInteraction()->changeClipStartTime(item->clip.key, item->clip.startTime + offset, false);
     }
-    projectHistory()->pushHistoryState("Mix now", "Mix now");   // one undo step for the pull
 
     // MixMeister links the two tracks by their anchors: the playing track's Outro Anchor stays
     // lined up with the next track's Intro Anchor, and the fade starts at that anchor. The Intro
@@ -824,6 +867,7 @@ std::string MixHouseTransitions::mixNow(double playhead)
     // this session: the anchors saved for the track in the library are its defaults for every
     // future mix, and pressing Mix Now somewhere mid-track must not rewrite them.
     beatGrids()->moveClipAnchor(current->clip.key, 1, target, false);
+    m_mixNowMoves.push_back({ current->clip.key, incoming->clip.key, incoming->clip.startTime + offset, std::nullopt });
 
     // Then the mix itself. MixMeister's Mix Now "mixes immediately in to the track that's
     // playing", through the transition that pair has, so pulling a track forward always
@@ -866,7 +910,7 @@ std::string MixHouseTransitions::mixNow(double playhead)
             transition = ", crossfade";
         }
     }
-    m_zonesChanged.notify();
+    endEdit("Mix now");
     return "Mix Now: " + incoming->clip.title.toStdString() + " pulled " + std::to_string(-offset) + " s forward to "
            + std::to_string(target) + " s, on " + landedOn + " (" + std::to_string(moving.size()) + " clips)" + transition;
 }

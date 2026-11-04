@@ -82,6 +82,8 @@ public:
      @post `true` (no promise result is not null)
      */
     std::shared_ptr<EffectInstance> GetInstance();
+    //! GlideMix: the instance if one is alive, never making one (for polling).
+    std::shared_ptr<EffectInstance> ExistingInstance() const { return mwInstance.lock(); }
 
     //! Get locations that a GUI can connect meters to
     const EffectOutputs* GetOutputs() const { return mMovedOutputs.get(); }

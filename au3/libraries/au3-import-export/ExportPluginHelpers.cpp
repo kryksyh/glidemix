@@ -12,6 +12,7 @@
 
 #include "ExportPluginHelpers.h"
 
+#include <atomic>
 #include <mutex>
 #include <utility>
 #include "au3-track/Track.h"
@@ -34,6 +35,20 @@ ExportPluginHelpers::MixRenderHook& MixRenderHookRef()
 void ExportPluginHelpers::SetMixRenderHook(MixRenderHook hook)
 {
     MixRenderHookRef() = std::move(hook);
+}
+
+namespace {
+std::atomic<bool> s_lossyExport { false };
+}
+
+void ExportPluginHelpers::SetLossyExport(bool lossy)
+{
+    s_lossyExport = lossy;
+}
+
+bool ExportPluginHelpers::IsLossyExport()
+{
+    return s_lossyExport.load();
 }
 
 namespace {

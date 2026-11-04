@@ -27,6 +27,7 @@
 
 #include "log.h"
 #include "mixhouse/mixhouseaudiosource.h"
+#include "mixhouse/glidemixpaths.h"
 
 namespace au::mixhouse {
 
@@ -44,6 +45,9 @@ namespace {
 //     in ~/.local/share/Glidemix/Helpers/openkeyscan-analyzer/.
 // None found: key detection is off (keys stay empty; BPM, grid and waveform
 // are still analysed), logged once rather than tried again for every track.
+// Windows: the same places with Windows names -- python instead of python3,
+// openkeyscan-analyzer.exe bundled beside GlideMix.exe, the add-on under
+// %APPDATA%\Glidemix\Helpers, the venv's Scripts\python.exe.
 struct AnalyzerLaunch {
     QString program;
     QStringList args;
@@ -59,17 +63,29 @@ std::optional<AnalyzerLaunch> findKeyAnalyzer()
     const QString env = qEnvironmentVariable("GLIDEMIX_KEY_ANALYZER");
     if (!env.isEmpty() && QFileInfo::exists(env)) {
         if (env.endsWith(QStringLiteral(".py"))) {
+#ifdef Q_OS_WIN
+            return AnalyzerLaunch { QStringLiteral("python"), { env }, QFileInfo(env).absolutePath() };
+#else
             return AnalyzerLaunch { QStringLiteral("python3"), { env }, QFileInfo(env).absolutePath() };
+#endif
         }
         return AnalyzerLaunch { env, {}, QFileInfo(env).absolutePath() };
     }
+#ifdef Q_OS_WIN
+    const QString bundled = QCoreApplication::applicationDirPath()
+                            + QStringLiteral("/openkeyscan-analyzer/openkeyscan-analyzer.exe");
+#else
     const QString bundled = QCoreApplication::applicationDirPath()
                             + QStringLiteral("/../Resources/openkeyscan-analyzer/openkeyscan-analyzer");
+#endif
     if (executable(bundled)) {
         return AnalyzerLaunch { QFileInfo(bundled).canonicalFilePath(), {}, QFileInfo(bundled).canonicalPath() };
     }
-    const QString addOn = QDir::homePath()
-                          + QStringLiteral("/Library/Application Support/Glidemix/Helpers/openkeyscan-analyzer/openkeyscan-analyzer");
+#ifdef Q_OS_WIN
+    const QString addOn = paths::glidemixDataPath(QStringLiteral("Helpers/openkeyscan-analyzer/openkeyscan-analyzer.exe"));
+#else
+    const QString addOn = paths::glidemixDataPath(QStringLiteral("Helpers/openkeyscan-analyzer/openkeyscan-analyzer"));
+#endif
     if (executable(addOn)) {
         return AnalyzerLaunch { addOn, {}, QFileInfo(addOn).absolutePath() };
     }
@@ -86,7 +102,11 @@ std::optional<AnalyzerLaunch> findKeyAnalyzer()
 #endif
 #ifdef GLIDEMIX_DEV_HELPERS
     const QString dev = QDir::homePath() + QStringLiteral("/Developer/openkeyscan-analyzer");
+#ifdef Q_OS_WIN
+    const QString devPython = dev + QStringLiteral("/.venv/Scripts/python.exe");
+#else
     const QString devPython = dev + QStringLiteral("/.venv/bin/python3");
+#endif
     const QString devScript = dev + QStringLiteral("/openkeyscan_analyzer_server.py");
     if (executable(devPython) && QFileInfo::exists(devScript)) {
         return AnalyzerLaunch { devPython, { devScript }, dev };

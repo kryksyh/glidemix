@@ -721,7 +721,7 @@ Item {
         case "dateAdded":    return model.dateAdded ? model.dateAdded.split(" ")[0] : "—"
         case "lastPlayedAt": return model.lastPlayedAt ? model.lastPlayedAt.split(" ")[0] : "—"
         case "timesPlayed":  return String(model.timesPlayed)
-        case "trackNumber":  return model.trackNumber ? model.trackNumber : ""
+        case "trackNumber":  return (model.inProject ? "\u25CF " : "") + (model.trackNumber ? model.trackNumber : "")
         // Rendered as their own item in the row delegate, not as text.
         case "analysisProgress": case "coverArt": case "color": case "overview": return ""
         default: return model[key] !== undefined ? model[key] : ""
@@ -2216,6 +2216,19 @@ Item {
 
                     SearchField {
                         id: search
+
+                        // GlideMix: the search box understands more than words.
+                        HoverHandler {
+                            onHoveredChanged: {
+                                if (hovered) {
+                                    ui.tooltip.show(search, qsTrc("mixhouse", "Search"),
+                                                    qsTrc("mixhouse", "Words, or filters: genre:house bpm:>125 year:2020-2025. ~key:8A finds compatible keys, -word leaves out, | means or."))
+                                } else {
+                                    ui.tooltip.hide(search)
+                                }
+                            }
+                        }
+
                         anchors.left: parent.left
                         anchors.right: parent.right
                         navigation.name: "MixHouseLibrarySearch"
@@ -2355,8 +2368,8 @@ Item {
                     // the UI. So this row now shows: live scan progress,
                     // else that real error if the library isn't available,
                     // else nothing (the redundant case).
-                    visible: tracksModel.scanning || !tracksModel.available
-                    text: tracksModel.scanning ? tracksModel.scanStatusText : tracksModel.statusMessage
+                    text: tracksModel.scanning ? tracksModel.scanStatusText
+                          : !tracksModel.available ? tracksModel.statusMessage : tracksModel.resultSummary
                     opacity: 0.6
                 }
 

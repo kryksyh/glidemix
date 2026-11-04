@@ -12,6 +12,7 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mixhousemodule.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousemodule.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousetypes.h
+    ${CMAKE_CURRENT_LIST_DIR}/glidemixpaths.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseaudiosource.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousehdwaveform.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousehdwaveform.h
@@ -183,11 +184,18 @@ if (OS_IS_LIN)
 endif()
 
 # Beat This! neural downbeat detection (thirdparty/beat_this_cpp,
-# README.mixhouse.md). macOS only for now: the prebuilt ONNX Runtime in
-# mixhouse_deps/ is the macOS dylib the parked MixHouse DJ fork used.
+# README.mixhouse.md). Needs a prebuilt ONNX Runtime 1.18 in mixhouse_deps/:
+# on macOS the dylib the parked MixHouse DJ fork used; on Windows Microsoft's
+# onnxruntime-win-x64-1.18.0 zip unpacked as is (lib/onnxruntime.lib + .dll).
 if (OS_IS_MAC AND EXISTS "${CMAKE_SOURCE_DIR}/mixhouse_deps/onnxruntime-1.18.0/lib/libonnxruntime.1.18.0.dylib")
     set(MIXHOUSE_HAVE_BEAT_THIS ON)
     list(APPEND MODULE_LINK mixhouse_beatthis)
+elseif (OS_IS_WIN AND EXISTS "${CMAKE_SOURCE_DIR}/mixhouse_deps/onnxruntime-win-x64-1.18.0/lib/onnxruntime.lib"
+        AND EXISTS "${CMAKE_SOURCE_DIR}/mixhouse_deps/onnxruntime-win-x64-1.18.0/lib/onnxruntime.dll")
+    set(MIXHOUSE_HAVE_BEAT_THIS ON)
+    list(APPEND MODULE_LINK mixhouse_beatthis)
+elseif (OS_IS_WIN)
+    message(STATUS "MixHouse: mixhouse_deps/onnxruntime-win-x64-1.18.0 not found -- downbeat detection disabled")
 else()
     message(STATUS "MixHouse: mixhouse_deps/onnxruntime-1.18.0 not found -- downbeat detection disabled")
 endif()
@@ -204,6 +212,15 @@ if (MIXHOUSE_HAVE_BEAT_THIS)
     target_compile_definitions(mixhouse PRIVATE
         MIXHOUSE_PHRASE_MODEL_DEV_PATH="${CMAKE_CURRENT_LIST_DIR}/models/glidemix_phrases.onnx"
         MIXHOUSE_BEAT_THIS_SMALL_MODEL_PATH="${CMAKE_CURRENT_LIST_DIR}/models/beat_this_small.onnx")
+    if (OS_IS_WIN)
+        # Beside GlideMix.exe: the runtime, and the models where
+        # mixHouseModelPath() looks (<exe>/models/). The installer copies the
+        # whole install prefix.
+        install(FILES "${MIXHOUSE_ONNXRUNTIME_DIR}/lib/onnxruntime.dll" DESTINATION bin)
+        install(FILES "${MIXHOUSE_BEAT_THIS_MODEL}" "${CMAKE_CURRENT_LIST_DIR}/models/glidemix_phrases.onnx"
+                      "${CMAKE_CURRENT_LIST_DIR}/models/beat_this_small.onnx"
+                DESTINATION bin/models)
+    endif()
     # Mac: Beat This! on the GPU through Core ML (mixhousecoremlbeats.h).
     if (APPLE)
         target_sources(mixhouse PRIVATE ${CMAKE_CURRENT_LIST_DIR}/mixhousecoremlbeats.h

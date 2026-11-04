@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhousestems.h"
+#include "mixhouse/glidemixpaths.h"
 #include "mixhouse/mixhousenativepath.h"
 
 #include <algorithm>
@@ -139,7 +140,19 @@ MixHouseStems::MixHouseStems(const muse::modularity::ContextPtr& iocCtx)
 
 QString MixHouseStems::cacheRoot()
 {
-    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Stems");
+    return paths::glidemixDataPath(QStringLiteral("Stems"));
+}
+
+namespace {
+//! A virtual environment's Python: bin/python, Scripts\python.exe on Windows.
+QString venvPython(const QString& dir)
+{
+#ifdef Q_OS_WIN
+    return dir + QStringLiteral("/.venv/Scripts/python.exe");
+#else
+    return dir + QStringLiteral("/.venv/bin/python");
+#endif
+}
 }
 
 //! Looked for like the key analyzer: $GLIDEMIX_STEMS_PYTHON, an installed
@@ -162,7 +175,7 @@ std::optional<MixHouseStems::Launch> MixHouseStems::findDemucs()
     dirs << QDir::homePath() + QStringLiteral("/Developer/glidemix-stems");
 #endif
     for (const QString& dir : dirs) {
-        const QString python = dir + QStringLiteral("/.venv/bin/python");
+        const QString python = venvPython(dir);
         if (executable(python)) {
             return Launch { python, demucs };
         }
@@ -311,7 +324,14 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
             if (deviceSetting == MixHouseStemsDevice::Cpu) {
                 ok = run(QStringLiteral("cpu"));
             } else {
+#ifdef Q_OS_WIN
+                // NVIDIA GPUs. The installer's torch is PyPI's, CPU-only on
+                // Windows, so Automatic falls back to the CPU until a CUDA
+                // build of torch is installed instead.
+                ok = run(QStringLiteral("cuda"));
+#else
                 ok = run(QStringLiteral("mps"));
+#endif
                 if (!ok && !progress.Cancelled() && deviceSetting == MixHouseStemsDevice::Automatic) {
                     LOGW() << "GlideMix stems: GPU separation failed, trying the CPU";
                     ok = run(QStringLiteral("cpu"));
@@ -400,6 +420,52 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
 }
 
 namespace {
+#ifdef Q_OS_WIN
+//! The installer on Windows, run with Windows PowerShell 5.1 (in every
+//! Windows 10/11): the bash one below, step for step, with the same STEP
+//! lines and checks. The destination comes in $env:GLIDEMIX_STEMS_DEST.
+//! Differences: uv's Windows zip, the venv's Python is .venv\Scripts\python.exe,
+//! and after the move only pyvenv.cfg needs pointing at the new folder (a
+//! Windows venv finds its base Python through pyvenv.cfg's "home"; no symlink).
+const char* kInstallScript = R"PS(
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+trap { Write-Output "ERROR $_"; exit 1 }
+function Check { if ($LASTEXITCODE -ne 0) { Write-Output "ERROR exit code $LASTEXITCODE"; exit 1 } }
+$Dest = $env:GLIDEMIX_STEMS_DEST
+if (-not $Dest) { Write-Output "ERROR no destination"; exit 1 }
+$Tmp = "$Dest.installing"
+if (Test-Path -LiteralPath $Tmp) { Remove-Item -LiteralPath $Tmp -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
+$Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'aarch64' } else { 'x86_64' }
+Write-Output "STEP 1/4 Downloading"
+Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/astral-sh/uv/releases/latest/download/uv-$Arch-pc-windows-msvc.zip" -OutFile "$Tmp\uv.zip"
+Expand-Archive -LiteralPath "$Tmp\uv.zip" -DestinationPath "$Tmp\uv" -Force
+$Uv = (Get-ChildItem -LiteralPath "$Tmp\uv" -Recurse -Filter 'uv.exe' | Select-Object -First 1).FullName
+if (-not $Uv) { Write-Output "ERROR uv.exe not found"; exit 1 }
+$env:UV_CACHE_DIR = "$Tmp\cache"
+$env:UV_PYTHON_INSTALL_DIR = "$Tmp\python"
+Write-Output "STEP 2/4 Downloading"
+& $Uv venv --quiet --python 3.12 --python-preference only-managed "$Tmp\.venv"; Check
+Write-Output "STEP 3/4 Downloading (about 1 GB)"
+& $Uv pip install --quiet --python "$Tmp\.venv\Scripts\python.exe" "demucs==4.1.0" "soundfile" "torch"; Check
+Write-Output "STEP 4/4 Downloading"
+$env:TORCH_HOME = "$Tmp\models"
+$env:HF_HOME = "$Tmp\models"
+$env:HF_HUB_DISABLE_TELEMETRY = '1'
+& "$Tmp\.venv\Scripts\python.exe" -c "from demucs.pretrained import get_model; get_model('htdemucs')" | Out-Null; Check
+Remove-Item -LiteralPath "$Tmp\cache", "$Tmp\uv", "$Tmp\uv.zip" -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
+Move-Item -LiteralPath $Tmp -Destination $Dest
+# The environment was made in the temporary folder and names it: point it
+# at the moved one (written back as UTF-8 without a BOM), then make sure it runs.
+$Cfg = "$Dest\.venv\pyvenv.cfg"
+[IO.File]::WriteAllText($Cfg, [IO.File]::ReadAllText($Cfg).Replace($Tmp, $Dest))
+& "$Dest\.venv\Scripts\python.exe" -c "import demucs, torch" | Out-Null; Check
+Write-Output "DONE"
+)PS";
+#else
 //! The installer, run with bash. Each "STEP" line is shown in Preferences --
 //! a count only: what is downloaded is not named there (Chris, 2026-10-27).
 //! uv (Astral's Python installer) brings its own Python, so nothing on the
@@ -420,7 +486,7 @@ tar -xzf "$TMP/uv.tar.gz" -C "$TMP" --strip-components 1
 export UV_CACHE_DIR="$TMP/cache"
 export UV_PYTHON_INSTALL_DIR="$TMP/python"
 echo "STEP 2/4 Downloading"
-"$TMP/uv" venv --quiet --python 3.12 "$TMP/.venv"
+"$TMP/uv" venv --quiet --python 3.12 --python-preference only-managed "$TMP/.venv"
 echo "STEP 3/4 Downloading (about 1 GB)"
 "$TMP/uv" pip install --quiet --python "$TMP/.venv/bin/python" "demucs==4.1.0" "soundfile" "torch"
 echo "STEP 4/4 Downloading"
@@ -436,11 +502,12 @@ sed -i '' "s|$TMP|$DEST|g" "$DEST/.venv/pyvenv.cfg"
 "$DEST/.venv/bin/python" -c "import demucs, torch" >/dev/null
 echo "DONE"
 )SH";
+#endif
 }
 
 QString MixHouseStems::helpersEngineDir()
 {
-    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Helpers/glidemix-stems");
+    return paths::glidemixDataPath(QStringLiteral("Helpers/glidemix-stems"));
 }
 
 bool MixHouseStems::installing() const
@@ -484,8 +551,26 @@ void MixHouseStems::installEngine()
         }
     });
     m_installProgress.send(muse::qtrc("mixhouse", "Starting"));
+#ifdef Q_OS_WIN
+    // -EncodedCommand (base64 of UTF-16LE) sidesteps command-line quoting;
+    // the destination goes in through the environment for the same reason.
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("GLIDEMIX_STEMS_DEST"), QDir::toNativeSeparators(helpersEngineDir()));
+    m_installer->setProcessEnvironment(env);
+    const QString script = QString::fromUtf8(kInstallScript);
+    const QByteArray encoded = QByteArray(reinterpret_cast<const char*>(script.utf16()),
+                                          script.size() * qsizetype(sizeof(char16_t))).toBase64();
+    QString powershell = qEnvironmentVariable("SystemRoot") + QStringLiteral("/System32/WindowsPowerShell/v1.0/powershell.exe");
+    if (!QFileInfo::exists(powershell)) {
+        powershell = QStringLiteral("powershell.exe");
+    }
+    m_installer->start(powershell, { QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
+                                     QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+                                     QStringLiteral("-EncodedCommand"), QString::fromLatin1(encoded) });
+#else
     m_installer->start(QStringLiteral("/bin/bash"), { QStringLiteral("-c"), QString::fromUtf8(kInstallScript),
                                                       QStringLiteral("glidemix-stems-install"), helpersEngineDir() });
+#endif
 }
 
 void MixHouseStems::cancelInstall()
@@ -497,7 +582,7 @@ void MixHouseStems::cancelInstall()
 
 bool MixHouseStems::engineInHelpers() const
 {
-    return QFileInfo(helpersEngineDir() + QStringLiteral("/.venv/bin/python")).isExecutable();
+    return QFileInfo(venvPython(helpersEngineDir())).isExecutable();
 }
 
 void MixHouseStems::uninstallEngine()

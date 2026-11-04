@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhousetransitionconfiguration.h"
+#include "mixhouse/glidemixpaths.h"
 
 #include <algorithm>
 
@@ -172,11 +173,10 @@ void MixHouseTransitionConfiguration::init()
 //! Save and then Cancel threw the saved transition away. In their own file, Save
 //! and Delete take effect when you press them.
 //!
-//! Next to the library, in the same folder the library uses. That path is
-//! macOS-only today, like the library's; the Windows port moves both.
+//! Next to the library, in the same folder the library uses.
 QString MixHouseTransitionConfiguration::transitionsFilePath()
 {
-    return QDir::homePath() + QStringLiteral("/Library/Application Support/Glidemix/Transitions.json");
+    return paths::glidemixDataPath(QStringLiteral("Transitions.json"));
 }
 
 namespace {

@@ -38,6 +38,8 @@ public:
     //! active, so the speed can change within the clip without a seam).
     void Assign(const ClipSnapshot& clip, bool alwaysStretch = false);
     bool AlwaysStretch() const { return mAlwaysStretch; }
+    //! Before Assign. Export: a clip at (nearly) its own tempo is only resampled, as on small machines.
+    void SetPreferResample(bool prefer) { mPreferResample = prefer; }
     //! Runs Rubber Band (the costly kind of voice).
     bool Stretches() const { return mStretcher != nullptr; }
     const ClipSnapshot& Clip() const { return mClip; }
@@ -79,6 +81,7 @@ private:
     double mNextTime = -1.0;
     bool mStarted = false;
     bool mAlwaysStretch = false;
+    bool mPreferResample = false;
     bool mResample = false;
     void BuildSincTable(double cutoff);
     std::vector<float> mSincTable;   // (phases + 1) x taps

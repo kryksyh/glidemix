@@ -74,5 +74,6 @@ class Au3ProjectReader : public IAu3ProjectReader
 {
 public:
     std::optional<std::vector<uint8_t> > readProjectThumbnail(const muse::io::path_t& projectPath) const override;
+    std::optional<size_t> readProjectSongCount(const muse::io::path_t& projectPath) const override;
 };
 }

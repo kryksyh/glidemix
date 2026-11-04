@@ -57,12 +57,18 @@ public:
 
     bool hasEffectFamily(EffectFamily family) const override;
 
+    bool validatePendingPlugins(const muse::modularity::ContextPtr& ctx, muse::IInteractive& interactive,
+                                muse::audioplugins::IRegisterAudioPluginsScenario& registerAudioPluginsScenario) override;
     void rescanPlugins(const muse::modularity::ContextPtr& ctx, muse::IInteractive& interactive,
                        muse::audioplugins::IRegisterAudioPluginsScenario& registerAudioPluginsScenario) override;
     void forgetPlugins(const EffectFilter& forget = nullptr) override;
     void save() override;
 
 private:
+    bool thirdPartyPluginsKnown() const;
+    bool m_deferNewPlugins = false;
+    muse::io::paths_t m_pendingPluginPaths;
+
     void reloadEffects();
     void turnOffPluginsThatCrashedLastRun(muse::IInteractive& interactive);
     IEffectLoaderPtr loader(const EffectId& effectId) const;

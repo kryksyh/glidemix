@@ -275,7 +275,6 @@ CMakeUserPresets.json
 # QML language server
 **/.qmlls.ini
 
-.claude/settings.local.json
 _deps/
 /dist/
 /thirdparty-mac/

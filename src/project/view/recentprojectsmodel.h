@@ -31,6 +31,7 @@
 #include "io/ifilesystem.h"
 #include "context/iglobalcontext.h"
 #include "framework/interactive/iinteractive.h"
+#include "au3wrap/iau3project.h"
 
 namespace au::project {
 class RecentProjectsModel : public AbstractItemModel, public muse::async::Asyncable, public muse::Contextable
@@ -39,6 +40,7 @@ class RecentProjectsModel : public AbstractItemModel, public muse::async::Asynca
 
     muse::GlobalInject<muse::io::IFileSystem> fileSystem;
     muse::GlobalInject<IRecentFilesController> recentFilesController;
+    muse::GlobalInject<au::au3::IAu3ProjectReader> au3ProjectReader;
     muse::ContextInject<muse::IInteractive> interactive { this };
     muse::ContextInject<context::IGlobalContext> globalContext { this };
 

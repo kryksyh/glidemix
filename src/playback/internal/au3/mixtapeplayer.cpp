@@ -33,6 +33,8 @@
 
 #include "au3wrap/au3types.h"
 
+#include "mixhouse/glidemixpaths.h"
+
 #include "au3player.h"
 
 using namespace au::playback;
@@ -81,6 +83,9 @@ MixtapePlayer::MixtapePlayer(const muse::modularity::ContextPtr& ctx)
         renderer->SetEffects(effects.get());
         renderer->UseLiveSpeedCurve(true);
         renderer->SetOffline(true);
+        if (ExportPluginHelpers::IsLossyExport()) {
+            renderer->SetLimitCeiling(mixtape::Renderer::kLossyLimitCeiling);
+        }
         double seconds = mixtape::RenderedSequence::OutputSeconds(t0, t1);
         if (mixtape::DemoMode() && seconds > mixtape::kDemoExportLimitSec) {
             LOGI() << "Export: demo version, the first " << mixtape::kDemoExportLimitSec << " s only";
@@ -119,14 +124,20 @@ bool MixtapePlayer::enabled()
     // marker file that only the development Mac had, so an installed copy
     // played through Audacity's stock player: no Perform, no GlideMix EQ or
     // keylock. MIXTAPE_ENGINE=0 (or the file use-old-engine in
-    // ~/Library/Application Support/Glidemix) still selects the old one.
+    // ~/Library/Application Support/Glidemix, %APPDATA%\Glidemix on
+    // Windows) still selects the old one.
     static const bool on = [] {
         if (const char* value = std::getenv("MIXTAPE_ENGINE"); value && *value) {
             return *value != '0';
         }
+#ifdef Q_OS_WIN
+        return !std::filesystem::exists(
+            au::mixhouse::paths::glidemixDataPath(QStringLiteral("use-old-engine")).toStdWString());
+#else
         const char* home = std::getenv("HOME");
         return !(home && std::filesystem::exists(std::filesystem::path(home)
                                                  / "Library/Application Support/Glidemix/use-old-engine"));
+#endif
     }();
     // The demo version's limits live in this engine: no way around them.
     return on || mixtape::DemoMode();

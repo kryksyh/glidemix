@@ -39,9 +39,10 @@ struct MixHouseRekordboxGrid {
 };
 
 /// rekordbox's phrase analysis, read from its own analysis files
-/// (~/Library/Pioneer/rekordbox/share/PIONEER/USBANLZ: PSSI phrases, PQTZ
-/// beat grid, PPTH file name), read-only. Tracks are found by file name,
-/// told apart by tempo when names repeat.
+/// (~/Library/Pioneer/rekordbox/share/PIONEER/USBANLZ on macOS,
+/// %APPDATA%\Pioneer\rekordbox\share\PIONEER\USBANLZ on Windows: PSSI
+/// phrases, PQTZ beat grid, PPTH file name), read-only. Tracks are found by
+/// file name, told apart by tempo when names repeat.
 class IMixHouseRekordboxPhrases : MODULE_EXPORT_INTERFACE
 {
     INTERFACE_ID(IMixHouseRekordboxPhrases)
