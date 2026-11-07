@@ -67,6 +67,7 @@ void Au3ProjectHistory::pushHistoryState(const std::string& longDescription, con
     UndoPush undoFlags = static_cast<UndoPush>(flags);
     ::ProjectHistory::Get(project).PushState(::au3::untranslatable(longDescription), ::au3::untranslatable(shortDescription),
                                              undoFlags);
+    warnIfAutoSaveFailed();
 
     m_interactionOngoing = false;
     m_historyChanged.send(HistoryEvent::NewState);
@@ -111,6 +112,24 @@ void Au3ProjectHistory::modifyState(bool autoSave)
     }
     auto& project = projectRef();
     ::ProjectHistory::Get(project).ModifyState(autoSave);
+    warnIfAutoSaveFailed();
+}
+
+void Au3ProjectHistory::warnIfAutoSaveFailed()
+{
+    if (!::ProjectHistory::Get(projectRef()).TakeAutoSaveFailed()) {
+        return;
+    }
+    LOGE() << "GlideMix: the automatic project backup failed (disk full, or the file is locked by another program)";
+    if (m_autoSaveWarned || !interactive()) {
+        return;
+    }
+    m_autoSaveWarned = true;
+    interactive()->warning(muse::trc("trackedit", "GlideMix couldn't back up your project"),
+                           muse::trc("trackedit", "Your work is still open and you can carry on, but it is not being "
+                                                  "backed up. The disk may be full, or another program (a sync or "
+                                                  "backup tool, antivirus) may be using the project file. Use File > "
+                                                  "Save project as to save it somewhere else."));
 }
 
 void Au3ProjectHistory::modifyState(const std::type_index& restorerType)

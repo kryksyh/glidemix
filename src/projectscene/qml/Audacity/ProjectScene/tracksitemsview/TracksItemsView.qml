@@ -1644,9 +1644,26 @@ Rectangle {
                     }
                     function px(t) { return (t - model.startTime) * timeline.context.zoom - laneCanvas.x }
                     function timeAt(x) { return model.startTime + (x + laneCanvas.x) / timeline.context.zoom }
-                    function py(side, v) { return sideBottom(side) - v * (sideBottom(side) - sideTop(side)) }
+                    // GlideMix (Chris): every line is drawn like the clip's volume line --
+                    // its normal setting at 70% of the height, below it cuts, above it
+                    // boosts. Volume boosts up to 4x (+12 dB); the EQ bands stop at
+                    // their normal setting; Color is open (0.5) at 70%.
+                    readonly property real laneNormal: zoneItem.lane === 2 ? 0.5 : 1.0
+                    readonly property real laneMax: zoneItem.lane === 0 ? 4.0 : 1.0
+                    // Volume matches the clip's volume line (70%); the other lines,
+                    // a different kind of automation, sit at 80% (Chris).
+                    readonly property real normalAt: zoneItem.lane === 0 ? 0.7 : 0.8
+                    function toView(v) {
+                        if (v <= laneNormal) return normalAt * v / laneNormal
+                        return laneMax > laneNormal ? normalAt + (1 - normalAt) * (v - laneNormal) / (laneMax - laneNormal) : normalAt
+                    }
+                    function fromView(y) {
+                        if (y <= normalAt) return y / normalAt * laneNormal
+                        return laneMax > laneNormal ? laneNormal + (y - normalAt) / (1 - normalAt) * (laneMax - laneNormal) : laneNormal
+                    }
+                    function py(side, v) { return sideBottom(side) - toView(v) * (sideBottom(side) - sideTop(side)) }
                     function valueAt(side, y) {
-                        return Math.max(0, Math.min(1, (sideBottom(side) - y) / (sideBottom(side) - sideTop(side))))
+                        return fromView(Math.max(0, Math.min(1, (sideBottom(side) - y) / (sideBottom(side) - sideTop(side)))))
                     }
                     function sideAt(y) {
                         if (y >= sideTop("out") - inset && y <= sideBottom("out") + inset) return "out"
@@ -1711,15 +1728,30 @@ Rectangle {
                         ctx.strokeStyle = colour
                         ctx.stroke()
 
+                        // GlideMix (Chris): a dot at each end of the line inside the
+                        // overlap, so even a flat line shows where to grab it; a
+                        // drag there adds a point (the line under it).
+                        var ends = [[poly[0], 6], [poly[poly.length - 1], -6]]
+                        for (var e = 0; e < ends.length; ++e) {
+                            ctx.beginPath()
+                            ctx.arc(px(ends[e][0][0]) + ends[e][1], py(side, ends[e][0][1]), 6, 0, 2 * Math.PI)
+                            ctx.fillStyle = colour
+                            ctx.fill()
+                        }
+
                         for (var k = 0; k < line.points.length; ++k) {
                             var active = drag && drag.side === side && drag.index === k
                             ctx.beginPath()
-                            ctx.arc(px(line.points[k][0]), py(side, line.points[k][1]), active ? 5 : 3.5, 0, 2 * Math.PI)
-                            ctx.fillStyle = active ? "#FFFFFF" : colour
+                            // GlideMix: the volume line's dots, in the lane's colour.
+                            ctx.arc(px(line.points[k][0]), py(side, line.points[k][1]), active ? 7.5 : 6, 0, 2 * Math.PI)
+                            ctx.fillStyle = colour
                             ctx.fill()
-                            ctx.lineWidth = 1.5
-                            ctx.strokeStyle = "#101014"
-                            ctx.stroke()
+                            if (active) {
+                                ctx.beginPath()
+                                ctx.arc(px(line.points[k][0]), py(side, line.points[k][1]), 3, 0, 2 * Math.PI)
+                                ctx.fillStyle = "#000000"
+                                ctx.fill()
+                            }
                         }
                     }
 
@@ -1741,7 +1773,7 @@ Rectangle {
                         if (!side || !lineData) return null
                         var points = lineData[side].points
                         for (var i = 0; i < points.length; ++i) {
-                            if (Math.abs(px(points[i][0]) - x) <= 8 && Math.abs(py(side, points[i][1]) - y) <= 8) {
+                            if (Math.abs(px(points[i][0]) - x) <= 14 && Math.abs(py(side, points[i][1]) - y) <= 14) {
                                 return { side: side, index: i }
                             }
                         }
@@ -1758,7 +1790,7 @@ Rectangle {
                                 var span = s[i][0] - s[i - 1][0]
                                 var u = span > 0 ? (t - s[i - 1][0]) / span : 0
                                 var v = s[i - 1][1] + u * (s[i][1] - s[i - 1][1])
-                                return Math.abs(py(side, v) - y) <= 8 ? side : ""
+                                return Math.abs(py(side, v) - y) <= 10 ? side : ""
                             }
                         }
                         return ""
@@ -1801,7 +1833,22 @@ Rectangle {
                                 laneCanvas.editedSide = hit.side
                                 return
                             }
-                            mouse.accepted = mouse.button === Qt.LeftButton && laneCanvas.onLine(mouse.x, mouse.y) !== ""
+                            var lineSide = mouse.button === Qt.LeftButton ? laneCanvas.onLine(mouse.x, mouse.y) : ""
+                            if (!lineSide) {
+                                mouse.accepted = false
+                                return
+                            }
+                            // GlideMix: a press on the line (or an end dot) adds a point
+                            // there and drags it, like the clip's volume line.
+                            var pts = laneCanvas.lineData[lineSide].points
+                            var smp = laneCanvas.lineData[lineSide].samples
+                            var t = Math.max(smp[0][0] + 1e-3, Math.min(smp[smp.length - 1][0] - 1e-3, laneCanvas.timeAt(mouse.x)))
+                            var at = 0
+                            while (at < pts.length && pts[at][0] < t) { ++at }
+                            pts.splice(at, 0, [t, laneCanvas.valueAt(lineSide, mouse.y)])
+                            laneCanvas.drag = { side: lineSide, index: at }
+                            laneCanvas.editedSide = lineSide
+                            laneCanvas.requestPaint()
                         }
                         onPositionChanged: function(mouse) {
                             var d = laneCanvas.drag
@@ -1991,6 +2038,8 @@ Rectangle {
                                 transitionZonesModel.applyPreset(model.index, parseInt(itemId.substring(7)))
                             } else if (itemId.indexOf("transition:") === 0) {
                                 transitionZonesModel.applyTransition(model.index, itemId.substring(11))
+                            } else if (itemId.indexOf("toggle-shown:") === 0) {
+                                transitionZonesModel.toggleTransitionShown(itemId.substring(13))
                             } else if (itemId === "remove") {
                                 transitionZonesModel.removeCrossfade(model.index)
                             } else if (itemId === "disable") {

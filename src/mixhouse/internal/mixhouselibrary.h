@@ -314,6 +314,18 @@ private:
     // destroy rule.
     std::vector<AnalyzerWorkerHandle> m_analyzeWorkers;
     QList<int> m_analyzeQueue;
+    //! GlideMix crash guard: the songs on an analysis thread right now, kept in
+    //! a file beside the library. Left over at the next batch = they were being
+    //! analysed when GlideMix stopped. A song left over twice is skipped.
+    QSet<int> m_analysisInFlight;
+    QHash<int, int> m_analysisSuspects;   // track id -> crashes it was part of
+    bool m_analysisGuardLoaded = false;
+    void loadAnalysisGuard();
+    void saveAnalysisGuard() const;
+    //! Songs a batch had not finished when GlideMix last stopped (crash or quit):
+    //! analysed again a few seconds after the next start.
+    QList<int> m_analysisResumeIds;
+    void resumeAnalysisAfterRestart();
     int m_analyzeTotal = 0;
     int m_analyzeSucceeded = 0;
     int m_analyzeFailed = 0;

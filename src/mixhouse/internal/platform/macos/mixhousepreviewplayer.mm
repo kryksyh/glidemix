@@ -74,6 +74,7 @@ namespace au::mixhouse {
 struct MixHousePreviewPlayer::Impl {
     AVAudioEngine* engine = nil;
     AVAudioPlayerNode* player = nil;
+    AVAudioUnitTimePitch* timePitch = nil;   // GlideMix: speed for the synced preview
     AVAudioFile* file = nil;
     AVAudioFormat* connectedFormat = nil;
     AudioDeviceID device = kAudioObjectUnknown;
@@ -108,7 +109,9 @@ bool MixHousePreviewPlayer::load(const std::string& utf8Path, const std::string&
     if (!d.engine) {
         d.engine = [[AVAudioEngine alloc] init];
         d.player = [[AVAudioPlayerNode alloc] init];
+        d.timePitch = [[AVAudioUnitTimePitch alloc] init];
         [d.engine attachNode:d.player];
+        [d.engine attachNode:d.timePitch];
     }
 
     // The output unit's device can only change while the engine is stopped
@@ -128,7 +131,9 @@ bool MixHousePreviewPlayer::load(const std::string& utf8Path, const std::string&
     AVAudioFormat* format = file.processingFormat;
     if (!d.connectedFormat || ![d.connectedFormat isEqual:format]) {
         [d.engine disconnectNodeOutput:d.player];
-        [d.engine connect:d.player to:d.engine.mainMixerNode format:format];
+        [d.engine disconnectNodeOutput:d.timePitch];
+        [d.engine connect:d.player to:d.timePitch format:format];
+        [d.engine connect:d.timePitch to:d.engine.mainMixerNode format:format];
         d.connectedFormat = format;
     }
 
@@ -219,5 +224,11 @@ double MixHousePreviewPlayer::position()
     }
     d.lastPosition = frames / length;
     return d.lastPosition;
+}
+void MixHousePreviewPlayer::setRate(double rate)
+{
+    if (m_impl->timePitch) {
+        m_impl->timePitch.rate = static_cast<float>(std::clamp(rate, 0.5, 2.0));
+    }
 }
 }

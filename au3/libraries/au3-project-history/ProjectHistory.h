@@ -52,6 +52,8 @@ public:
     void PushState(
         const TranslatableString& desc, const TranslatableString& shortDesc, UndoPush flags);
     void RollbackState();
+    //! GlideMix: true once after an automatic backup failed (and was survived).
+    bool TakeAutoSaveFailed();
     void ModifyState(bool bWantsAutoSave);   // if true, writes auto-save file.
     void ModifyState(const std::type_index& restorerType);
     // Should set only if you really want the state change restored after
@@ -65,6 +67,8 @@ public:
 private:
     AudacityProject& mProject;
 
+    void CallAutoSave();
+    bool mAutoSaveFailed{ false };
     bool mDirty{ false };
 };
 

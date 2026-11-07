@@ -35,17 +35,15 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.26**\n\n"
-                      + "- **Export is much faster.** A 16-minute mix now takes under 30 seconds on our Mac.\n"
-                      + "- **Plug-ins:** fixed a bug that could slow the app down or stop it working.\n"
-                      + "- **Stems:** fixed an install failure on some Macs.\n"
-                      + "- **MP3 exports** no longer clip at normal bitrates.\n"
-                      + "- **Starts cleaner:** you get to your music with fewer questions, and closing the window quits on the Mac too.\n"
-                      + "- **Home** shows how many songs each project holds. The File menu says **Save project**.\n"
-                      + "- **Transitions:** the pill shows the name, and one Undo fully reverses Mix Now.\n"
-                      + "- **Library:** a dot marks songs already in the project, the list shows its song count and length, and hover the search box for its filters. Timeline songs get Show in Library.\n"
-                      + "- **Backups:** the library now keeps its last four backups.\n"
-                      + "- macOS may ask for permission one last time after this update.\n"
+                text: "**GlideMix v1.1.27**\n\n"
+                      + "- **Adding a song no longer resets your transitions** or moves your songs: only the new song moves.\n"
+                      + "- **No more sudden quits** when the project can't be backed up: GlideMix warns you instead.\n"
+                      + "- **Volume and automation lines:** easier to grab, no clusters of dots, press and drag adds a point. All lines work like the volume line.\n"
+                      + "- **Library:** click a song's waveform to preview it, in time with your mix while it plays.\n"
+                      + "- **Analysis** continues by itself after GlideMix closes or stops, and skips a file that stopped it twice.\n"
+                      + "- **Preferences > Waveforms:** mouse wheel zoom, and the phrase ribbon on or off.\n"
+                      + "- **Space** plays the song in the Beat grid editor. Your own transitions come first in the menus.\n"
+                      + "- **A +** beside the bottom tabs opens a closed tab again. The vertical ruler shows the volume in dB.\n"
             }
         }
 

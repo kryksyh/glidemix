@@ -9,6 +9,7 @@
 #include "modularity/ioc.h"
 
 #include "projectscene/iprojectsceneuistate.h"
+#include "mixhouse/imixhouselibraryconfiguration.h"
 #include "framework/actions/iactionsdispatcher.h"
 
 namespace au::preferences {
@@ -26,6 +27,7 @@ class ArrangementPreferencesModel : public QObject, public muse::Contextable
 
     muse::ContextInject<projectscene::IProjectSceneUiState> uiState { this };
     muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher { this };
+    muse::GlobalInject<au::mixhouse::IMixHouseLibraryConfiguration> libraryConfiguration;
 
     /// 0 = Audacity's own waveform in the clip's colour, 1 = rekordbox's
     /// colour waveform on black.
@@ -38,6 +40,10 @@ class ArrangementPreferencesModel : public QObject, public muse::Contextable
     /// How every song's track is drawn, as View > Track view: 0 Waveform,
     /// 1 Single wave, 2 Half-wave, 3 Spectrogram, 4 Multi-view, -1 none chosen.
     Q_PROPERTY(int trackView READ trackView WRITE setTrackView NOTIFY changed)
+    /// GlideMix: the coloured Intro / Chorus ribbon (the clip menu's "Show phrase detection").
+    Q_PROPERTY(bool phraseRibbon READ phraseRibbon WRITE setPhraseRibbon NOTIFY changed)
+    /// GlideMix: the mouse wheel zooms the timeline; Cmd/Ctrl + wheel scrolls the tracks.
+    Q_PROPERTY(bool wheelZooms READ wheelZooms WRITE setWheelZooms NOTIFY changed)
 
 public:
     explicit ArrangementPreferencesModel(QObject* parent = nullptr);
@@ -52,6 +58,10 @@ public:
     void setStereoWaveform(bool stereo);
     int trackView() const;
     void setTrackView(int view);
+    bool phraseRibbon() const;
+    void setPhraseRibbon(bool visible);
+    bool wheelZooms() const;
+    void setWheelZooms(bool zooms);
 
 signals:
     void changed();

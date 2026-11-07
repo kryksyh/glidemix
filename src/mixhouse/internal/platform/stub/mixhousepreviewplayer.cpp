@@ -21,4 +21,7 @@ void MixHousePreviewPlayer::playFrom(double) {}
 void MixHousePreviewPlayer::stop() {}
 bool MixHousePreviewPlayer::isPlaying() { return false; }
 double MixHousePreviewPlayer::position() { return 0.0; }
+void MixHousePreviewPlayer::setRate(double)
+{
+}
 }

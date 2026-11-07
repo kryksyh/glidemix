@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "framework/interactive/iinteractive.h"
 #include "iprojecthistory.h"
 
 #include "context/iglobalcontext.h"
@@ -15,6 +16,7 @@ namespace au::trackedit {
 class Au3ProjectHistory : public IProjectHistory, public muse::Contextable
 {
     muse::ContextInject<context::IGlobalContext> globalContext { this };
+    muse::ContextInject<muse::IInteractive> interactive { this };
 
 public:
     Au3ProjectHistory(const muse::modularity::ContextPtr& ctx)
@@ -58,5 +60,10 @@ private:
     muse::async::Channel<HistoryEvent> m_historyChanged;
 
     bool m_interactionOngoing = false;
+
+private:
+    //! GlideMix: warns (once per session) that the automatic backup failed.
+    void warnIfAutoSaveFailed();
+    bool m_autoSaveWarned = false;
 };
 }

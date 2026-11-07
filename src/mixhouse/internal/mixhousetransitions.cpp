@@ -961,7 +961,7 @@ bool MixHouseTransitions::laneLines(const trackedit::ClipKey& outgoing, const tr
         }
         const auto value = [&](double t) {
             if (lane == Lane::Volume) {
-                return std::clamp(valueAt(a, t, 1.0), 0.0, 1.0);
+                return std::clamp(valueAt(a, t, 1.0), 0.0, 4.0);   // the clip envelope's own range
             }
             if (lane == Lane::Low || lane == Lane::Mid || lane == Lane::High) {
                 return std::clamp(valueAt(a, t, 1.0), 0.0, 1.0);
@@ -978,7 +978,8 @@ bool MixHouseTransitions::laneLines(const trackedit::ClipKey& outgoing, const tr
         }
         for (int i = 0; i <= kSamples; ++i) {
             const double t = zone.start + (zone.end - zone.start) * i / kSamples;
-            line.samples.push_back({ t, envelope.size() > size_t(i) ? std::clamp(envelope[size_t(i)], 0.0, 1.0) : value(t) });
+            line.samples.push_back({ t, envelope.size() > size_t(i)
+                                        ? std::clamp(envelope[size_t(i)], 0.0, lane == Lane::Volume ? 4.0 : 1.0) : value(t) });
         }
         for (const Points* points : { &a, &b }) {
             for (const auto& p : *points) {
@@ -1009,7 +1010,7 @@ bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, cons
     std::vector<std::pair<double, double> > inside;
     for (const auto& [t, v] : points) {
         if (t >= from && t <= to) {
-            inside.push_back({ t, std::clamp(v, 0.0, 1.0) });
+            inside.push_back({ t, std::clamp(v, 0.0, lane == Lane::Volume ? 4.0 : 1.0) });
         }
     }
     std::sort(inside.begin(), inside.end());

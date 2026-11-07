@@ -23,6 +23,36 @@ Rectangle {
 
     MixHouseGridEditorModel {
         id: editor
+        onTrackChanged: if (loaded) root.forceActiveFocus()
+    }
+
+    // GlideMix (Naveen G): while the editor has the keyboard, Space plays its
+    // own track, not the timeline. A click anywhere in the editor gives it the
+    // keyboard; it takes it too when a song is opened in it.
+    focus: true
+    Keys.onShortcutOverride: function(event) {
+        if (event.key === Qt.Key_Space && event.modifiers === Qt.NoModifier) {
+            event.accepted = true
+        }
+    }
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Space && event.modifiers === Qt.NoModifier) {
+            editor.playPause()
+            event.accepted = true
+        }
+    }
+    MouseArea {
+        anchors.fill: parent
+        z: -1
+        onPressed: function(mouse) {
+            root.forceActiveFocus()
+            mouse.accepted = false
+        }
+    }
+    TapHandler {
+        gesturePolicy: TapHandler.DragThreshold
+        grabPermissions: PointerHandler.ApproveTakeOverForAll
+        onPressedChanged: if (pressed) root.forceActiveFocus()
     }
 
     function timeText(seconds) {

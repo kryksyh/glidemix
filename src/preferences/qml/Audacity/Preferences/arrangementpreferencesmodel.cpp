@@ -1,6 +1,7 @@
 /*
  * GlideMix
  */
+#include <QSettings>
 #include "arrangementpreferencesmodel.h"
 
 using namespace au::preferences;
@@ -21,6 +22,34 @@ void ArrangementPreferencesModel::setWaveformStyle(int style)
         return;
     }
     uiState()->setClipWaveformRgb(style == 1);
+    emit changed();
+}
+
+bool ArrangementPreferencesModel::phraseRibbon() const
+{
+    return libraryConfiguration() ? libraryConfiguration()->phraseRibbonVisible() : true;
+}
+
+void ArrangementPreferencesModel::setPhraseRibbon(bool visible)
+{
+    if (!libraryConfiguration() || visible == phraseRibbon()) {
+        return;
+    }
+    libraryConfiguration()->setPhraseRibbonVisible(visible);
+    emit changed();
+}
+
+bool ArrangementPreferencesModel::wheelZooms() const
+{
+    return QSettings().value(QStringLiteral("GlideMix/wheelZooms"), false).toBool();
+}
+
+void ArrangementPreferencesModel::setWheelZooms(bool zooms)
+{
+    if (zooms == wheelZooms()) {
+        return;
+    }
+    QSettings().setValue(QStringLiteral("GlideMix/wheelZooms"), zooms);
     emit changed();
 }
 

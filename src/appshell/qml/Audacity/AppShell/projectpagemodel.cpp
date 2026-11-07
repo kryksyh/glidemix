@@ -4,6 +4,7 @@
 #include "projectpagemodel.h"
 
 #include "framework/global/log.h"
+#include "framework/global/translation.h"
 #include "framework/global/async/async.h"
 #include "framework/dockwindow/idockwindow.h"
 
@@ -116,6 +117,27 @@ QString ProjectPageModel::historyPanelName() const
 QString ProjectPageModel::playbackMeterPanelName() const
 {
     return PLAYBACK_METER_PANEL_NAME;
+}
+
+QVariantList ProjectPageModel::closedBottomTabs() const
+{
+    QVariantList items;
+    const auto window = dockWindowProvider() ? dockWindowProvider()->window() : nullptr;
+    const std::pair<QString, QString> tabs[] = {
+        { MIXHOUSE_LIBRARY_PANEL_NAME, muse::qtrc("appshell", "Music library") },
+        { MIXHOUSE_PROJECT_PANEL_NAME, muse::qtrc("appshell", "Project") },
+    };
+    for (const auto& [name, title] : tabs) {
+        if (!window || !window->isDockOpen(name)) {
+            items << QVariantMap { { "id", name }, { "title", title }, { "enabled", true } };
+        }
+    }
+    return items;
+}
+
+void ProjectPageModel::openDock(const QString& name)
+{
+    dispatcher()->dispatch("dock-set-open", ActionData::make_arg2<QString, bool>(name, true));
 }
 
 QString ProjectPageModel::statusBarName() const

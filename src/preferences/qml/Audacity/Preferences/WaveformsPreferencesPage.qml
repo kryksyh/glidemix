@@ -173,6 +173,36 @@ PreferencesPage {
                 opacity: 0.7
                 text: qsTrc("preferences", "Each song is analysed once more, per channel, the first time it is shown. Most club tracks look the same on both sides; one lane is the DJ-app default.")
             }
+
+            CheckBox {
+                width: parent.width
+
+                text: qsTrc("preferences", "Show the phrase ribbon (Intro, Chorus, Up, Down) along the bottom of each song")
+                checked: arrangementModel.phraseRibbon
+
+                navigation.name: "ArrPhraseRibbonCheck"
+                navigation.panel: waveformStyleSection.navigation
+                navigation.row: 4
+
+                onClicked: {
+                    arrangementModel.phraseRibbon = !checked
+                }
+            }
+
+            CheckBox {
+                width: parent.width
+
+                text: qsTrc("preferences", "Mouse wheel zooms the timeline (hold Cmd or Ctrl to scroll the tracks)")
+                checked: arrangementModel.wheelZooms
+
+                navigation.name: "ArrWheelZoomsCheck"
+                navigation.panel: waveformStyleSection.navigation
+                navigation.row: 5
+
+                onClicked: {
+                    arrangementModel.wheelZooms = !checked
+                }
+            }
         }
     }
 }

@@ -73,7 +73,7 @@ void ProjectHistory::PushState(const TranslatableString& desc,
 {
     auto& project = mProject;
     if ((flags& UndoPush::NOAUTOSAVE) == UndoPush::NONE) {
-        AutoSave::Call(project);
+        CallAutoSave();
     }
 
     // remaining no-fail operations "commit" the changes of undo manager state
@@ -81,6 +81,26 @@ void ProjectHistory::PushState(const TranslatableString& desc,
     undoManager.PushState(desc, shortDesc, flags);
 
     mDirty = true;
+}
+
+// GlideMix: a failed automatic backup (disk full, the file locked by another
+// program) threw out of here, through the app, and ended GlideMix -- before
+// the edit was even recorded for Undo. Now it is noted for the app to warn
+// about, and the edit is recorded as usual.
+void ProjectHistory::CallAutoSave()
+{
+    try {
+        AutoSave::Call(mProject);
+    } catch (...) {
+        mAutoSaveFailed = true;
+    }
+}
+
+bool ProjectHistory::TakeAutoSaveFailed()
+{
+    const bool failed = mAutoSaveFailed;
+    mAutoSaveFailed = false;
+    return failed;
 }
 
 void ProjectHistory::RollbackState()
@@ -92,13 +112,12 @@ void ProjectHistory::RollbackState()
 
 void ProjectHistory::ModifyState(bool bWantsAutoSave)
 {
-    auto& project = mProject;
     if (bWantsAutoSave) {
-        AutoSave::Call(project);
+        CallAutoSave();
     }
 
     // remaining no-fail operations "commit" the changes of undo manager state
-    auto& undoManager = UndoManager::Get(project);
+    auto& undoManager = UndoManager::Get(mProject);
     undoManager.ModifyState();
 }
 

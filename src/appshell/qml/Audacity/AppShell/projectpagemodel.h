@@ -47,6 +47,11 @@ public:
 
     Q_INVOKABLE QString statusBarName() const;
 
+    //! GlideMix: the bottom tabs (Music library, Project) that are closed,
+    //! as menu items, and opening one again (the tab bar's + button).
+    Q_INVOKABLE QVariantList closedBottomTabs() const;
+    Q_INVOKABLE void openDock(const QString& name);
+
 private:
     void toggleDock(const QString& name);
 

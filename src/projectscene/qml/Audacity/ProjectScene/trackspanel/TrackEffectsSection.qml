@@ -184,13 +184,8 @@ Rectangle {
         StyledTextLabel {
             id: infoText
             visible: !isMasterTrack && effectList.empty
-            text: {
-                {
-                    const line1 = qsTrc("projectscene", "Realtime effects are non-destructive and can be changed at any time.")
-                    const line2 = qsTrc("projectscene", "<a href=\"https://www.audacityteam.org/realtime-video\">Watch video</a>")
-                    return line1 + "<br/><div style='line-height:30px;'><br/></div>" + line2
-                }
-            }
+            // GlideMix: no "Watch video" link (Audacity's tutorial).
+            text: qsTrc("projectscene", "Realtime effects are non-destructive and can be changed at any time.")
 
             Layout.fillWidth: true
             Layout.fillHeight: true

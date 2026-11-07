@@ -48,6 +48,8 @@ public:
     Q_INVOKABLE void applyTransition(int row, const QString& name);
     //! The zone's menu: [{id: "preset:N" | "transition:<name>", title, checkable, checked}].
     Q_INVOKABLE QVariantList presetMenu(int row) const;
+    //! GlideMix: hides a built-in transition from the menus, or brings it back.
+    Q_INVOKABLE void toggleTransitionShown(const QString& name);
     //! One lane (0 volume, 1 low, 2 color, 3 mid, 4 high) of both clips across the zone:
     //! { out: { samples: [[t, v]], points: [[t, v]] }, in: {...} }, t in project seconds.
     Q_INVOKABLE QVariantMap laneLines(int row, int lane) const;

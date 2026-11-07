@@ -1108,7 +1108,19 @@ Rectangle {
                                 preventStealing: true
                                 cursorShape: Qt.SizeHorCursor
                                 acceptedButtons: Qt.LeftButton
-                                onPressed: function(mouse) { anchorHandle.press(this, mouse) }
+                                onPressed: function(mouse) {
+                                    // GlideMix: a volume point or line under the anchor line wins;
+                                    // the IN / OUT flag still drags the anchor.
+                                    if (modelData.h < 0) {
+                                        const lane = pluginAutomationLane.visible ? pluginAutomationLane : automation
+                                        const p = mapToItem(lane, mouse.x, mouse.y)
+                                        if (lane.visible && lane.grabsAt(p.x, p.y)) {
+                                            mouse.accepted = false
+                                            return
+                                        }
+                                    }
+                                    anchorHandle.press(this, mouse)
+                                }
                                 onPositionChanged: function(mouse) {
                                     if (pressed) {
                                         anchorHandle.move(this, mouse, false)
@@ -1179,6 +1191,7 @@ Rectangle {
 
                 BezierAutomationLane {
                     id: pluginAutomationLane
+                    bottomInset: 10 + Math.min(16, Math.max(4, waveView.height * 0.14))
                     anchors.fill: waveView
                     anchors.bottomMargin: 1
                     z: 10
@@ -1214,6 +1227,10 @@ Rectangle {
                         onClosed: pluginAutomationLane.clearPointHighlight()
                     }
                     onPointMenuRequested: function(node, x, y) {
+                        // GlideMix: the last point has no line after it -- its menu shapes the line into it.
+                        const lastPoint = node === pluginAutomationLane.nodeCount() - 1
+                        const pointNode = node
+                        node = lastPoint ? node - 1 : node
                         pluginPointMenu.node = node
                         // GlideMix: the line on to the next point, like the tempo line's glides.
                         const sCurve = pluginAutomationLane.isSCurve(node)
@@ -1221,7 +1238,7 @@ Rectangle {
                             { id: "line-straight", title: qsTrc("projectscene", "Line: straight"), checkable: true, checked: !sCurve },
                             { id: "line-s-curve", title: qsTrc("projectscene", "Line: S-curve (smooth start and end)"), checkable: true, checked: sCurve }
                         ]
-                        if (node > 0) {
+                        if (pointNode > 0 && !lastPoint) {
                             items.push({})
                             items.push({ id: "delete-point", title: qsTrc("projectscene", "Delete point") })
                         }
@@ -1264,6 +1281,7 @@ Rectangle {
 
                     anchors.fill: waveView
                     anchors.bottomMargin: 1
+                    bottomInset: 10 + Math.min(16, Math.max(4, waveView.height * 0.14))
                     z: 10
 
                     visible: root.isAutomationEnabled && !pluginAutomationModel.visible
@@ -1304,6 +1322,10 @@ Rectangle {
                         onClosed: automation.clearPointHighlight()
                     }
                     onPointMenuRequested: function(node, x, y) {
+                        // GlideMix: the last point has no line after it -- its menu shapes the line into it.
+                        const lastPoint = node === automation.nodeCount() - 1
+                        const pointNode = node
+                        node = lastPoint ? node - 1 : node
                         gainPointMenu.node = node
                         // GlideMix: the line on to the next point, like the tempo line's glides.
                         const sCurve = automation.isSCurve(node)
@@ -1311,7 +1333,7 @@ Rectangle {
                             { id: "line-straight", title: qsTrc("projectscene", "Line: straight"), checkable: true, checked: !sCurve },
                             { id: "line-s-curve", title: qsTrc("projectscene", "Line: S-curve (smooth start and end)"), checkable: true, checked: sCurve }
                         ]
-                        if (node > 0) {
+                        if (pointNode > 0 && !lastPoint) {
                             items.push({})
                             items.push({ id: "delete-point", title: qsTrc("projectscene", "Delete point") })
                         }

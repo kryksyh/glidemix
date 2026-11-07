@@ -38,6 +38,9 @@ public:
     bool isPlaying();
     /// Current position as a fraction (0..1) of the loaded file.
     double position();
+    /// GlideMix: playback speed, keeping the pitch (1 = normal). Used to play a
+    /// library song at the timeline's tempo. No effect where unsupported.
+    void setRate(double rate);
 
 private:
     struct Impl;

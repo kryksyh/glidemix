@@ -24,6 +24,8 @@ class BezierAutomationLane : public QQuickPaintedItem
     Q_PROPERTY(bool dashed MEMBER m_dashed NOTIFY lineColorChanged)
     //! Switches: each value holds until the next point, then jumps (Ableton's on/off steps).
     Q_PROPERTY(bool stepped MEMBER m_stepped NOTIFY lineColorChanged)
+    //! GlideMix: the lowest value sits this far above the bottom, clear of the phrase ribbon.
+    Q_PROPERTY(double bottomInset MEMBER m_bottomInset NOTIFY lineColorChanged)
     // Live drag feedback -- e.g. a floating dB readout while a point is being
     // dragged, the same job PolylinePlot's activePoint* properties did before
     // this component replaced it. Normalized 0..1, same as the values in
@@ -54,6 +56,11 @@ public:
     Q_INVOKABLE bool setSCurve(int node, bool sCurve);
     /// The point stays highlighted while its menu is open.
     Q_INVOKABLE void clearPointHighlight();
+    /// GlideMix: what a click at x, y would grab: a point (its index), else -1.
+    Q_INVOKABLE int nodeAt(double x, double y) const { return hitNode(QPointF(x, y)); }
+    /// True when x, y is on a point or on the line.
+    Q_INVOKABLE bool grabsAt(double x, double y) const { return hitNode(QPointF(x, y)) >= 0 || hitSegment(QPointF(x, y)) >= 0; }
+    Q_INVOKABLE int nodeCount() const { return m_curve.segments.empty() ? 0 : static_cast<int>(m_curve.segments.size()) + 1; }
 signals:
     void segmentsChanged();
     void viewChanged();
@@ -90,6 +97,9 @@ private:
     double timeAt(double x) const;
     int hitSegment(QPointF position) const;
     int hitNode(QPointF position) const;
+    double nodeValue(int node) const;
+    //! GlideMix: false for points that only repeat the flat line around them.
+    bool nodeShown(int node) const;
     void cancel();
     void setActivePoint(QPointF position, double value);
     void clearActivePoint();
@@ -98,6 +108,7 @@ private:
     double m_start{}, m_end{1};
     double m_selectionStart{}, m_selectionEnd{};
     QColor m_color{QStringLiteral("#F5BB42")};
+    double m_bottomInset{10.0};
     bool m_dashed = false;
     bool m_stepped = false;
     QPointF m_press;

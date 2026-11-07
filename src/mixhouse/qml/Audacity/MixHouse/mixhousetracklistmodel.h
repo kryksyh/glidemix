@@ -766,6 +766,10 @@ private:
     QTimer* m_previewPollTimer = nullptr;
     double m_pendingPreviewSeek = -1.0;
     int m_previewTrackId = -1;
+    //! GlideMix: the song being previewed, and its click spot moved onto the
+    //! timeline's beat (MixMeister's preview locked to the playing track).
+    MixHouseTrack m_previewTrack;
+    double syncedPreviewFraction(const MixHouseTrack& track, double fraction, double& rate) const;
     bool m_previewPlaying = false;
     double m_previewPosition = 0.0;
 

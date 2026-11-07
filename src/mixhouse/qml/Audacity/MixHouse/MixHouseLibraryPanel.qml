@@ -3204,11 +3204,11 @@ Item {
                             } else {
                                 root.selectRow(cell.row)
                             }
-                            // While this track previews, clicking its waveform
-                            // moves the preview there (no buttons on the
-                            // waveform: the controls live on the artwork).
-                            if (cell.col && cell.col.key === "overview" && mouse && cell.model
-                                    && tracksModel.previewPlaying && tracksModel.previewTrackId === cell.model.trackId) {
+                            // GlideMix (Naveen G, as in MixMeister): a click on a
+                            // song's waveform previews it from there; while the mix
+                            // plays, in time with it (same beat of the bar, the
+                            // mix's tempo). Clicking again moves the preview.
+                            if (cell.col && cell.col.key === "overview" && mouse && cell.model) {
                                 var p = cell.mapToItem(overview, mouse.x, mouse.y)
                                 if (p.x < 0) {
                                     tracksModel.stopPreview()   // the stop button in the gutter

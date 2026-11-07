@@ -1,3 +1,4 @@
+#include <QSettings>
 #include "timelinecontext.h"
 
 #include <QWheelEvent>
@@ -271,6 +272,18 @@ void TimelineContext::onWheel(double mouseX, const QPoint& pixelDelta, const QPo
     }
 
     Qt::KeyboardModifiers modifiers = application()->keyboardModifiers();
+
+    // GlideMix (Naveen G): with "Mouse wheel zooms the timeline" on, an up/down
+    // wheel zooms and Cmd/Ctrl + wheel scrolls the tracks. Sideways swipes still pan.
+    static QSettings settings;
+    const bool wheelZooms = settings.value(QStringLiteral("GlideMix/wheelZooms"), false).toBool();
+    if (wheelZooms && !modifiers.testFlag(Qt::ShiftModifier) && std::abs(stepsY) > std::abs(stepsX)) {
+        if (modifiers.testFlag(Qt::ControlModifier)) {
+            modifiers.setFlag(Qt::ControlModifier, false);
+        } else {
+            modifiers.setFlag(Qt::ControlModifier, true);
+        }
+    }
 
     if (modifiers.testFlag(Qt::ControlModifier)) {
         double zoomSpeed = qPow(2.0, 1.0 / configuration()->mouseZoomPrecision());

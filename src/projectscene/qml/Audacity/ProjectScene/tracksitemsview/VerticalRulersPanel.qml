@@ -201,9 +201,48 @@ Rectangle {
                                 })
                             })
 
-                            sourceComponent: WaveformRuler {
-                                isCollapsed: trackViewState.isTrackCollapsed
-                                channelHeightRatio: trackViewState.channelHeightRatio
+                            // GlideMix (Naveen G, Chris): the scale of the clip's volume
+                            // line, not Audacity's two-channel waveform scale -- one
+                            // scale per track, each mark where the line puts that level
+                            // (0 dB at 70%, boost above; BezierAutomationLane's insets).
+                            sourceComponent: Item {
+                                id: volumeRuler
+                                visible: !trackViewState.isTrackCollapsed
+                                readonly property real topInset: 10
+                                readonly property real bottomInset: 10 + Math.min(16, Math.max(4, height * 0.14))
+                                function yFor(gain) {
+                                    const view = gain <= 1 ? 0.7 * gain : 0.7 + 0.3 * (gain - 1) / 3
+                                    return topInset + (1 - view) * Math.max(1, height - topInset - bottomInset)
+                                }
+                                Repeater {
+                                    model: [ { text: "+12", gain: 4.0 }, { text: "+6", gain: 2.0 }, { text: "0 dB", gain: 1.0 },
+                                             { text: "-6", gain: 0.5012 }, { text: "-12", gain: 0.2512 }, { text: "-\u221E", gain: 0.0 } ]
+                                    Item {
+                                        required property var modelData
+                                        width: volumeRuler.width
+                                        height: 1
+                                        y: volumeRuler.yFor(modelData.gain)
+                                        // Room for at least two marks between labels: hide the
+                                        // in-between ones on a short track.
+                                        visible: volumeRuler.height > 90 || modelData.gain === 1.0 || modelData.gain === 0.0
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            width: modelData.gain === 1.0 ? 8 : 5
+                                            height: 1
+                                            color: ui.theme.fontPrimaryColor
+                                            opacity: 0.6
+                                        }
+                                        StyledTextLabel {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 10
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: modelData.text
+                                            font.pixelSize: 10
+                                            font.bold: modelData.gain === 1.0
+                                            opacity: 0.8
+                                        }
+                                    }
+                                }
                             }
                         }
 

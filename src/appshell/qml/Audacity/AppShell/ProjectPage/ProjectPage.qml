@@ -42,6 +42,42 @@ DockPage {
 
     property ProjectPageModel pageModel: ProjectPageModel {}
 
+    //! GlideMix: the + beside the bottom tabs: a menu of the closed ones.
+    Component {
+        id: bottomTabsPlus
+
+        Item {
+            anchors.fill: parent
+
+            FlatButton {
+                id: plusButton
+                anchors.left: parent.left
+                anchors.leftMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24
+                height: 24
+                icon: IconCode.PLUS
+                transparent: true
+                toolTipTitle: qsTrc("appshell", "Open a closed tab")
+                onClicked: {
+                    const items = root.pageModel.closedBottomTabs()
+                    plusMenu.toggleOpened(items.length === 0
+                                          ? [{ id: "none", title: qsTrc("appshell", "All tabs are open"), enabled: false }]
+                                          : items)
+                }
+
+                StyledMenuLoader {
+                    id: plusMenu
+                    onHandleMenuItem: function(itemId) {
+                        if (itemId !== "none") {
+                            root.pageModel.openDock(itemId)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     signal externalDropAreaEntered(var drop)
     signal externalDropAreaExited
     signal externalDropAreaDropped(var drop)
@@ -656,6 +692,9 @@ DockPage {
             //! GlideMix: shares its tabs with the Project panel below.
             groupName: root.bottomPanelsGroup
 
+            //! GlideMix: + beside the tabs opens a closed one again (Chris).
+            toolbarComponent: bottomTabsPlus
+
             //! GlideMix: open by default -- the library is where a mix starts.
             //! The header's Music library button toggles it.
             visible: true
@@ -685,6 +724,9 @@ DockPage {
 
             location: Location.Bottom
             groupName: root.bottomPanelsGroup
+
+            //! GlideMix: + beside the tabs opens a closed one again (Chris).
+            toolbarComponent: bottomTabsPlus
 
             //! Closed here: ProjectPageModel opens it as a tab of the library
             //! once that is docked (open from the start, both floated).

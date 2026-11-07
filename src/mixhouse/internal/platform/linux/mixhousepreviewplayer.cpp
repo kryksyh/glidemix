@@ -231,4 +231,7 @@ double MixHousePreviewPlayer::position()
     const long long total = m_impl->totalFrames();
     return total > 0 ? std::clamp(m_impl->pos.load() / static_cast<double>(total), 0.0, 1.0) : 0.0;
 }
+void MixHousePreviewPlayer::setRate(double)
+{
+}
 }

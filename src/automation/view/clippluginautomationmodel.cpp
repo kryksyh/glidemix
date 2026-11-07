@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
+#include <algorithm>
 #include "log.h"
 #include "clippluginautomationmodel.h"
 #include "au3wrap/internal/domaccessor.h"
@@ -28,6 +29,26 @@ WaveTrack* FindTrack(const au::project::IAudacityProjectPtr& project, const au::
 
 ClipPluginAutomationModel::ClipPluginAutomationModel(QObject* parent)
     : QObject(parent), muse::Contextable(muse::iocCtxForQmlObject(this)) {}
+
+namespace {
+//! GlideMix (Chris): every line is drawn like the volume line -- the
+//! parameter's normal setting sits at 80% of the height, below it cuts and
+//! above it boosts. Lines whose normal setting is an end (a send at 0) stay linear.
+constexpr double kNormalAt = 0.8;   // Chris: other automation sits at 80%, read as 100%
+double toView(double value, double normal)
+{
+    if (!(normal > 0.0 && normal < 1.0)) { return value; }
+    return value <= normal ? kNormalAt * value / normal
+                           : kNormalAt + (1.0 - kNormalAt) * (value - normal) / (1.0 - normal);
+}
+double fromView(double y, double normal)
+{
+    y = std::clamp(y, 0.0, 1.0);
+    if (!(normal > 0.0 && normal < 1.0)) { return y; }
+    return y <= kNormalAt ? y / kNormalAt * normal
+                          : normal + (y - kNormalAt) / (1.0 - kNormalAt) * (1.0 - normal);
+}
+}
 
 void ClipPluginAutomationModel::init()
 {
@@ -139,10 +160,11 @@ QVariantList ClipPluginAutomationModel::otherLines() const
             || (curve.effectInstanceId == f.instanceId && curve.parameterId == f.parameterId)) { continue; }
         if (curve.envelope.GetNumberOfPoints() == 0 && curve.bezier.segments.empty()) { continue; }   // removed line
         const auto bezier = curve.Bezier();
+        const double normal = curve.envelope.GetDefaultValue();
         QVariantList segments;
         for (const auto& s : bezier.segments) {
-            segments.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", s.startPoint.value},
-                {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature},
+            segments.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", toView(s.startPoint.value, normal)},
+                {"endTime", s.endPoint.timeOffset}, {"endValue", toView(s.endPoint.value, normal)}, {"curvature", s.curvature},
                 {"eased", s.eased}});
         }
         out.push_back(QVariantMap{{"segments", segments},
@@ -166,8 +188,8 @@ QVariantList ClipPluginAutomationModel::segments() const
         {clip->GetSequenceEndTime() - clip->GetSequenceStartTime(), f.defaultValue}, 0, true}); }
     QVariantList out;
     for (const auto& s : curve.segments) {
-        out.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", s.startPoint.value},
-            {"endTime", s.endPoint.timeOffset}, {"endValue", s.endPoint.value}, {"curvature", s.curvature},
+        out.push_back(QVariantMap{{"startTime", s.startPoint.timeOffset}, {"startValue", toView(s.startPoint.value, f.defaultValue)},
+            {"endTime", s.endPoint.timeOffset}, {"endValue", toView(s.endPoint.value, f.defaultValue)}, {"curvature", s.curvature},
                 {"eased", s.eased}});
     }
     return out;
@@ -179,10 +201,11 @@ bool ClipPluginAutomationModel::commit(const QVariantList& segments)
     auto* track = FindTrack(project, m_key);
     if (!clip || !track || !visible()) { return false; }
     clipautomation::Curve shape;
+    const double normal = spec().defaultValue;
     for (const auto& entry : segments) {
         const auto s = entry.toMap();
-        shape.segments.push_back({{s.value("startTime", -1).toDouble(), s.value("startValue", -1).toDouble()},
-            {s.value("endTime", -1).toDouble(), s.value("endValue", -1).toDouble()}, s.value("curvature", 2).toFloat(),
+        shape.segments.push_back({{s.value("startTime", -1).toDouble(), fromView(s.value("startValue", -1).toDouble(), normal)},
+            {s.value("endTime", -1).toDouble(), fromView(s.value("endValue", -1).toDouble(), normal)}, s.value("curvature", 2).toFloat(),
             s.value("eased", false).toBool()});
     }
     if (!shape.Valid() || shape.segments.empty()) { return false; }

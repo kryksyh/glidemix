@@ -10,6 +10,7 @@
 #include <limits>
 
 #include <QFileInfo>
+#include <QSettings>
 #include <QTimer>
 #include <QUrl>
 
@@ -95,18 +96,20 @@ int MixHouseProjectListModel::songCount() const
 QStringList MixHouseProjectListModel::transitionNames() const
 {
     QStringList names;
-    // MixMeister's presets first (Beatmix 8 bars is the default), then the
-    // transitions from Preferences > Transitions.
-    for (const MixHouseTransitionPreset& preset : IMixHouseTransitions::presets()) {
-        if (!names.contains(QString::fromStdString(preset.name))) {
-            names << QString::fromStdString(preset.name);
-        }
-    }
+    // GlideMix: yours first (Naveen G), then MixMeister's presets and the
+    // built-ins, without the ones hidden with the pill menu's "Show in menus".
+    const QStringList hidden = QSettings().value(QStringLiteral("GlideMix/hiddenTransitions")).toStringList();
     if (transitionConfiguration()) {
         for (const MixHouseTransitionSpec& spec : transitionConfiguration()->specs()) {
-            if (!names.contains(QString::fromStdString(spec.name))) {
+            if (!spec.builtIn && !names.contains(QString::fromStdString(spec.name))) {
                 names << QString::fromStdString(spec.name);
             }
+        }
+    }
+    for (const MixHouseTransitionPreset& preset : IMixHouseTransitions::presets()) {
+        const QString name = QString::fromStdString(preset.name);
+        if (!names.contains(name) && !hidden.contains(name)) {
+            names << name;
         }
     }
     return names;
@@ -601,7 +604,8 @@ void MixHouseProjectListModel::moveRow(int from, int to)
     }
 }
 
-void MixHouseProjectListModel::applyOrder(const std::vector<Song>& before, std::vector<Song> order, const std::string& name)
+void MixHouseProjectListModel::applyOrder(const std::vector<Song>& before, std::vector<Song> order, const std::string& name,
+                                          bool onlyLastMoves)
 {
     const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
     if (!project || !transitions() || !trackeditInteraction() || order.empty()) {
@@ -656,6 +660,15 @@ void MixHouseProjectListModel::applyOrder(const std::vector<Song>& before, std::
         const double prevOutro = order[i - 1].outro + shift[i - 1];
         shift[i] = prevOutro - order[i].intro;
     }
+    // GlideMix: a song added at the end moves alone, onto the last OUT. The
+    // songs already in the mix stay exactly where they are (a loop or a song
+    // placed by hand off its anchor was moved before).
+    if (onlyLastMoves && order.size() >= 2) {
+        for (size_t i = 0; i + 1 < order.size(); ++i) {
+            shift[i] = 0.0;
+        }
+        shift.back() = order[order.size() - 2].outro - order.back().intro;
+    }
     // Nothing may start before 0:00 (the clip would be cut short there and
     // the chain broken): the whole mix moves later instead.
     double earliest = 0.0;
@@ -690,9 +703,10 @@ void MixHouseProjectListModel::applyOrder(const std::vector<Song>& before, std::
     for (size_t i = 0; i + 1 < order.size(); ++i) {
         IMixHouseTransitions::Zone zone;
         const bool hasZone = zoneBetween(order[i], order[i + 1], zone);
-        // A pair that stayed together keeps its transition -- unless it has
-        // none: in MixMeister every pair has one.
-        if (oldPairs.count({ order[i].inClip, order[i + 1].inClip }) && (!hasZone || zone.crossfaded || zone.disabled)) {
+        // A pair that stayed together keeps its transition, whatever it is --
+        // hand-drawn curves included (Marc Mont, Naveen G: adding a song reset
+        // every transition of the mix to the default). Only new pairs get one.
+        if (oldPairs.count({ order[i].inClip, order[i + 1].inClip })) {
             continue;
         }
         if (!hasZone) {
@@ -924,6 +938,6 @@ void MixHouseProjectListModel::keepChained(std::vector<Song>& songs)
         std::vector<Song> order = kept;
         order.push_back(added.front());
         LOGI() << "GlideMix Project tab: a song added after the end of the mix joins it";
-        applyOrder(kept, order, "");
+        applyOrder(kept, order, "", true);
     }
 }

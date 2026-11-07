@@ -3,6 +3,7 @@
  */
 #include "mixhousetransitionzonesmodel.h"
 
+#include <QSettings>
 #include <QTimer>
 
 using namespace au::mixhouse;
@@ -141,24 +142,48 @@ QVariantList MixHouseTransitionZonesModel::presetMenu(int row) const
         return menu;
     }
 
-    //! Mixtape's built-ins, then yours, in the order the Transitions page lists
-    //! them. What you build there is what you can put on a zone here.
-    bool separated = false;
-    bool yoursStarted = false;
-    for (const MixHouseTransitionSpec& spec : transitionConfiguration()->specs()) {
-        if (!separated) {
-            menu << QVariantMap {};
-            separated = true;
+    //! GlideMix: yours first, then the built-ins you haven't hidden; "Show in
+    //! menus" at the end hides or brings back a built-in (Naveen G).
+    const QStringList hidden = QSettings().value(QStringLiteral("GlideMix/hiddenTransitions")).toStringList();
+    QVariantList shown;
+    for (int pass = 0; pass < 2; ++pass) {
+        bool started = false;
+        for (const MixHouseTransitionSpec& spec : transitionConfiguration()->specs()) {
+            const QString name = QString::fromStdString(spec.name);
+            if (spec.builtIn != (pass == 1)) {
+                continue;
+            }
+            if (spec.builtIn) {
+                shown << QVariantMap { { "id", QStringLiteral("toggle-shown:") + name }, { "title", name }, { "enabled", true },
+                                       { "checkable", true }, { "checked", !hidden.contains(name) } };
+                if (hidden.contains(name) && !(crossfaded && current == spec.name)) {
+                    continue;
+                }
+            }
+            if (!started) {
+                menu << QVariantMap {};
+                started = true;
+            }
+            menu << QVariantMap { { "id", QStringLiteral("transition:") + name }, { "title", name }, { "enabled", true },
+                                  { "checkable", true }, { "checked", crossfaded && current == spec.name } };
         }
-        if (!spec.builtIn && !yoursStarted) {
-            menu << QVariantMap {};
-            yoursStarted = true;
-        }
-        const QString name = QString::fromStdString(spec.name);
-        menu << QVariantMap { { "id", QStringLiteral("transition:") + name }, { "title", name }, { "enabled", true },
-                              { "checkable", true }, { "checked", crossfaded && current == spec.name } };
+    }
+    if (!shown.isEmpty()) {
+        menu << QVariantMap {};
+        menu << QVariantMap { { "id", QStringLiteral("show-in-menus") }, { "title", tr("Show in menus") }, { "enabled", true },
+                              { "subitems", shown } };
     }
     return menu;
+}
+
+void MixHouseTransitionZonesModel::toggleTransitionShown(const QString& name)
+{
+    QSettings settings;
+    QStringList hidden = settings.value(QStringLiteral("GlideMix/hiddenTransitions")).toStringList();
+    if (hidden.removeAll(name) == 0) {
+        hidden << name;
+    }
+    settings.setValue(QStringLiteral("GlideMix/hiddenTransitions"), hidden);
 }
 
 void MixHouseTransitionZonesModel::removeCrossfade(int row)

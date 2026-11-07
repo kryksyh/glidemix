@@ -271,4 +271,11 @@ double MixHousePreviewPlayer::position()
     }
     return std::clamp(d.engine->GetCurrentTime() / d.duration, 0.0, 1.0);
 }
+void MixHousePreviewPlayer::setRate(double rate)
+{
+    // The Media Engine keeps the pitch while it changes the speed.
+    if (m_impl->engine) {
+        m_impl->engine->SetPlaybackRate(std::clamp(rate, 0.5, 2.0));
+    }
+}
 }

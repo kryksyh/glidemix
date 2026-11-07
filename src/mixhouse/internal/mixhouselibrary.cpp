@@ -230,6 +230,17 @@ static constexpr int kSampleRateFillDelayMs = 5000;
 MixHouseLibrary::~MixHouseLibrary()
 {
     *m_alive = false;
+    // GlideMix: a normal quit while songs are being analysed is not a crash --
+    // they must not become crash suspects.
+    if (!m_analysisInFlight.isEmpty() || !m_analyzeQueue.isEmpty()) {
+        for (const int id : std::as_const(m_analysisInFlight)) {
+            if (!m_analyzeStopRequested) {
+                m_analyzeQueue.prepend(id);   // continued at the next start
+            }
+        }
+        m_analysisInFlight.clear();
+        saveAnalysisGuard();
+    }
     // A running QThread must be stopped before its destructor runs (Qt
     // itself asserts/aborts otherwise) -- a real scenario if the app quits
     // while a background scan is still going. Ask the worker to wrap up
@@ -513,6 +524,13 @@ void MixHouseLibrary::init()
     m_libraryChanged.onNotify(this, [this]() { m_detectedPhrases.clear(); });
     m_path = defaultDatabasePath();
     LOGI() << "GlideMix library will open on first use: " << m_path;
+
+    // GlideMix: a batch cut short by a crash or a quit continues by itself.
+    QTimer::singleShot(10000, [this, alive = m_alive]() {
+        if (*alive && QFile::exists(m_path + QStringLiteral(".analysis-guard"))) {
+            resumeAnalysisAfterRestart();
+        }
+    });
 
     // Applies the persisted "fuzzy BPM search range" preference at
     // startup -- MixHouseLibraryPreferencesModel applies the same setter
@@ -2018,9 +2036,27 @@ int mixhouseAnalyzerThreadCount(int mode)
 
 void MixHouseLibrary::startBackgroundAnalysis(const QList<int>& trackIds)
 {
-    if (m_analyzing || trackIds.isEmpty()) {
-        return;   // already running -- same no-op-on-double-start rule as startBackgroundScan()
+    if (trackIds.isEmpty()) {
+        return;
     }
+    if (m_analyzing) {
+        // GlideMix (Naveen G): songs asked for while a batch runs join it --
+        // they were dropped before and stayed unanalysed until the next batch.
+        // The workers still busy pick them up as they finish their song.
+        int added = 0;
+        for (const int id : trackIds) {
+            if (!m_analyzeQueue.contains(id) && !m_analysisInFlight.contains(id)) {
+                m_analyzeQueue.append(id);
+                ++added;
+            }
+        }
+        if (added > 0 && !m_analyzeStopRequested) {
+            m_analyzeTotal += added;
+            m_analysisProgress.send(m_analyzeSucceeded + m_analyzeFailed, m_analyzeTotal);
+        }
+        return;
+    }
+    loadAnalysisGuard();
     if (!ensureWritable()) {
         return;   // matches startBackgroundScan's own silent-fail rule when the library can't be opened for writing at all
     }
@@ -2103,6 +2139,16 @@ void MixHouseLibrary::tryDispatchNextTrack(AnalyzerWorkerHandle& handle)
 {
     while (!m_analyzeStopRequested && !m_analyzeQueue.isEmpty()) {
         const int trackId = m_analyzeQueue.takeFirst();
+        if (m_analysisSuspects.value(trackId) >= 2) {
+            // Analysing this song stopped GlideMix twice: leave it, so one
+            // damaged file can't take the app down on every batch.
+            LOGW() << "startBackgroundAnalysis: skipping track " << trackId
+                   << " -- GlideMix stopped twice while analysing it";
+            ++m_analyzeFailed;
+            m_trackAnalysisProgress.send(trackId, -2);
+            m_analysisProgress.send(m_analyzeSucceeded + m_analyzeFailed, m_analyzeTotal);
+            continue;
+        }
         // Looked up HERE, on the main thread, using m_writeDb -- not by the
         // worker. See mixhouseanalysiswriter.h's own comment for why: a
         // worker touching SQL at all (even a read) reintroduces the exact
@@ -2149,6 +2195,8 @@ void MixHouseLibrary::tryDispatchNextTrack(AnalyzerWorkerHandle& handle)
             }
         }
         handle.busy = true;
+        m_analysisInFlight.insert(trackId);
+        saveAnalysisGuard();
         QMetaObject::invokeMethod(handle.worker, "analyzeTrack", Qt::QueuedConnection,
                                    Q_ARG(int, trackId), Q_ARG(QString, lookup.filePath), Q_ARG(bool, lookup.bpmLocked),
                                    Q_ARG(double, knownBpm), Q_ARG(double, knownFirstBeat), Q_ARG(double, knownDownbeat),
@@ -2162,6 +2210,78 @@ void MixHouseLibrary::tryDispatchNextTrack(AnalyzerWorkerHandle& handle)
     // worker's own event loop actually returns.
     handle.busy = false;
     handle.thread->quit();
+}
+
+void MixHouseLibrary::loadAnalysisGuard()
+{
+    if (m_analysisGuardLoaded) {
+        return;
+    }
+    m_analysisGuardLoaded = true;
+    QFile file(m_path + QStringLiteral(".analysis-guard"));
+    if (!file.open(QIODevice::ReadOnly)) {
+        return;
+    }
+    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    const QJsonObject suspects = root.value(QStringLiteral("suspects")).toObject();
+    for (auto it = suspects.begin(); it != suspects.end(); ++it) {
+        m_analysisSuspects.insert(it.key().toInt(), it.value().toInt());
+    }
+    // Songs still "on a thread" in the file: GlideMix stopped while analysing
+    // them. Each counts one more crash.
+    for (const QJsonValue& v : root.value(QStringLiteral("queue")).toArray()) {
+        m_analysisResumeIds.append(v.toInt());
+    }
+    for (const QJsonValue& v : root.value(QStringLiteral("inFlight")).toArray()) {
+        const int id = v.toInt();
+        m_analysisResumeIds.prepend(id);
+        const int count = m_analysisSuspects.value(id) + 1;
+        m_analysisSuspects.insert(id, count);
+        LOGW() << "GlideMix analysis: track " << id << " was being analysed when GlideMix stopped (" << count << "x)";
+    }
+    saveAnalysisGuard();
+}
+
+void MixHouseLibrary::saveAnalysisGuard() const
+{
+    QJsonArray inFlight;
+    for (const int id : m_analysisInFlight) {
+        inFlight.append(id);
+    }
+    QJsonObject suspects;
+    for (auto it = m_analysisSuspects.begin(); it != m_analysisSuspects.end(); ++it) {
+        suspects.insert(QString::number(it.key()), it.value());
+    }
+    QFile file(m_path + QStringLiteral(".analysis-guard"));
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        // Written straight through (no buffering) so it is on disk if the next
+        // song takes GlideMix down.
+        QJsonArray queue;
+        for (const int id : m_analyzeQueue) {
+            queue.append(id);
+        }
+        file.write(QJsonDocument(QJsonObject { { QStringLiteral("inFlight"), inFlight },
+                                               { QStringLiteral("queue"), queue },
+                                               { QStringLiteral("suspects"), suspects } }).toJson(QJsonDocument::Compact));
+        file.flush();
+    }
+}
+
+void MixHouseLibrary::resumeAnalysisAfterRestart()
+{
+    loadAnalysisGuard();
+    if (m_analysisResumeIds.isEmpty()) {
+        return;   // (a batch already running takes these in: startBackgroundAnalysis queues them)
+    }
+    QList<int> ids;
+    for (const int id : std::as_const(m_analysisResumeIds)) {
+        if (!ids.contains(id)) {
+            ids.append(id);
+        }
+    }
+    m_analysisResumeIds.clear();
+    LOGI() << "GlideMix analysis: continuing the last batch, " << ids.size() << " songs left";
+    startBackgroundAnalysis(ids);
 }
 
 void MixHouseLibrary::finishBatchIfAllIdle()
@@ -2209,6 +2329,10 @@ void MixHouseLibrary::onAnalyzerWorkerFinished(QThread* thread, int trackId, boo
     // (none yet) must not outlive it -- the library's waveform asks for the
     // song's cue points the moment this arrives.
     m_detectedPhrases.remove(trackId);
+    // Done (either way) and written: no longer a crash suspect.
+    m_analysisInFlight.remove(trackId);
+    m_analysisSuspects.remove(trackId);
+    saveAnalysisGuard();
     m_trackAnalysisProgress.send(trackId, success ? -1 : -2);
     m_analysisProgress.send(m_analyzeSucceeded + m_analyzeFailed, m_analyzeTotal);
 
@@ -2228,6 +2352,7 @@ void MixHouseLibrary::stopBackgroundAnalysis()
     }
     m_analyzeStopRequested = true;
     m_analyzeQueue.clear();
+    saveAnalysisGuard();   // stopped on purpose: nothing to continue next time
     // Every worker currently busy will hit tryDispatchNextTrack's own
     // "stop requested" branch the moment its CURRENT track's
     // analyzeTrackFile() call returns -- there is no earlier mid-decode

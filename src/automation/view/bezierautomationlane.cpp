@@ -59,7 +59,11 @@ void BezierAutomationLane::setSegments(const QVariantList& data)
     }
     if (!curve.Valid()) { curve = {}; }
     m_hoverNode = -1;
-    m_selectedNode = -1;
+    // GlideMix: the same points coming back (the edit just committed): a
+    // selected point stays selected, so a new point stays visible.
+    if (curve.segments.size() != m_curve.segments.size()) {
+        m_selectedNode = -1;
+    }
     m_hoverPoint = false;
     m_curve = std::move(curve);
     emit segmentsChanged();
@@ -76,27 +80,27 @@ void BezierAutomationLane::setViewEnd(double v)
     if (!std::isfinite(v) || v == m_end) { return; }
     m_end = v; emit viewChanged(); update();
 }
+namespace { constexpr double kTopInset = 10.0; }
+
 QPointF BezierAutomationLane::map(clipautomation::Point p) const
 {
     return {(p.timeOffset - m_start) * width() / (m_end - m_start),
-        10.0 + (1.0 - p.value) * drawableHeight()};
+        kTopInset + (1.0 - p.value) * drawableHeight()};
 }
 QPointF BezierAutomationLane::nodePosition(int node) const
 {
     const int last = static_cast<int>(m_curve.segments.size());
     const auto point = node == last ? m_curve.segments.back().endPoint : m_curve.segments[node].startPoint;
     QPointF position = map(point);
-    // GlideMix: the first and last points sit on the clip's edges,
-    // under the trim handles (12 px into a selected clip) and half outside
-    // the lane, so they could hardly be grabbed. Where the edge is on screen
-    // their dot is drawn and hit a little inside the clip; they still set the
-    // value at the very edge.
-    constexpr double edgeInset = 16.0;
-    if (width() > 4 * edgeInset) {
-        if (node == 0 && std::abs(position.x()) < 1.0) {
-            position.setX(edgeInset);
-        } else if (node == last && std::abs(position.x() - width()) < 1.0) {
-            position.setX(width() - edgeInset);
+    // GlideMix: the first and last points sit on the clip's edges, half
+    // outside the lane. Their dot is drawn just inside the edge, on the line,
+    // so it is whole; hitNode() also grabs them from the very edge.
+    constexpr double edgeDot = 6.0;
+    if (width() > 4 * edgeDot) {
+        if (node == 0 && position.x() < edgeDot) {
+            position.setX(edgeDot);
+        } else if (node == last && position.x() > width() - edgeDot) {
+            position.setX(width() - edgeDot);
         }
     }
     return position;
@@ -111,12 +115,14 @@ double BezierAutomationLane::drawableHeight() const
 {
     // A ten-pixel inset makes the end values readable and leaves room for
     // the node radius. On a very short clip, keep a drawable range.
-    return std::max(1.0, height() - 20.0);
+    // GlideMix: the bottom inset keeps 0 above the phrase ribbon, where it can be grabbed.
+    const double bottom = height() > 4 * (kTopInset + m_bottomInset) ? m_bottomInset : kTopInset;
+    return std::max(1.0, height() - kTopInset - bottom);
 }
 
 double BezierAutomationLane::valueAt(double y) const
 {
-    return std::clamp(1.0 - (y - 10.0) / drawableHeight(), 0.0, 1.0);
+    return std::clamp(1.0 - (y - kTopInset) / drawableHeight(), 0.0, 1.0);
 }
 
 void BezierAutomationLane::paint(QPainter* painter)
@@ -155,19 +161,22 @@ void BezierAutomationLane::paint(QPainter* painter)
         painter->setPen(Qt::NoPen);
         if (hovered) {
             painter->setBrush(m_color);
-            painter->drawEllipse(centre, 6.0, 6.0);          // 1 + 2 + 3
+            painter->drawEllipse(centre, 7.5, 7.5);          // 1 + 2 + 3
             painter->setBrush(QColor(0, 0, 0));
             painter->drawEllipse(centre, 3.0, 3.0);          // 1 + 2
             painter->setBrush(QColor(255, 255, 255));
             painter->drawEllipse(centre, 1.0, 1.0);
         } else {
             painter->setBrush(m_color);
-            painter->drawEllipse(centre, 5.0, 5.0);
+            painter->drawEllipse(centre, 6.0, 6.0);   // GlideMix: easier to see and hit
         }
     };
     const int nodeCount = m_curve.segments.empty() ? 0 : static_cast<int>(m_curve.segments.size()) + 1;
     for (int i = 0; i < nodeCount; ++i) {
-        paintNode(nodePosition(i), i == m_hoverNode || (m_dragging && i == m_node) || i == m_selectedNode);
+        const bool active = i == m_hoverNode || (m_dragging && i == m_node) || i == m_selectedNode;
+        if (active || nodeShown(i)) {
+            paintNode(nodePosition(i), active);
+        }
     }
     if (m_hoverPoint && !m_dragging) {
         painter->setPen(Qt::NoPen);
@@ -183,9 +192,32 @@ int BezierAutomationLane::hitSegment(QPointF p) const
     for (size_t i = 0; i < m_curve.segments.size(); ++i) {
         const auto& s = m_curve.segments[i];
         if (time < s.startPoint.timeOffset || time > s.endPoint.timeOffset) { continue; }
-        if (std::abs(map({time, s.Evaluate(time)}).y() - p.y()) <= 8) { return static_cast<int>(i); }
+        if (std::abs(map({time, s.Evaluate(time)}).y() - p.y()) <= 10) { return static_cast<int>(i); }
     }
     return -1;
+}
+
+double BezierAutomationLane::nodeValue(int node) const
+{
+    const int last = static_cast<int>(m_curve.segments.size());
+    return node == last ? m_curve.segments.back().endPoint.value : m_curve.segments[node].startPoint.value;
+}
+
+bool BezierAutomationLane::nodeShown(int node) const
+{
+    // GlideMix (Chris): a point in the middle of a flat stretch, or a clip
+    // edge where the line is already flat, adds a dot that tells nothing --
+    // transitions leave two or three of them side by side. Only the corners
+    // are drawn and grabbed; a click on the flat line adds a point as usual.
+    // While editing (a drag) every point still behaves as before.
+    const int last = static_cast<int>(m_curve.segments.size());
+    auto same = [](double a, double b) { return std::abs(a - b) < 1e-4; };
+    const double v = nodeValue(node);
+    const bool flatBefore = node > 0 && same(nodeValue(node - 1), v);
+    const bool flatAfter = node < last && same(nodeValue(node + 1), v);
+    if (node == 0) { return !flatAfter; }
+    if (node == last) { return !flatBefore; }
+    return !(flatBefore && flatAfter);
 }
 
 int BezierAutomationLane::hitNode(QPointF p) const
@@ -193,11 +225,28 @@ int BezierAutomationLane::hitNode(QPointF p) const
     if (m_curve.segments.empty()) { return -1; }
     // The painted radius stays small and crisp, while the interaction target
     // is deliberately more forgiving on Retina displays.
-    constexpr double hitRadius = 11.0;
-    for (size_t i = 0; i <= m_curve.segments.size(); ++i) {
-        if (QLineF(nodePosition(static_cast<int>(i)), p).length() <= hitRadius) { return static_cast<int>(i); }
+    // GlideMix: the nearest point wins, so two close points never swap, and
+    // the clip's first and last points also answer from the very edge.
+    constexpr double hitRadius = 14.0;
+    const int last = static_cast<int>(m_curve.segments.size());
+    int best = -1;
+    double bestDistance = hitRadius;
+    for (int i = 0; i <= last; ++i) {
+        if (!nodeShown(i) && !(m_dragging && i == m_node) && i != m_selectedNode) {
+            continue;
+        }
+        const QPointF dot = nodePosition(i);
+        double distance = QLineF(dot, p).length();
+        if (i == 0 || i == last) {
+            const double edge = i == 0 ? 0.0 : width();
+            const double lo = std::min(edge, dot.x()), hi = std::max(edge, dot.x());
+            if (p.x() >= lo - 4.0 && p.x() <= hi + 4.0 && std::abs(p.y() - dot.y()) <= hitRadius) {
+                distance = std::min(distance, std::abs(p.y() - dot.y()));
+            }
+        }
+        if (distance <= bestDistance) { best = i; bestDistance = distance; }
     }
-    return -1;
+    return best;
 }
 
 void BezierAutomationLane::hoverMoveEvent(QHoverEvent* e)
@@ -241,7 +290,7 @@ void BezierAutomationLane::mousePressEvent(QMouseEvent* e)
         // Right-click on a point: its menu. Anywhere else the clip's menu.
         // The first point has one too (its line's shape), without Delete.
         const int node = hitNode(e->position());
-        if (node < 0 || node >= static_cast<int>(m_curve.segments.size())) {
+        if (node < 0) {
             e->ignore();
             return;
         }
@@ -280,7 +329,23 @@ void BezierAutomationLane::mouseMoveEvent(QMouseEvent* e)
 {
     if (!m_dragging) { e->ignore(); return; }
     m_curve = m_before; // gesture is relative to mouse-down, never cumulative
-    if (m_inserting) { e->accept(); return; }
+    if (m_inserting) {
+        // GlideMix: press on the line and drag = add a point there and drag it
+        // (one move, like the transition lines). A plain click still adds one.
+        if (QLineF(m_press, e->position()).length() < 4.0) { e->accept(); return; }
+        const auto index = hitSegment(m_press);
+        const double t = timeAt(m_press.x());
+        if (index < 0) { e->accept(); return; }
+        const auto segment = m_before.segments[index];
+        if (!(t > segment.startPoint.timeOffset && t < segment.endPoint.timeOffset)) { e->accept(); return; }
+        m_before.segments[index] = segment.Slice(segment.startPoint.timeOffset, t);
+        m_before.segments.insert(m_before.segments.begin() + index + 1, segment.Slice(t, segment.endPoint.timeOffset));
+        m_curve = m_before;
+        m_inserting = false;
+        m_node = index + 1;
+        m_segment = index + 1;
+        m_selectedNode = m_node;
+    }
     const double delta = (m_press.y() - e->position().y()) / drawableHeight();
     auto& s = m_curve.segments[m_segment];
     if (m_bending) {
@@ -304,6 +369,12 @@ void BezierAutomationLane::mouseMoveEvent(QMouseEvent* e)
         const clipautomation::Point point{t, valueAt(e->position().y())};
         if (m_node) { m_curve.segments[m_node - 1].endPoint = point; }
         if (m_node < n) { m_curve.segments[m_node].startPoint = point; }
+        // GlideMix: a flat line from this point to the clip's edge stays flat,
+        // so a point added by hand doesn't spring back to 100% at the end.
+        auto same = [](double a, double b) { return std::abs(a - b) < 1e-4; };
+        if (m_node == n - 1 && m_node > 0 && same(m_before.segments[m_node].startPoint.value, m_before.segments[m_node].endPoint.value)) {
+            m_curve.segments[m_node].endPoint.value = point.value;
+        }
         setActivePoint(nodePosition(m_node), point.value);
     } else {
         // Move the segment's endpoints together, keeping adjacent edges joined.
@@ -335,6 +406,7 @@ void BezierAutomationLane::mouseReleaseEvent(QMouseEvent* e)
                 m_curve.segments[index] = segment.Slice(segment.startPoint.timeOffset, t);
                 m_curve.segments.insert(m_curve.segments.begin() + index + 1,
                     segment.Slice(t, segment.endPoint.timeOffset));
+                m_selectedNode = index + 1;   // GlideMix: the new point shows until you click elsewhere
                 emit segmentsChanged(); update();
             }
         }

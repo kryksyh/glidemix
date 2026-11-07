@@ -95,7 +95,10 @@ void MixHouseTrackListModel::ensurePreviewPlayer()
     m_previewSeekTimer->setInterval(90);
     connect(m_previewSeekTimer, &QTimer::timeout, this, [this]() {
         if (m_pendingPreviewSeek >= 0.0) {
-            m_previewPlayer->playFrom(m_pendingPreviewSeek);
+            double rate = 1.0;
+            const double at = syncedPreviewFraction(m_previewTrack, m_pendingPreviewSeek, rate);
+            m_previewPlayer->setRate(rate);
+            m_previewPlayer->playFrom(at);
             m_pendingPreviewSeek = -1.0;
             updatePreviewPosition();
         }
@@ -157,9 +160,13 @@ void MixHouseTrackListModel::previewTrackAt(int row, double fraction)
             return;
         }
         m_previewTrackId = track.id;
+        m_previewTrack = track;
     }
     m_pendingPreviewSeek = -1.0;
     m_previewSeekTimer->stop();
+    double rate = 1.0;
+    fraction = syncedPreviewFraction(track, fraction, rate);
+    m_previewPlayer->setRate(rate);
     m_previewPlayer->playFrom(fraction);
     m_previewPlaying = m_previewPlayer->isPlaying();
     m_previewPosition = m_previewPlayer->position();
@@ -168,6 +175,41 @@ void MixHouseTrackListModel::previewTrackAt(int row, double fraction)
     if (m_previewPlaying) {
         m_previewPollTimer->start();
     }
+}
+
+double MixHouseTrackListModel::syncedPreviewFraction(const MixHouseTrack& track, double fraction, double& rate) const
+{
+    // GlideMix (Naveen G, MixMeister): while the mix plays, a click on a
+    // library waveform starts the song on the same beat of the bar as the
+    // timeline, at the timeline's tempo, so you hear at once if the two fit.
+    rate = 1.0;
+    const auto state = globalContext() ? globalContext()->playbackState() : nullptr;
+    if (!state || state->playbackStatus() != playback::PlaybackStatus::Running || !tempoMap()
+        || !track.beats.valid || track.beats.beatLengthSec <= 0.0 || track.durationSec <= 0.0) {
+        return fraction;
+    }
+    const double now = state->playbackPosition().to_double();
+    const double timelineBpm = tempoMap()->bpmAt(now);
+    const double ratio = timelineBpm / (60.0 / track.beats.beatLengthSec);
+    if (!(ratio >= 0.8 && ratio <= 1.25)) {
+        return fraction;   // too far apart to play together
+    }
+    const double beat = tempoMap()->secToBeat(now);
+    const double inBar = beat - 4.0 * std::floor(beat / 4.0);
+    const double beatLength = track.beats.beatLengthSec;
+    const double downbeat = track.downbeatSec >= 0.0 ? track.downbeatSec : track.beats.firstBeatSec;
+    const double clicked = std::clamp(fraction, 0.0, 1.0) * track.durationSec;
+    double start = downbeat + (4.0 * std::round((clicked - downbeat) / (4.0 * beatLength)) + inBar) * beatLength;
+    while (start < 0.0) {
+        start += 4.0 * beatLength;
+    }
+    if (start >= track.durationSec) {
+        return fraction;
+    }
+    rate = ratio;
+    LOGI() << "GlideMix preview in time with the mix: " << timelineBpm << " BPM (x" << ratio << "), bar beat "
+           << inBar << ", from " << start << " s";
+    return start / track.durationSec;
 }
 
 void MixHouseTrackListModel::previewNextPhrase(int row)
@@ -1788,9 +1830,17 @@ static QStringList customQuickLinks()
     return QSettings().value(QStringLiteral("GlideMix/quickLinks")).toStringList();
 }
 
+// GlideMix: the usual folders can be removed from Quick Links too; + brings one back.
+static const QString kHiddenQuickLinks = QStringLiteral("GlideMix/hiddenQuickLinks");
+
 void MixHouseTrackListModel::addQuickLink(const QString& path)
 {
     const QString clean = QDir::cleanPath(path);
+    QStringList hidden = QSettings().value(kHiddenQuickLinks).toStringList();
+    if (hidden.removeAll(clean) > 0) {
+        QSettings().setValue(kHiddenQuickLinks, hidden);
+        emit loaded();
+    }
     QStringList links = customQuickLinks();
     if (clean.isEmpty() || links.contains(clean)) {
         return;
@@ -1802,11 +1852,17 @@ void MixHouseTrackListModel::addQuickLink(const QString& path)
 
 void MixHouseTrackListModel::removeQuickLink(const QString& path)
 {
+    const QString clean = QDir::cleanPath(path);
     QStringList links = customQuickLinks();
-    if (links.removeAll(QDir::cleanPath(path)) > 0) {
+    if (links.removeAll(clean) > 0) {
         QSettings().setValue(QStringLiteral("GlideMix/quickLinks"), links);
-        emit loaded();
     }
+    QStringList hidden = QSettings().value(kHiddenQuickLinks).toStringList();
+    if (!hidden.contains(clean)) {
+        hidden << clean;
+        QSettings().setValue(kHiddenQuickLinks, hidden);
+    }
+    emit loaded();
 }
 
 QList<int> MixHouseTrackListModel::resolveOrImportTrackIds(const QVariantList& rows)
@@ -2149,8 +2205,11 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
                 QStandardPaths::writableLocation(QStandardPaths::DesktopLocation),
                 QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
             };
+            const QStringList hidden = QSettings().value(kHiddenQuickLinks).toStringList();
             for (const QString& path : standard) {
-                appendFolderNode(out, path, QDir(path).dirName(), 2, false, expandedIds);
+                if (!hidden.contains(QDir::cleanPath(path))) {
+                    appendFolderNode(out, path, QDir(path).dirName(), 2, true, expandedIds);
+                }
             }
             for (const QString& path : QSettings().value(QStringLiteral("GlideMix/quickLinks")).toStringList()) {
                 if (!standard.contains(path)) {

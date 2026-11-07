@@ -183,7 +183,8 @@ private:
     //! transitions of the pairs that are new compared with `before` (and of
     //! any pair that has none), and puts the lanes in mix order. One undo
     //! step named `name`; "" folds it into the step that is on top already.
-    void applyOrder(const std::vector<Song>& before, std::vector<Song> order, const std::string& name);
+    void applyOrder(const std::vector<Song>& before, std::vector<Song> order, const std::string& name,
+                    bool onlyLastMoves = false);
     //! The lanes in mix order, top to bottom (MixMeister's staircase).
     void orderLanes(const std::vector<Song>& order);
     //! After an edit elsewhere: a deleted song leaves no gap, and a song put
