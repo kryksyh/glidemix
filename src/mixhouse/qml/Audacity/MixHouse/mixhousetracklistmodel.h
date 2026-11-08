@@ -875,8 +875,11 @@ private:
     static QStringList externalSources();
     int m_djAppsGeneration = 0;
     QStringList m_hiddenDjApps;   // Preferences > Library, to notice a change
-    QString m_djAppPlaces;        // added folders + mounted drives
+    QString m_djAppPlaces;        // added folders + local drives
     int m_djAppPlacesTick = 0;
+    bool m_djAppPlacesChecking = false;   // a worker is asking the drives
+    bool m_djAppPlacesKnown = false;
+    void checkDjAppPlaces();
     void applyOwnOverrides(MixHouseTrackList& tracks) const;
     //! GlideMix: the tracks a smart playlist picks, filtered by the search box.
     MixHouseTrackList smartPlaylistTracks(int id) const;

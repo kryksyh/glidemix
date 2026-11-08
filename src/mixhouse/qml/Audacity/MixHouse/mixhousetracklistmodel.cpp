@@ -323,18 +323,17 @@ void MixHouseTrackListModel::load()
             auto* poll = new QTimer(this);
             poll->setInterval(1000);
             m_hiddenDjApps = hiddenDjApps();
-            m_djAppPlaces = djAppPlacesSignature();
+            checkDjAppPlaces();
             connect(poll, &QTimer::timeout, this, [this]() {
-                // Preferences > Library switched an app on or off or added a
-                // folder, or a drive was plugged in or out: read them again.
+                // Preferences > Library switched an app on or off: read them again.
                 const QStringList hidden = hiddenDjApps();
-                const bool placesDue = ++m_djAppPlacesTick % 3 == 0;   // drives: every 3 s is plenty
-                const QString places = placesDue ? djAppPlacesSignature() : m_djAppPlaces;
-                if (hidden != m_hiddenDjApps || places != m_djAppPlaces) {
+                if (hidden != m_hiddenDjApps) {
                     m_hiddenDjApps = hidden;
-                    m_djAppPlaces = places;
                     reloadDjApps();
                     emit loaded();
+                }
+                if (++m_djAppPlacesTick % 3 == 0) {   // drives: every 3 s is plenty
+                    checkDjAppPlaces();
                 }
                 if (djAppsGeneration() != m_djAppsGeneration) {
                     m_djAppsGeneration = djAppsGeneration();
@@ -2424,6 +2423,9 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
             }
         }
         out << node("computer-devices", QObject::tr("Devices"), 1, "none", -1, 0, true);
+        // GlideMix: not on Windows -- it lists only /Volumes, and asking every
+        // drive letter there blocks the UI on a dead network drive.
+#ifndef Q_OS_WIN
         if (isOpen("computer-devices")) {
             for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
                 const QString root = volume.rootPath();
@@ -2433,6 +2435,7 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
                 appendFolderNode(out, root, volume.displayName(), 2, false, expandedIds);
             }
         }
+#endif
     }
 
     out << node("recordings", QObject::tr("Recordings"), 0, "recordings-view", -1, 0, false);
@@ -4895,4 +4898,36 @@ QString MixHouseTrackListModel::statusMessage() const
         return QStringLiteral("%1 tracks — %2").arg(library()->trackCount()).arg(library()->databasePath());
     }
     return library()->lastError();
+}
+
+// GlideMix: a folder was added in Preferences > Library, or a drive was
+// plugged in or out: read the DJ apps again. The drives are asked on a worker
+// thread -- on the UI thread one slow drive froze the whole window (1.1.29,
+// dead mapped network drives on Windows) -- and one check at a time.
+void MixHouseTrackListModel::checkDjAppPlaces()
+{
+    if (m_djAppPlacesChecking) {
+        return;
+    }
+    m_djAppPlacesChecking = true;
+    QPointer<MixHouseTrackListModel> self(this);
+    std::thread([self]() {
+        const QString places = djAppPlacesSignature();
+        QMetaObject::invokeMethod(qApp, [self, places]() {
+            if (!self) {
+                return;
+            }
+            self->m_djAppPlacesChecking = false;
+            if (!self->m_djAppPlacesKnown) {
+                self->m_djAppPlacesKnown = true;   // the first look: the apps are being read already
+                self->m_djAppPlaces = places;
+                return;
+            }
+            if (places != self->m_djAppPlaces) {
+                self->m_djAppPlaces = places;
+                reloadDjApps();
+                emit self->loaded();
+            }
+        }, Qt::QueuedConnection);
+    }).detach();
 }

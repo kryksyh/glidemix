@@ -35,9 +35,9 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.30**\n\n"
-                      + "- **Crash fixed (Mac):** hovering a track's volume fader in the track header could close GlideMix. The fader's value tip now shows again above the silver cap and follows it while you drag.\n"
-                      + "- Crash reports now show where a crash really happened, so the next one is quicker to fix.\n"
+                text: "**GlideMix v1.1.31**\n\n"
+                      + "- **Freeze fixed (Windows):** with a mapped network drive that was offline or not ready, GlideMix froze for up to 40 seconds about every 40 seconds. Drives are now looked at in the background, and only local ones (internal, USB, SD card).\n"
+                      + "- A DJ library on a network share is still read when you add its folder in Preferences > Library > Other DJ Apps.\n"
             }
         }
 

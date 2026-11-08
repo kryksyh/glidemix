@@ -38,10 +38,11 @@ void startLoadingDjApps();
 QStringList hiddenDjApps();
 //! Preferences > Library: more folders that hold an app's library (Engine
 //! Library, _Serato_, VirtualDJ's database.xml, Traktor's collection.nml).
-//! Every mounted drive's root is looked at anyway.
+//! Every local drive's root (internal, USB, SD card) is looked at anyway;
+//! network shares only when added here.
 QStringList djAppFolders();
 //! Changes when a folder is added or removed or a drive comes or goes, so
-//! the apps are read again.
+//! the apps are read again. Touches the drives: call it off the UI thread.
 QString djAppPlacesSignature();
 //! Reads the apps again (after that preference changed).
 void reloadDjApps();

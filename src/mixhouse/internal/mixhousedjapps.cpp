@@ -57,6 +57,16 @@
 #include <QXmlStreamReader>
 #include <QtEndian>
 
+#ifdef Q_OS_WIN
+// winsock2 first: windows.h alone pulls in the old winsock.h, and Link's
+// asio (same unity file) refuses to build after it.
+#include <winsock2.h>
+#include <windows.h>
+#elif defined(Q_OS_MAC)
+#include <sys/mount.h>
+#include <sys/param.h>
+#endif
+
 
 #include "log.h"
 #include "mixhouse/imixhousekeymatch.h"
@@ -234,11 +244,51 @@ QString driveRootOf(const QString& path)
     return root;
 }
 
+//! The roots of the local drives (internal, USB, SD card), listed without
+//! asking any drive anything. Network shares are left out: a mapped drive
+//! whose server is gone answers a volume query only after the network
+//! timeout, and 1.1.29 froze the UI 25-40 s every ~40 s on such a PC
+//! (Marc, 2026-11-08). A share is still read when added in Preferences.
+QStringList localDriveRoots()
+{
+    QStringList roots;
+#ifdef Q_OS_WIN
+    const DWORD mask = GetLogicalDrives();
+    for (int i = 0; i < 26; ++i) {
+        if (!(mask & (DWORD(1) << i))) {
+            continue;
+        }
+        const wchar_t root[] = { wchar_t(L'A' + i), L':', L'\\', 0 };
+        const UINT type = GetDriveTypeW(root);   // no I/O, mapped drives say DRIVE_REMOTE
+        if (type == DRIVE_FIXED || type == DRIVE_REMOVABLE) {
+            roots << QString(QChar(u'A' + i)) + QStringLiteral(":/");
+        }
+    }
+#elif defined(Q_OS_MAC)
+    struct statfs* mounts = nullptr;
+    const int count = getmntinfo(&mounts, MNT_NOWAIT);   // the kernel's table, no statfs per mount
+    for (int i = 0; i < count; ++i) {
+        if (mounts[i].f_flags & MNT_LOCAL) {
+            roots << QString::fromLocal8Bit(mounts[i].f_mntonname);
+        }
+    }
+#else
+    for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
+        static const QByteArrayList network = { "nfs", "nfs4", "cifs", "smb3", "smbfs", "sshfs", "fuse.sshfs", "davfs", "fuse.davfs2" };
+        if (!network.contains(volume.fileSystemType())) {
+            roots << volume.rootPath();
+        }
+    }
+#endif
+    return roots;
+}
+
 std::vector<Place> otherPlaces()
 {
     std::vector<Place> out;
     const QString homeRoot = QStorageInfo(QDir::homePath()).rootPath();
-    for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
+    for (const QString& localRoot : localDriveRoots()) {
+        const QStorageInfo volume(localRoot);
         const QString root = volume.rootPath();
         if (!volume.isValid() || !volume.isReady() || root == homeRoot) {
             continue;
@@ -1011,7 +1061,8 @@ QStringList djAppFolders()
 QString djAppPlacesSignature()
 {
     QStringList parts = djAppFolders();
-    for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
+    for (const QString& root : localDriveRoots()) {
+        const QStorageInfo volume(root);   // local only: an empty card reader answers at once
         if (volume.isValid() && volume.isReady()) {
             parts << volume.rootPath();
         }
