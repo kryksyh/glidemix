@@ -1222,6 +1222,9 @@ Rectangle {
                     lineColor: pluginAutomationModel.active ? pluginAutomationModel.color : "#8a8a8a"
                     dashed: !pluginAutomationModel.automated
                     stepped: pluginAutomationModel.stepped
+                    // The header's Low/Mid/High/Color lines glow like the pill's lanes.
+                    glow: pluginAutomationModel.bandLine
+                    glowBase: pluginAutomationModel.colorLine ? 0.5 : 0.0
                     onEditCommitted: function(data) { pluginAutomationModel.commit(data) }
 
                     // GlideMix: right-click on a point > Delete point.

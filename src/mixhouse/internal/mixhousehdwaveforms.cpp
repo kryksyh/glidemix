@@ -20,7 +20,7 @@ using namespace au::mixhouse;
 
 namespace {
 constexpr size_t kKeptInMemory = 400;   // ~100 KB each
-constexpr quint32 kMagic = 0x474D5732;  // "GMW2": with the loud levels
+constexpr quint32 kMagic = 0x474D5733;  // "GMW3": the Beatgrid editor's band split (older ones are redone)
 }
 
 MixHouseHdWaveforms::MixHouseHdWaveforms()

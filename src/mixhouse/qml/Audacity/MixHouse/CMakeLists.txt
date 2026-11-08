@@ -50,8 +50,7 @@ qt_add_qml_module(mixhouse_qml
         icons/ic_library_history_current.svg
         icons/ic_library_folder.svg
         icons/ic_library_prepare.svg
-        icons/ic_library_rekordbox.svg
-        icons/ic_library_lexicon.png
+        icons/ic_library_djapp.svg
 )
 
 # The Beatgrid editor's deck (au3-mixtape-engine) and the playback device

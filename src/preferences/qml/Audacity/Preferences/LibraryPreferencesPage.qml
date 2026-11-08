@@ -295,6 +295,16 @@ PreferencesPage {
             navigation.section: root.navigationSection
             navigation.order: section1.navigationOrderEnd + 1
 
+            // Bumped when an app is switched on or off, so the boxes re-read.
+            property int shownRevision: 0
+
+            Connections {
+                target: mixHouseLibraryModel
+                function onDjAppsShownChanged() {
+                    sectionOtherApps.shownRevision++
+                }
+            }
+
             CheckBox {
                 width: parent.width
                 text: qsTrc("preferences", "Use rekordbox's analysis when a track has it (phrases, beatgrids, waveforms)")
@@ -320,6 +330,120 @@ PreferencesPage {
 
                 onClicked: {
                     mixHouseLibraryModel.useLexiconLibrary = !checked
+                }
+            }
+
+            // GlideMix: hide the apps this user doesn't have or use; all shown
+            // after installing. A hidden app is not read at all.
+            Repeater {
+                model: [
+                    { source: "rekordbox", name: "Rekordbox XML" },
+                    { source: "engine", name: "Engine DJ" },
+                    { source: "traktor", name: "Traktor" },
+                    { source: "serato", name: "Serato DJ" },
+                    { source: "vdj", name: "VirtualDJ" },
+                    { source: "djay", name: "djay" }
+                ]
+
+                CheckBox {
+                    required property var modelData
+                    required property int index
+
+                    width: sectionOtherApps.width
+                    //: %1 is a DJ app, e.g. "Engine DJ"
+                    text: qsTrc("preferences", "Show %1 in the library").arg(modelData.name)
+                    checked: {
+                        sectionOtherApps.shownRevision
+                        return mixHouseLibraryModel.djAppShown(modelData.source)
+                    }
+
+                    navigation.name: "DjAppShown_" + modelData.source
+                    navigation.panel: sectionOtherApps.navigation
+                    navigation.row: 2 + index
+
+                    onClicked: {
+                        mixHouseLibraryModel.setDjAppShown(modelData.source, !checked)
+                    }
+                }
+            }
+
+            // GlideMix: libraries kept somewhere else. Every drive's root is
+            // looked at by itself (Engine Library, _Serato_, VirtualDJ);
+            // these are for a library folder moved anywhere else.
+            StyledTextLabel {
+                width: parent.width
+                horizontalAlignment: Text.AlignLeft
+                wrapMode: Text.WordWrap
+                text: qsTrc("preferences", "DJ app library folders (every drive is searched by itself; add a folder if an app keeps its library somewhere else):")
+            }
+
+            FilePickerModel {
+                id: djAppDirPicker
+                title: qsTrc("preferences", "Choose a folder with a DJ app's library")
+                dir: mixHouseLibraryModel.musicFolder()
+            }
+
+            StyledListView {
+                id: djAppDirList
+                width: parent.width
+                height: Math.max(24, Math.min(120, count * 24))
+                clip: true
+                visible: count > 0
+                ScrollBar.vertical: StyledScrollBar {}
+
+                model: mixHouseLibraryModel.djAppFolders
+
+                delegate: ListItemBlank {
+                    width: djAppDirList.width
+                    height: 24
+                    isSelected: ListView.isCurrentItem
+
+                    onClicked: djAppDirList.currentIndex = index
+
+                    StyledTextLabel {
+                        anchors.fill: parent
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        horizontalAlignment: Qt.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                        text: modelData
+                    }
+                }
+            }
+
+            Row {
+                spacing: 8
+
+                FlatButton {
+                    text: qsTrc("preferences", "Add folder…")
+
+                    navigation.name: "DjAppFolderAdd"
+                    navigation.panel: sectionOtherApps.navigation
+                    navigation.row: 10
+
+                    onClicked: {
+                        var chosen = djAppDirPicker.selectDirectory()
+                        if (chosen) {
+                            mixHouseLibraryModel.addDjAppFolder(chosen)
+                        }
+                    }
+                }
+
+                FlatButton {
+                    text: qsTrc("preferences", "Remove")
+                    enabled: djAppDirList.currentIndex >= 0
+                              && djAppDirList.currentIndex < mixHouseLibraryModel.djAppFolders.length
+
+                    navigation.name: "DjAppFolderRemove"
+                    navigation.panel: sectionOtherApps.navigation
+                    navigation.row: 11
+
+                    onClicked: {
+                        var dirs = mixHouseLibraryModel.djAppFolders
+                        mixHouseLibraryModel.removeDjAppFolder(dirs[djAppDirList.currentIndex])
+                        djAppDirList.currentIndex = -1
+                    }
                 }
             }
 

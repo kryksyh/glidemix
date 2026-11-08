@@ -32,6 +32,7 @@
  */
 #include "mixhousedjapps.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <map>
@@ -50,6 +51,7 @@
 #include <QSettings>
 #include <QSqlDatabase>
 #include <QSqlQuery>
+#include <QStorageInfo>
 #include <QUrl>
 #include <QUuid>
 #include <QXmlStreamReader>
@@ -152,6 +154,7 @@ std::map<QString, std::shared_ptr<const AppLibrary> > g_libraries;
 std::atomic<bool> g_loaded { false };
 std::atomic<int> g_generation { 0 };   // bumps when a library arrives later (Traktor after its click)
 bool g_started = false;
+std::atomic<int> g_loadTicket { 0 };   // a newer load (after a preference change) wins
 
 const QStringList kSources = { QStringLiteral("engine"), QStringLiteral("traktor"), QStringLiteral("serato"),
                                QStringLiteral("vdj"), QStringLiteral("djay") };
@@ -209,6 +212,116 @@ IMixHouseExternalLibrary::Node playlistNode(int id, const QString& name, int par
     return n;
 }
 
+//! Where else an app's library can be: every other drive (Engine DJ, Serato
+//! and VirtualDJ keep one at the root of each drive for the songs on it -- an
+//! SD card, a USB stick) and the folders added in Preferences > Library
+//! (a VirtualDJ or Traktor folder moved somewhere else). The home folder's
+//! own libraries are read by each app's loader.
+struct Place {
+    QString folder;      ///< a drive's root or an added folder
+    QString name;        ///< the sidebar folder its playlists go in
+    QString driveRoot;   ///< root of the drive it is on ("" = the macOS startup disk)
+};
+
+QString driveRootOf(const QString& path)
+{
+    QString root = QDir::cleanPath(QStorageInfo(path).rootPath());
+#ifndef Q_OS_WIN
+    if (root == u"/" || QDir(root).canonicalPath() == u"/") {
+        root.clear();
+    }
+#endif
+    return root;
+}
+
+std::vector<Place> otherPlaces()
+{
+    std::vector<Place> out;
+    const QString homeRoot = QStorageInfo(QDir::homePath()).rootPath();
+    for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
+        const QString root = volume.rootPath();
+        if (!volume.isValid() || !volume.isReady() || root == homeRoot) {
+            continue;
+        }
+#ifndef Q_OS_WIN
+        // System and snapshot mounts; the startup disk is also linked in /Volumes.
+        if (!root.startsWith(u"/Volumes/") || QDir(root).canonicalPath() == u"/") {
+            continue;
+        }
+#endif
+        const QString clean = QDir::cleanPath(root);
+        out.push_back({ clean, volume.displayName().isEmpty() ? clean : volume.displayName(), clean });
+    }
+    for (const QString& added : djAppFolders()) {
+        const QString folder = QDir::cleanPath(added);
+        const bool known = std::any_of(out.begin(), out.end(), [&](const Place& p) { return p.folder == folder; });
+        if (!known && QFileInfo(folder).isDir()) {
+            out.push_back({ folder, QDir(folder).dirName(), driveRootOf(folder) });
+        }
+    }
+    return out;
+}
+
+//! The first of `names` (relative to `folder`, "" = the folder itself) that exists.
+QString firstExisting(const QString& folder, const QStringList& names)
+{
+    for (const QString& name : names) {
+        const QString path = name.isEmpty() ? folder : folder + QLatin1Char('/') + name;
+        if (QFileInfo::exists(path)) {
+            return path;
+        }
+    }
+    return {};
+}
+
+//! Adds a drive's library to the app's: its songs (each song once), its
+//! playlists in a folder named after the drive, as the apps show them.
+void addDrive(AppData& into, AppData more, const QString& driveName)
+{
+    if (more.tracks.empty()) {
+        return;
+    }
+    std::unordered_map<std::string, int> indexByPath;
+    for (size_t i = 0; i < into.tracks.size(); ++i) {
+        indexByPath.emplace(keyOf(into.tracks[i].track.filePath), static_cast<int>(i));
+    }
+    std::vector<int> newIndex(more.tracks.size());
+    for (size_t i = 0; i < more.tracks.size(); ++i) {
+        const auto [it, added] = indexByPath.emplace(keyOf(more.tracks[i].track.filePath),
+                                                     static_cast<int>(into.tracks.size()));
+        newIndex[i] = it->second;
+        if (added) {
+            into.tracks.push_back(std::move(more.tracks[i]));
+        }
+    }
+    if (more.nodes.empty()) {
+        return;
+    }
+    int nextId = 0;
+    for (const auto& node : into.nodes) {
+        nextId = std::max(nextId, node.id + 1);
+    }
+    const int folder = nextId++;
+    into.nodes.push_back(playlistNode(folder, driveName, -1, true, 0));
+    QHash<int, int> newId;
+    for (const auto& node : more.nodes) {
+        newId.insert(node.id, nextId++);
+    }
+    for (auto node : more.nodes) {
+        node.parentId = node.parentId < 0 ? folder : newId.value(node.parentId, folder);
+        node.id = newId.value(node.id);
+        into.nodes.push_back(node);
+    }
+    for (auto it = more.playlistTracks.cbegin(); it != more.playlistTracks.cend(); ++it) {
+        QList<int> indexes;
+        indexes.reserve(it.value().size());
+        for (int index : it.value()) {
+            indexes << newIndex[static_cast<size_t>(index)];
+        }
+        into.playlistTracks.insert(newId.value(it.key()), indexes);
+    }
+}
+
 // ---- Engine DJ ------------------------------------------------------------
 QByteArray inflateEngine(const QByteArray& blob)
 {
@@ -224,12 +337,12 @@ QByteArray inflateEngine(const QByteArray& blob)
     return qUncompress(blob);
 }
 
-AppData loadEngine(Table& table)
+//! One Engine Library folder: Music/Engine Library, or one at a drive's root.
+AppData loadEngineAt(Table& table, QString base)
 {
     AppData data;
     // Track paths ("../../Desktop/x.mp3") are relative to the real Engine Library
     // folder (a link to it must not move them).
-    QString base = home() + QStringLiteral("/Music/Engine Library");
     if (const QString real = QFileInfo(base).canonicalFilePath(); !real.isEmpty()) {
         base = real;
     }
@@ -347,7 +460,22 @@ AppData loadEngine(Table& table)
         }
     }
     QSqlDatabase::removeDatabase(connection);
-    LOGI() << "GlideMix DJ apps: Engine DJ, " << data.tracks.size() << " songs, " << data.nodes.size() << " playlists";
+    LOGI() << "GlideMix DJ apps: Engine DJ (" << base << "), " << data.tracks.size() << " songs, " << data.nodes.size()
+           << " playlists";
+    return data;
+}
+
+AppData loadEngine(Table& table)
+{
+    AppData data = loadEngineAt(table, home() + QStringLiteral("/Music/Engine Library"));
+    for (const Place& place : otherPlaces()) {
+        // A drive's root holds "Engine Library"; an added folder may be it.
+        const QString lib = firstExisting(place.folder, { QStringLiteral("Engine Library/Database2/m.db"),
+                                                          QStringLiteral("Database2/m.db") });
+        if (!lib.isEmpty()) {
+            addDrive(data, loadEngineAt(table, QFileInfo(QFileInfo(lib).absolutePath()).absolutePath()), place.name);
+        }
+    }
     return data;
 }
 
@@ -367,10 +495,9 @@ QString traktorCollection()
     return best;
 }
 
-AppData loadTraktor(Table& table)
+AppData loadTraktorAt(Table& table, const QString& path)
 {
     AppData data;
-    const QString path = traktorCollection();
     QFile file(path);
     if (path.isEmpty() || !file.open(QIODevice::ReadOnly)) {
         return data;
@@ -491,24 +618,42 @@ AppData loadTraktor(Table& table)
         node.trackCount = node.type == IMixHouseExternalLibrary::NodeType::Playlist
                           ? static_cast<int>(data.playlistTracks.value(node.id).size()) : 0;
     }
-    LOGI() << "GlideMix DJ apps: Traktor, " << data.tracks.size() << " songs, " << data.nodes.size() << " playlists";
+    LOGI() << "GlideMix DJ apps: Traktor (" << path << "), " << data.tracks.size() << " songs, " << data.nodes.size()
+           << " playlists";
+    return data;
+}
+
+AppData loadTraktor(Table& table)
+{
+    AppData data;
+    if (const QString path = traktorCollection(); !path.isEmpty()) {
+        data = loadTraktorAt(table, path);
+    }
+    // A Traktor root folder moved elsewhere (Traktor > Preferences > File Management).
+    for (const Place& place : otherPlaces()) {
+        const QString nml = firstExisting(place.folder, { QStringLiteral("collection.nml") });
+        if (!nml.isEmpty()) {
+            addDrive(data, loadTraktorAt(table, nml), place.name);
+        }
+    }
     return data;
 }
 
 // ---- VirtualDJ ------------------------------------------------------------
-AppData loadVirtualDj(Table& table)
+//! The first of `candidates` that exists. A drive's own database (driveRoot
+//! set) names its songs with a drive letter ("D:/Music/x.mp3") whatever the
+//! drive is called now: they are on that drive.
+AppData loadVirtualDjAt(Table& table, const QStringList& candidates, const QString& driveRoot)
 {
     AppData data;
-    const QStringList candidates = {
-        home() + QStringLiteral("/Library/Application Support/VirtualDJ/database.xml"),
-        home() + QStringLiteral("/Documents/VirtualDJ/database.xml"),
-        home() + QStringLiteral("/AppData/Local/VirtualDJ/database.xml"),
-    };
+    static const QRegularExpression driveLetter(QStringLiteral("^[A-Za-z]:[/\\\\]"));
+    QString opened;
     for (const QString& path : candidates) {
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly)) {
             continue;
         }
+        opened = path;
         QXmlStreamReader xml(&file);
         AppData::Track entry;
         double firstBeat = 0.0;
@@ -520,6 +665,9 @@ AppData loadVirtualDj(Table& table)
                 if (xml.name() == u"Song") {
                     entry = {};
                     entry.track.filePath = a.value(u"FilePath").toString();
+                    if (!driveRoot.isEmpty() && driveLetter.match(entry.track.filePath).hasMatch()) {
+                        entry.track.filePath = QDir::cleanPath(driveRoot + QLatin1Char('/') + entry.track.filePath.mid(3));
+                    }
                     firstBeat = 0.0;
                     hasGrid = false;
                 } else if (xml.name() == u"Tags") {
@@ -566,7 +714,24 @@ AppData loadVirtualDj(Table& table)
         }
         break;
     }
-    LOGI() << "GlideMix DJ apps: VirtualDJ, " << data.tracks.size() << " songs";
+    LOGI() << "GlideMix DJ apps: VirtualDJ (" << opened << "), " << data.tracks.size() << " songs";
+    return data;
+}
+
+AppData loadVirtualDj(Table& table)
+{
+    AppData data = loadVirtualDjAt(table, {
+        home() + QStringLiteral("/Library/Application Support/VirtualDJ/database.xml"),
+        home() + QStringLiteral("/Documents/VirtualDJ/database.xml"),
+        home() + QStringLiteral("/AppData/Local/VirtualDJ/database.xml"),
+    }, QString());
+    for (const Place& place : otherPlaces()) {
+        const QString db = firstExisting(place.folder, { QStringLiteral("VirtualDJ/database.xml"),
+                                                         QStringLiteral("database.xml") });
+        if (!db.isEmpty()) {
+            addDrive(data, loadVirtualDjAt(table, { db }, place.driveRoot), place.name);
+        }
+    }
     return data;
 }
 
@@ -606,19 +771,14 @@ QString seratoPath(const QString& stored, const QString& driveRoot)
     return QDir::cleanPath(driveRoot + QLatin1Char('/') + stored);
 }
 
-AppData loadSerato(Table& table)
+//! One _Serato_ folder: Music/_Serato_ for the home drive, or one at a drive's root.
+AppData loadSeratoAt(Table& table, const QString& folder, const QString& driveRoot)
 {
     AppData data;
-    const QString folder = home() + QStringLiteral("/Music/_Serato_");
     QFile file(folder + QStringLiteral("/database V2"));
     if (!file.open(QIODevice::ReadOnly)) {
         return data;
     }
-#ifdef Q_OS_WIN
-    const QString driveRoot = QDir::homePath().left(2);
-#else
-    const QString driveRoot;
-#endif
     QHash<QString, int> indexByStored;
     for (const Chunk& c : chunks(file.readAll())) {
         if (c.tag != "otrk") {
@@ -702,7 +862,27 @@ AppData loadSerato(Table& table)
         data.nodes.push_back(playlistNode(id, parts.last(), parent, false, static_cast<int>(indexes.size())));
         data.playlistTracks.insert(id, indexes);
     }
-    LOGI() << "GlideMix DJ apps: Serato, " << data.tracks.size() << " songs, " << data.nodes.size() << " crates";
+    LOGI() << "GlideMix DJ apps: Serato (" << folder << "), " << data.tracks.size() << " songs, " << data.nodes.size()
+           << " crates";
+    return data;
+}
+
+AppData loadSerato(Table& table)
+{
+#ifdef Q_OS_WIN
+    const QString homeRoot = QDir::homePath().left(2);
+#else
+    const QString homeRoot;
+#endif
+    AppData data = loadSeratoAt(table, home() + QStringLiteral("/Music/_Serato_"), homeRoot);
+    for (const Place& place : otherPlaces()) {
+        const QString db = firstExisting(place.folder, { QStringLiteral("_Serato_/database V2"),
+                                                         QStringLiteral("database V2") });
+        if (!db.isEmpty()) {
+            // Serato's paths start at the root of the drive the folder is on.
+            addDrive(data, loadSeratoAt(table, QFileInfo(db).absolutePath(), place.driveRoot), place.name);
+        }
+    }
     return data;
 }
 
@@ -823,6 +1003,36 @@ int djKeyIdFromText(const QString& text)
     return keyIdFrom(semitone, mode == u"m" || mode == u"min" || mode == u"minor");
 }
 
+QStringList djAppFolders()
+{
+    return QSettings().value(QStringLiteral("GlideMix/djAppFolders")).toStringList();
+}
+
+QString djAppPlacesSignature()
+{
+    QStringList parts = djAppFolders();
+    for (const QStorageInfo& volume : QStorageInfo::mountedVolumes()) {
+        if (volume.isValid() && volume.isReady()) {
+            parts << volume.rootPath();
+        }
+    }
+    return parts.join(QLatin1Char('\n'));
+}
+
+QStringList hiddenDjApps()
+{
+    return QSettings().value(QStringLiteral("GlideMix/hiddenDjApps")).toStringList();
+}
+
+void reloadDjApps()
+{
+    {
+        std::lock_guard lock(g_mutex);
+        g_started = false;
+    }
+    startLoadingDjApps();
+}
+
 void startLoadingDjApps()
 {
     {
@@ -832,6 +1042,9 @@ void startLoadingDjApps()
         }
         g_started = true;
     }
+    // Apps switched off in Preferences > Library are not read at all.
+    const QStringList hidden = hiddenDjApps();
+    const int ticket = ++g_loadTicket;
     // macOS asks for the Documents folder the first time it is read: Traktor's
     // collection is read there only after the user clicks Traktor once.
 #ifdef Q_OS_MAC
@@ -839,7 +1052,7 @@ void startLoadingDjApps()
 #else
     const bool readTraktor = true;
 #endif
-    std::thread([readTraktor]() {
+    std::thread([readTraktor, hidden, ticket]() {
         auto table = std::make_shared<Table>();
         std::map<QString, std::shared_ptr<const AppLibrary> > libraries;
         // Grid sources first, so analysis takes theirs; then BPM and key only.
@@ -851,7 +1064,7 @@ void startLoadingDjApps()
             { QStringLiteral("djay"), &loadDjay },
         };
         for (const auto& [source, load] : loaders) {
-            if (source == u"traktor" && !readTraktor) {
+            if ((source == u"traktor" && !readTraktor) || hidden.contains(source)) {
                 continue;
             }
             AppData data = load(*table);
@@ -863,6 +1076,9 @@ void startLoadingDjApps()
         LOGI() << "GlideMix DJ apps: " << table->size() << " songs known";
         {
             std::lock_guard lock(g_mutex);
+            if (ticket != g_loadTicket) {
+                return;   // the preferences changed while this one read
+            }
             g_table = std::move(table);
             g_libraries = std::move(libraries);
         }
@@ -879,7 +1095,7 @@ bool djAppsLoaded()
 bool djAppWaitsForClick(const QString& source)
 {
 #ifdef Q_OS_MAC
-    if (source != u"traktor" || djAppLibrary(source)) {
+    if (source != u"traktor" || djAppLibrary(source) || hiddenDjApps().contains(source)) {
         return false;
     }
     if (QSettings().value(QStringLiteral("GlideMix/readTraktor"), false).toBool()) {

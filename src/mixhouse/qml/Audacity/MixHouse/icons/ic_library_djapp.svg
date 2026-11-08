@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GlideMix: another DJ app's library (record sleeve with the disc sliding out). Our own drawing; drawn flat, the sidebar tints it. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <path fill="#ff6600" fill-rule="evenodd" d="M3 6h12v20H3z M5 8v16h8V8z"/>
+  <path fill="#ff6600" fill-rule="evenodd" d="M17 6.713A9.5 9.5 0 1 1 17 25.287Z M19 14.2A1.8 1.8 0 1 1 19 17.8A1.8 1.8 0 1 1 19 14.2Z M21.6 10.3A6.3 6.3 0 0 1 21.6 21.7L21.15 20.85A5.35 5.35 0 0 0 21.15 11.15Z"/>
+</svg>

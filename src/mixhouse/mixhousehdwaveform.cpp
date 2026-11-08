@@ -18,48 +18,6 @@ constexpr double kHighSplitHz = 2500.0;   // mids | highs
 constexpr double kRangeDb = 32.0;         // quieter than this below the loud parts is empty
 constexpr double kShape = 1.6;            // opens the loud end up, as djay's scale does
 
-//! RBJ biquad, transposed direct form II.
-struct Biquad {
-    double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-    double z1 = 0, z2 = 0;
-
-    static Biquad make(bool highPass, double hz, double q, double rate)
-    {
-        const double w = 2.0 * M_PI * hz / rate;
-        const double alpha = std::sin(w) / (2.0 * q);
-        const double c = std::cos(w);
-        const double a0 = 1.0 + alpha;
-        Biquad f;
-        if (highPass) {
-            f.b0 = (1.0 + c) / 2.0 / a0;
-            f.b1 = -(1.0 + c) / a0;
-        } else {
-            f.b0 = (1.0 - c) / 2.0 / a0;
-            f.b1 = (1.0 - c) / a0;
-        }
-        f.b2 = f.b0;
-        f.a1 = -2.0 * c / a0;
-        f.a2 = (1.0 - alpha) / a0;
-        return f;
-    }
-
-    double run(double x)
-    {
-        const double y = b0 * x + z1;
-        z1 = b1 * x - a1 * y + z2;
-        z2 = b2 * x - a2 * y;
-        return y;
-    }
-};
-
-//! Fourth-order Butterworth: two biquads.
-struct Butterworth4 {
-    std::array<Biquad, 2> stages;
-    Butterworth4(bool highPass, double hz, double rate)
-        : stages { Biquad::make(highPass, hz, 0.54119610, rate), Biquad::make(highPass, hz, 1.30656296, rate) } {}
-    double run(double x) { return stages[1].run(stages[0].run(x)); }
-};
-
 //! Column energies (mean square) to 0..255 on the drawing scale.
 double levelOf(double energy, double ref)
 {
@@ -86,31 +44,39 @@ std::vector<uint8_t> toLevels(const std::vector<double>& energy, double& refOut)
     return out;
 }
 
-//! Grain that belongs to the audio, not to the screen position.
-float grain(long long column, int row)
-{
-    uint32_t h = static_cast<uint32_t>(column) * 0x9E3779B1u ^ static_cast<uint32_t>(row) * 0x85EBCA77u;
-    h ^= h >> 15;
-    h *= 0x2C1B3C6Du;
-    h ^= h >> 12;
-    return 0.3f + 0.7f * static_cast<float>(h & 0xFFFF) / 65535.0f;
-}
 }
 
 namespace {
 //! One channel's band energies, column by column (or the mono sum: channel -1).
+//! The Beatgrid editor's band split (mixhousegrideditormodel.cpp): two
+//! one-pole low-passes at 200 Hz and at 2500 Hz; bass below, highs above,
+//! mids between. The same split everywhere, so every waveform has the same colours.
+struct GridSplit {
+    double aLow = 0, aHigh = 0, l1 = 0, l2 = 0, h1 = 0, h2 = 0;
+    explicit GridSplit(double rate)
+        : aLow(1.0 - std::exp(-2.0 * M_PI * kLowSplitHz / rate)), aHigh(1.0 - std::exp(-2.0 * M_PI * kHighSplitHz / rate)) {}
+    void run(double x, double& low, double& mid, double& high)
+    {
+        l1 += aLow * (x - l1);
+        l2 += aLow * (l1 - l2);
+        h1 += aHigh * (x - h1);
+        h2 += aHigh * (h1 - h2);
+        low = l2;
+        mid = h2 - l2;
+        high = x - h2;
+    }
+};
+
 struct BandEnergies {
-    Butterworth4 lp, bandHp, bandLp, hp;
+    GridSplit split;
     std::vector<double> low, mid, high;
     double sumLow = 0, sumMid = 0, sumHigh = 0;
     explicit BandEnergies(double rate)
-        : lp(false, kLowSplitHz, rate), bandHp(true, kLowSplitHz, rate), bandLp(false, kHighSplitHz, rate),
-        hp(true, kHighSplitHz, rate) {}
+        : split(rate) {}
     void add(double x)
     {
-        const double l = lp.run(x);
-        const double m = bandLp.run(bandHp.run(x));
-        const double h = hp.run(x);
+        double l, m, h;
+        split.run(x, l, m, h);
         sumLow += l * l;
         sumMid += m * m;
         sumHigh += h * h;
@@ -223,56 +189,52 @@ std::pair<MixHouseHdWavePtr, MixHouseHdWavePtr> analyzeHdWaveStereo(const QStrin
     return { side(bands[0]), side(bands[1]) };
 }
 
-namespace {
-//! One pixel column of style E: three layered band envelopes.
-void paintColumn(QImage& image, int x, const float v[3], const float hueLevel[3], float soften, long long anchor)
+QColor hdBandColor(float low, float mid, float high)
 {
-    // Bass red, mids green, highs blue: bass and highs together come out pink.
-    static const float kColour[3][3] = { { 235, 40, 70 }, { 60, 220, 120 }, { 40, 120, 255 } };
+    // Mids under-weighted a little: rekordbox's colours lean red/blue (pink
+    // kicks, blue hats), green only where the mids really lead.
+    // Squared, so the leading band wins clearly and colours don't wash to white.
+    double r = std::pow(low, 2.0);
+    double g = std::pow(mid * 0.75, 2.0);
+    double b = std::pow(high * 0.9, 2.0);
+    const double top = std::max({ r, g, b, 1e-6 });
+    r /= top;
+    g /= top;
+    b /= top;
+    const double floorLevel = 0.06;
+    const auto channel = [floorLevel](double v) { return static_cast<int>(std::lround(255.0 * (floorLevel + (1.0 - floorLevel) * v))); };
+    return QColor(channel(r), channel(g), channel(b));
+}
+
+namespace {
+//! A stored level (0..1 on the drawing scale) back to the band's amplitude
+//! against its own loud level (0..1), the scale the Beatgrid editor colours on.
+double ampOf(double level)
+{
+    if (level <= 0.0) {
+        return 0.0;
+    }
+    const double db = std::pow(std::min(level, 1.0), 1.0 / kShape) * kRangeDb - kRangeDb;
+    return std::pow(10.0, db / 20.0);
+}
+
+//! One pixel column the Beatgrid editor's way: a line from the peak in the
+//! band colour, with a brighter core at the RMS.
+void paintColumn(QImage& image, int x, double outer, double core, const QColor& colour)
+{
     const int height = image.height();
     const double mid = height / 2.0;
-    float half[3], weight[3];
-    for (int k = 0; k < 3; ++k) {
-        half[k] = std::max(0.5f, v[k] * static_cast<float>(mid - 1.0));
-        const float h2 = hueLevel[k] * hueLevel[k];
-        weight[k] = h2 * h2;   // the stronger band sets the hue
-    }
-    for (int y = 0; y < height; ++y) {
-        const float dy = std::abs(static_cast<float>(y + 0.5 - mid));
-        float r = 0, g = 0, bl = 0, wsum = 0, bright = 0;
-        for (int k = 0; k < 3; ++k) {
-            const float d = dy / half[k];
-            if (d >= 1.0f) {
-                continue;
-            }
-            // Bright in the middle, fading into a grainy edge.
-            float glow = 1.0f - d * d;
-            if (d > 0.6f) {
-                glow *= grain(anchor * 3 + k, y);
-            }
-            const float w = glow * weight[k];
-            r += kColour[k][0] * w;
-            g += kColour[k][1] * w;
-            bl += kColour[k][2] * w;
-            wsum += w;
-            bright = std::max(bright, glow);
-        }
-        if (bright <= 0.02f || wsum <= 1e-12f) {
-            continue;
-        }
-        r /= wsum;
-        g /= wsum;
-        bl /= wsum;
-        if (soften > 0.0f) {
-            const float grey = (r + g + bl) / 3.0f;
-            r += (grey - r) * soften;
-            g += (grey - g) * soften;
-            bl += (grey - bl) * soften;
-        }
-        const float top = std::max({ r, g, bl, 1.0f });
-        const float scale = 245.0f / top * (0.25f + 0.75f * bright);
-        const auto c = [&](float value) { return std::clamp(static_cast<int>(value * scale), 0, 255); };
-        reinterpret_cast<QRgb*>(image.scanLine(y))[x] = qRgb(c(r), c(g), c(bl));
+    const double half = mid - 1.0;
+    outer = std::clamp(outer, 0.0, 1.0);
+    core = std::clamp(std::min(core, outer), 0.0, 1.0);
+    const QRgb edge = colour.rgb();
+    const QRgb bright = colour.lighter(135).rgb();
+    const int top = std::clamp(static_cast<int>(std::floor(mid - outer * half)), 0, height - 1);
+    const int bottom = std::clamp(static_cast<int>(std::ceil(mid + outer * half)), 0, height - 1);
+    const double coreHalf = core * half;
+    for (int y = top; y <= bottom; ++y) {
+        const bool inCore = std::abs(y + 0.5 - mid) <= coreHalf;
+        reinterpret_cast<QRgb*>(image.scanLine(y))[x] = inCore ? bright : edge;
     }
 }
 }
@@ -287,6 +249,18 @@ void paintHdWave(QImage& image, const MixHouseHdWave& wave, double fromSec, doub
         return;
     }
     const std::vector<uint8_t>* bands[3] = { &wave.low, &wave.mid, &wave.high };
+    // Height: the column's loudness against the song's loud level, linear like
+    // the Beatgrid editor (quiet parts stay small, the drops reach the top).
+    const double refs[3] = { wave.refLow, wave.refMid, wave.refHigh };
+    const double loud = std::sqrt(std::max(refs[0] + refs[1] + refs[2], 1e-12));
+    const auto rmsOf = [&](long long i) {
+        double e = 0.0;
+        for (int k = 0; k < 3; ++k) {
+            const double a = ampOf((*bands[k])[static_cast<size_t>(i)] / 255.0);
+            e += a * a * refs[k];
+        }
+        return std::sqrt(e) / loud;
+    };
 
     const double perPixel = (toSec - fromSec) * wave.rate / width;   // file columns per pixel
     for (int x = 0; x < width; ++x) {
@@ -295,66 +269,54 @@ void paintHdWave(QImage& image, const MixHouseHdWave& wave, double fromSec, doub
         if (c1 <= 0.0 || c0 >= count) {
             continue;
         }
-        float v[3];
-        float hueLevel[3];
-        float soften = 0.0f;
-        long long anchor;
+        double amp[3] = { 0, 0, 0 };
+        double peak = 0.0, rms = 0.0;
         if (perPixel >= 1.0) {
-            // Several columns in this pixel: the height from the loudest of
-            // each band; the colour from the bands' average balance, since
-            // over a second or more every band peaks somewhere and the peaks
-            // alone blend to a pale grey.
+            // As the Beatgrid editor: the height from the loudest column, the
+            // colour from the bands' average over the pixel.
             const long long a = std::max(0LL, static_cast<long long>(std::floor(c0)));
             const long long b = std::min(count, std::max(a + 1, static_cast<long long>(std::ceil(c1))));
-            const float wide = static_cast<float>(std::clamp((perPixel - 1.0) / 8.0, 0.0, 1.0));
-            soften = 0.22f * wide;   // far out, colours a little softer, as djay's overview
-            for (int k = 0; k < 3; ++k) {
-                uint8_t m = 0;
-                double sum = 0;
-                for (long long i = a; i < b; ++i) {
-                    const uint8_t x = (*bands[k])[static_cast<size_t>(i)];
-                    m = std::max(m, x);
-                    sum += x;
+            double sumSq = 0.0;
+            for (long long i = a; i < b; ++i) {
+                for (int k = 0; k < 3; ++k) {
+                    amp[k] += ampOf((*bands[k])[static_cast<size_t>(i)] / 255.0);
                 }
-                const float mean = static_cast<float>(sum / (b - a)) / 255.0f;
-                v[k] = (1.0f - 0.6f * wide) * (m / 255.0f) + 0.6f * wide * mean;
-                hueLevel[k] = (1.0f - wide) * v[k] + wide * mean;
+                const double r = rmsOf(i);
+                peak = std::max(peak, r);
+                sumSq += r * r;
             }
-            anchor = a;
+            for (double& v : amp) {
+                v /= double(b - a);
+            }
+            rms = std::sqrt(sumSq / double(b - a));
         } else {
             // Zoomed in past the analysis: between two columns, smoothly.
             const double centre = std::clamp((c0 + c1) / 2.0 - 0.5, 0.0, static_cast<double>(count - 1));
             const long long i = static_cast<long long>(centre);
             const long long j = std::min(count - 1, i + 1);
-            const float t = static_cast<float>(centre - i);
+            const double t = centre - i;
             for (int k = 0; k < 3; ++k) {
-                v[k] = ((1 - t) * (*bands[k])[static_cast<size_t>(i)] + t * (*bands[k])[static_cast<size_t>(j)]) / 255.0f;
-                hueLevel[k] = v[k];
+                amp[k] = (1 - t) * ampOf((*bands[k])[static_cast<size_t>(i)] / 255.0)
+                         + t * ampOf((*bands[k])[static_cast<size_t>(j)] / 255.0);
             }
-            anchor = static_cast<long long>(std::floor(c0 * 4.0));   // grain finer than a column when zoomed in
+            peak = rms = (1 - t) * rmsOf(i) + t * rmsOf(j);
         }
-        // The clip's volume: the stored levels are on a dB scale, so a gain
-        // shifts them down by its dB (the colours stay the song's own).
+        // The clip's volume shrinks the picture (the colours stay the song's own).
+        double g = 1.0;
         if (gain && x < static_cast<int>(gain->size())) {
-            const double g = (*gain)[static_cast<size_t>(x)];
-            if (g < 0.999) {
-                const double shiftDb = g <= 1e-6 ? -kRangeDb : 20.0 * std::log10(g);
-                for (int k = 0; k < 3; ++k) {
-                    const double db = std::pow(std::max(0.0f, v[k]), 1.0 / kShape) * kRangeDb - kRangeDb + shiftDb;
-                    v[k] = static_cast<float>(std::pow(std::clamp((db + kRangeDb) / kRangeDb, 0.0, 1.0), kShape));
-                }
-            }
+            g = std::max(0.0, (*gain)[static_cast<size_t>(x)]);
         }
-        if (v[0] + v[1] + v[2] <= 0.0f) {
+        const double outer = peak * 0.95 * g;
+        const double core = rms * 0.55 * g;
+        if (outer <= 0.003) {
             continue;
         }
-        paintColumn(image, x, v, hueLevel, soften, anchor);
+        paintColumn(image, x, outer, core, hdBandColor(float(amp[0]), float(amp[1]), float(amp[2])));
     }
 }
 
 uint32_t hdWaveColour(const MixHouseHdWave& wave, double fromSec, double toSec)
 {
-    static const float kColour[3][3] = { { 235, 40, 70 }, { 60, 220, 120 }, { 40, 120, 255 } };
     const std::vector<uint8_t>* bands[3] = { &wave.low, &wave.mid, &wave.high };
     const long long count = static_cast<long long>(wave.size());
     if (count == 0) {
@@ -362,25 +324,17 @@ uint32_t hdWaveColour(const MixHouseHdWave& wave, double fromSec, double toSec)
     }
     const long long a = std::clamp(static_cast<long long>(std::floor(fromSec * wave.rate)), 0LL, count - 1);
     const long long b = std::clamp(static_cast<long long>(std::ceil(toSec * wave.rate)), a + 1, count);
-    float r = 0, g = 0, bl = 0, wsum = 0;
+    double amp[3] = { 0, 0, 0 };
     for (int k = 0; k < 3; ++k) {
-        uint8_t m = 0;
         for (long long i = a; i < b; ++i) {
-            m = std::max(m, (*bands[k])[static_cast<size_t>(i)]);
+            amp[k] += ampOf((*bands[k])[static_cast<size_t>(i)] / 255.0);
         }
-        const float v = m / 255.0f;
-        const float w = v * v * v * v;
-        r += kColour[k][0] * w;
-        g += kColour[k][1] * w;
-        bl += kColour[k][2] * w;
-        wsum += w;
+        amp[k] /= double(b - a);
     }
-    if (wsum <= 1e-9f) {
+    if (amp[0] + amp[1] + amp[2] <= 1e-9) {
         return 0;
     }
-    const float top = std::max({ r, g, bl }) / wsum;
-    const float scale = 255.0f / std::max(top, 1.0f) / wsum;
-    return (static_cast<uint32_t>(r * scale) << 16) | (static_cast<uint32_t>(g * scale) << 8) | static_cast<uint32_t>(bl * scale);
+    return hdBandColor(float(amp[0]), float(amp[1]), float(amp[2])).rgb() & 0xFFFFFF;
 }
 
 void paintHdCloseUp(QImage& image, const MixHouseHdWave& wave, const float* mono, size_t count, size_t warmup,
@@ -395,14 +349,14 @@ void paintHdCloseUp(QImage& image, const MixHouseHdWave& wave, const float* mono
     }
     // The colour: each band's energy, smoothed over about one stored column
     // (1/150 s), so it follows the music, not every single wave.
-    Butterworth4 lp(false, kLowSplitHz, sampleRate), bandHp(true, kLowSplitHz, sampleRate);
-    Butterworth4 bandLp(false, kHighSplitHz, sampleRate), hp(true, kHighSplitHz, sampleRate);
+    GridSplit split(sampleRate);
     const double smooth = 1.0 - std::exp(-1.0 / (0.004 * sampleRate));
     double e[3] = { 0, 0, 0 };
     std::vector<std::array<float, 3> > energy(count);
     for (size_t i = 0; i < count; ++i) {
         const double x = mono[i];
-        const double b[3] = { lp.run(x), bandLp.run(bandHp.run(x)), hp.run(x) };
+        double b[3];
+        split.run(x, b[0], b[1], b[2]);
         for (int k = 0; k < 3; ++k) {
             e[k] += (b[k] * b[k] - e[k]) * smooth;
             energy[i][k] = static_cast<float>(e[k]);
@@ -411,17 +365,10 @@ void paintHdCloseUp(QImage& image, const MixHouseHdWave& wave, const float* mono
     const double refs[3] = { wave.refLow, wave.refMid, wave.refHigh };
     // The height: the audio itself on the same dB scale as the stored picture,
     // so a loud peak reaches the top as the zoomed-out view does.
-    const double refAmp = std::sqrt(std::max(wave.refLow + wave.refMid + wave.refHigh, 1e-12)) * 1.4;
-    const auto heightOf = [&](double a) {
-        const double m = std::abs(a) / refAmp;
-        if (m <= 0.0) {
-            return 0.0;
-        }
-        const double db = 20.0 * std::log10(m);
-        const double v = std::pow(std::clamp((db + kRangeDb) / kRangeDb, 0.0, 1.0), kShape);
-        return a < 0 ? -v : v;
-    };
-    static const float kColour[3][3] = { { 235, 40, 70 }, { 60, 220, 120 }, { 40, 120, 255 } };
+    // Linear, as the Beatgrid editor and the zoomed-out picture: a loud part's
+    // peaks (about 2.6x its loudness) reach the top.
+    const double refAmp = std::sqrt(std::max(wave.refLow + wave.refMid + wave.refHigh, 1e-12)) * 2.6;
+    const auto heightOf = [&](double a) { return std::clamp(a / refAmp, -1.0, 1.0); };
     const double mid = height / 2.0;
     const double half = mid - 1.0;
     const double perPixel = static_cast<double>(count - 1 - warmup) / width;   // samples per pixel
@@ -460,28 +407,15 @@ void paintHdCloseUp(QImage& image, const MixHouseHdWave& wave, const float* mono
         const int yTop = std::clamp(static_cast<int>(std::floor(mid - hi * half)) - (perPixel < 4.0 ? 1 : 0), 0, height - 1);
         const int yBottom = std::clamp(static_cast<int>(std::ceil(mid - lo * half)) + (perPixel < 4.0 ? 1 : 0), 0, height - 1);
 
-        float r = 0, g = 0, bl = 0, wsum = 0;
+        // The colour: each band's amplitude against its own loud level, as stored.
+        float amp[3];
         for (int k = 0; k < 3; ++k) {
-            const float v = static_cast<float>(levelOf(energy[colourAt][k], refs[k]));
-            const float w = v * v * v * v;
-            r += kColour[k][0] * w;
-            g += kColour[k][1] * w;
-            bl += kColour[k][2] * w;
-            wsum += w;
+            amp[k] = static_cast<float>(std::sqrt(std::max(0.0, double(energy[colourAt][k])) / std::max(refs[k], 1e-14)));
+            amp[k] = std::min(amp[k], 1.0f);
         }
-        if (wsum <= 1e-12f) {
-            r = 90, g = 90, bl = 110, wsum = 1;
-        }
-        r /= wsum;
-        g /= wsum;
-        bl /= wsum;
-        const float top = std::max({ r, g, bl, 1.0f });
+        const QRgb pixel = hdBandColor(amp[0], amp[1], amp[2]).rgb();
         for (int y = yTop; y <= yBottom; ++y) {
-            // Brighter toward the middle line, a touch darker at the edges.
-            const float d = static_cast<float>(std::abs(y + 0.5 - mid) / half);
-            const float scale = 245.0f / top * (0.25f + 0.75f * (1.0f - d * d));
-            const auto c = [&](float value) { return std::clamp(static_cast<int>(value * scale), 0, 255); };
-            reinterpret_cast<QRgb*>(image.scanLine(y))[x] = qRgb(c(r), c(g), c(bl));
+            reinterpret_cast<QRgb*>(image.scanLine(y))[x] = pixel;
         }
     }
 }

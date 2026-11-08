@@ -84,10 +84,17 @@ PreferencesPage {
                 title: qsTrc("preferences", "Run on:")
                 columnWidth: 260
 
-                currentIndex: stemsModel.device
-                model: [
+                // Windows: the stems engine we install runs on the processor
+                // only, so there is no GPU choice there (an old "GPU" setting
+                // shows as Automatic).
+                readonly property bool isMac: Qt.platform.os === "osx"
+                currentIndex: Math.max(0, indexOfValue(isMac || stemsModel.device !== 1 ? stemsModel.device : 0))
+                model: isMac ? [
                     { text: qsTrc("preferences", "Automatic (GPU when available)"), value: 0 },
                     { text: qsTrc("preferences", "GPU (Metal)"), value: 1 },
+                    { text: qsTrc("preferences", "CPU"), value: 2 }
+                ] : [
+                    { text: qsTrc("preferences", "Automatic"), value: 0 },
                     { text: qsTrc("preferences", "CPU"), value: 2 }
                 ]
                 textRole: "text"
@@ -107,7 +114,9 @@ PreferencesPage {
                 horizontalAlignment: Qt.AlignLeft
                 wrapMode: Text.WordWrap
                 opacity: 0.7
-                text: qsTrc("preferences", "The GPU is many times faster. Automatic falls back to the CPU if the GPU cannot be used.")
+                text: Qt.platform.os === "osx"
+                      ? qsTrc("preferences", "The GPU is many times faster. If the GPU cannot be used, separation runs on the CPU.")
+                      : qsTrc("preferences", "On Windows, separation runs on the processor (CPU) for now, so a song takes a few minutes.")
             }
 
             StyledTextLabel {

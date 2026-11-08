@@ -327,10 +327,13 @@ QVariantList AboutModel::creditList() const
 
         //! GlideMix reads these apps' libraries (read-only); none of their code is included.
         QVariantMap worksWith = makeRawSection(muse::qtrc("appshell/about", "Works with"),
-                                               QStringLiteral("rekordbox (AlphaTheta / Pioneer DJ)<br>Lexicon DJ"));
+                                               QStringLiteral("rekordbox (AlphaTheta / Pioneer DJ)<br>Lexicon DJ<br>Engine DJ<br>"
+                                                              "Traktor<br>Serato DJ<br>VirtualDJ<br>djay"));
         worksWith["subtitle"] = muse::qtrc("appshell/about",
-                                           "GlideMix reads your rekordbox XML and Lexicon libraries: grids, keys, cues, "
+                                           "GlideMix reads these apps' libraries, read-only: grids, keys, cues, "
                                            "phrases and playlists. rekordbox is a trademark of AlphaTheta Corporation; "
+                                           "Engine DJ of inMusic Brands; Traktor of Native Instruments; Serato of "
+                                           "Serato Audio Research; VirtualDJ of Atomix Productions; djay of algoriddim. "
                                            "Lexicon is a product of Lexicon DJ. GlideMix is not affiliated with or "
                                            "endorsed by them.");
         creditList.append(worksWith);

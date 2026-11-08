@@ -322,7 +322,20 @@ void MixHouseTrackListModel::load()
         {
             auto* poll = new QTimer(this);
             poll->setInterval(1000);
+            m_hiddenDjApps = hiddenDjApps();
+            m_djAppPlaces = djAppPlacesSignature();
             connect(poll, &QTimer::timeout, this, [this]() {
+                // Preferences > Library switched an app on or off or added a
+                // folder, or a drive was plugged in or out: read them again.
+                const QStringList hidden = hiddenDjApps();
+                const bool placesDue = ++m_djAppPlacesTick % 3 == 0;   // drives: every 3 s is plenty
+                const QString places = placesDue ? djAppPlacesSignature() : m_djAppPlaces;
+                if (hidden != m_hiddenDjApps || places != m_djAppPlaces) {
+                    m_hiddenDjApps = hidden;
+                    m_djAppPlaces = places;
+                    reloadDjApps();
+                    emit loaded();
+                }
                 if (djAppsGeneration() != m_djAppsGeneration) {
                     m_djAppsGeneration = djAppsGeneration();
                     emit loaded();   // the sidebar re-reads its nodes
@@ -2439,13 +2452,17 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     // children (read-only).
     const bool rekordboxReady = rekordboxXml() && rekordboxXml()->available();
     const bool rekordboxLoading = rekordboxXml() && rekordboxXml()->loading();
+    const QStringList hiddenApps = hiddenDjApps();   // Preferences > Library
     // Nothing chosen yet: a click asks for the file (rekordbox: File >
     // Export Collection in xml format). While it reads, the row shows the
     // progress instead of the count (MixHouseLibraryPanel.qml).
-    out << node("rekordbox", QObject::tr("Rekordbox XML"), 0,
-                rekordboxReady ? "rekordbox-all" : rekordboxLoading ? "none" : "rekordbox-choose", -1,
-                rekordboxReady && !rekordboxLoading ? rekordboxXml()->trackCount() : 0, rekordboxReady);
-    if (rekordboxReady && isOpen("rekordbox")) {
+    const bool rekordboxShown = !hiddenApps.contains(QStringLiteral("rekordbox"));
+    if (rekordboxShown) {
+        out << node("rekordbox", QObject::tr("Rekordbox XML"), 0,
+                    rekordboxReady ? "rekordbox-all" : rekordboxLoading ? "none" : "rekordbox-choose", -1,
+                    rekordboxReady && !rekordboxLoading ? rekordboxXml()->trackCount() : 0, rekordboxReady);
+    }
+    if (rekordboxShown && rekordboxReady && isOpen("rekordbox")) {
         appendExternalTree(out, rekordboxXml()->nodes(), QStringLiteral("rb-"), QStringLiteral("rekordbox-playlist"), -1, 1,
                            expandedIds);
     }
@@ -2458,6 +2475,9 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     }
     // GlideMix: the other DJ apps on this computer, read-only, like Lexicon.
     for (const QString& source : djAppSources()) {
+        if (hiddenApps.contains(source)) {
+            continue;
+        }
         if (djAppWaitsForClick(source)) {
             out << node(source, djAppName(source), 0, source + QStringLiteral("-read"), -1, 0, false);
             continue;

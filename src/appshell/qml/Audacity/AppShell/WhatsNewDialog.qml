@@ -35,15 +35,13 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.28**\n\n"
-                      + "- **Ableton Link:** the LINK button shares your mix's tempo, beat and play/stop with Resolume, TouchDesigner and other Link apps.\n"
-                      + "- **Your other DJ apps:** Engine DJ, Traktor, Serato, VirtualDJ and djay show in the library, and their beat grids and keys are used instead of analysing again.\n"
-                      + "- **Mixed In Key:** key and energy are read from the comment. Comments are kept, and Edit Tags has Key, Energy and Rating.\n"
-                      + "- **Low, Mid, High and Color** buttons in the track header show each line over the whole song.\n"
-                      + "- **Library:** scroll past 2,000 songs, counts on smart playlists, Duplicates and Analyze, Back after Show in Library, save a search as a smart playlist, columns for any file tag (Mood, Label…), arrow keys in the song list, a preview volume.\n"
-                      + "- **Playlists:** right-click > Export as M3U8 Playlist.\n"
-                      + "- **Automation:** right-click a point > Set value… (Set tempo… on the tempo line). Shift-click several points to move them together.\n"
-                      + "- **Small fixes:** the key shows in the clip header, a library scan no longer makes GlideMix stall, the + tab menu no longer overlaps.\n"
+                text: "**GlideMix v1.1.29**\n\n"
+                      + "- **Waveforms like the Beatgrid editor:** the timeline and the library now draw every song with the same colours and shape as the Beatgrid editor (pink and red kicks, blue hi-hats). Each song's picture is redone once, in the background, the first time it is shown.\n"
+                      + "- **Your DJ apps on every drive:** Engine DJ, Serato and VirtualDJ libraries on an SD card or USB drive are read too, and a drive plugged in later shows up by itself.\n"
+                      + "- **Preferences > Library > Other DJ Apps:** show or hide each DJ app, and add a folder if an app keeps its library somewhere else.\n"
+                      + "- **Stems:** a song split into stems has one transition pill; every change on it reaches the song and all its stems, one Undo.\n"
+                      + "- **Low, Mid, High and Color lines** from the track header glow in their colour, like the transition pill's lines.\n"
+                      + "- **Small fixes:** an empty library says how to add music; picking a key no longer moves the sidebar; on Windows, stems always run on the processor instead of failing.\n"
             }
         }
 

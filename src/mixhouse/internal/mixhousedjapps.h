@@ -32,6 +32,20 @@ struct MixHouseDjAppInfo {
 //! Starts loading the apps' libraries in the background (once).
 void startLoadingDjApps();
 
+//! Preferences > Library > Other DJ Apps: the sources switched off ("engine",
+//! "traktor", "serato", "vdj", "djay", and "rekordbox" for the XML row). All
+//! shown by default. Switched-off apps are not read, shown or used by analysis.
+QStringList hiddenDjApps();
+//! Preferences > Library: more folders that hold an app's library (Engine
+//! Library, _Serato_, VirtualDJ's database.xml, Traktor's collection.nml).
+//! Every mounted drive's root is looked at anyway.
+QStringList djAppFolders();
+//! Changes when a folder is added or removed or a drive comes or goes, so
+//! the apps are read again.
+QString djAppPlacesSignature();
+//! Reads the apps again (after that preference changed).
+void reloadDjApps();
+
 //! True once the background load has finished (the sidebar refreshes then).
 bool djAppsLoaded();
 //! Bumps whenever a library arrives (the first load, Traktor after its click).

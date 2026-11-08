@@ -365,6 +365,17 @@
   ]
  },
  {
+  "id": "ableton-link",
+  "group": "Audio engine and file formats",
+  "name": "Ableton Link",
+  "url": "https://github.com/Ableton/link",
+  "copyright": "Copyright © 2016, Ableton AG, Berlin",
+  "license": "GPL-2.0-or-later",
+  "licenseFiles": [
+   "ableton-link.txt"
+  ]
+ },
+ {
   "id": "qt",
   "group": "Application framework",
   "name": "Qt 6",

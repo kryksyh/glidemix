@@ -874,6 +874,9 @@ private:
     const IMixHouseExternalLibrary* externalLibrary(const QString& source) const;
     static QStringList externalSources();
     int m_djAppsGeneration = 0;
+    QStringList m_hiddenDjApps;   // Preferences > Library, to notice a change
+    QString m_djAppPlaces;        // added folders + mounted drives
+    int m_djAppPlacesTick = 0;
     void applyOwnOverrides(MixHouseTrackList& tracks) const;
     //! GlideMix: the tracks a smart playlist picks, filtered by the search box.
     MixHouseTrackList smartPlaylistTracks(int id) const;

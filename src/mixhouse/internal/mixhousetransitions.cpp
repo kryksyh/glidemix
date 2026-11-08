@@ -171,6 +171,86 @@ muse::async::Notification MixHouseTransitions::zonesChanged() const
     return m_zonesChanged;
 }
 
+namespace {
+//! Clips laid over each other on two lanes (a song and its stems, a copy on
+//! another row): the overlap covers almost all of the shorter one.
+bool layered(const au::trackedit::Clip& a, const au::trackedit::Clip& b)
+{
+    if (a.key.trackId == b.key.trackId) {
+        return false;
+    }
+    const double overlap = std::min(a.endTime, b.endTime) - std::max(a.startTime, b.startTime);
+    const double shorter = std::min(a.endTime - a.startTime, b.endTime - b.startTime);
+    return overlap >= kMinOverlapSec && shorter > 0.0 && overlap / shorter > 0.9;
+}
+}
+
+std::vector<au::trackedit::ClipKey> MixHouseTransitions::layersOf(const trackedit::ClipKey& key) const
+{
+    std::vector<trackedit::ClipKey> result { key };
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project) {
+        return result;
+    }
+    std::vector<trackedit::Clip> clips;
+    std::map<trackedit::TrackId, size_t> lane;
+    std::optional<trackedit::Clip> self;
+    for (const trackedit::TrackId trackId : project->trackIdList()) {
+        lane.emplace(trackId, lane.size());
+        for (const trackedit::Clip& clip : project->clipList(trackId)) {
+            if (clip.key == key) {
+                self = clip;
+            } else {
+                clips.push_back(clip);
+            }
+        }
+    }
+    if (!self) {
+        return result;
+    }
+    std::vector<trackedit::Clip> layers;
+    for (const trackedit::Clip& clip : clips) {
+        if (layered(*self, clip)) {
+            layers.push_back(clip);
+        }
+    }
+    std::sort(layers.begin(), layers.end(), [&](const trackedit::Clip& a, const trackedit::Clip& b) {
+        return lane[a.key.trackId] < lane[b.key.trackId];
+    });
+    for (const trackedit::Clip& clip : layers) {
+        result.push_back(clip.key);
+    }
+    return result;
+}
+
+std::optional<bool> MixHouseTransitions::forEachLayerPair(
+    const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, const std::string& undoName,
+    const std::function<bool(const trackedit::ClipKey&, const trackedit::ClipKey&)>& op)
+{
+    if (m_inLayerPairs) {
+        return std::nullopt;
+    }
+    const std::vector<trackedit::ClipKey> outs = layersOf(outgoing);
+    const std::vector<trackedit::ClipKey> ins = layersOf(incoming);
+    if (outs.size() <= 1 && ins.size() <= 1) {
+        return std::nullopt;
+    }
+    m_inLayerPairs = true;
+    beginEdit();
+    // The pair the pill shows first: its result is the answer.
+    const bool ok = op(outgoing, incoming);
+    for (const trackedit::ClipKey& o : outs) {
+        for (const trackedit::ClipKey& i : ins) {
+            if (!(o == outgoing && i == incoming)) {
+                op(o, i);
+            }
+        }
+    }
+    endEdit(undoName);
+    m_inLayerPairs = false;
+    return ok;
+}
+
 std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
 {
     std::vector<Zone> result;
@@ -186,10 +266,24 @@ std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
         }
     }
 
-    for (const trackedit::Clip& a : clips) {
-        for (const trackedit::Clip& b : clips) {
-            if (a.key.trackId == b.key.trackId) {
-                continue;   // same track: clips there can't overlap
+    // A clip laid under one on a higher lane (a stem under its song) gets no
+    // pill of its own: the song's pill is the transition for all its layers.
+    std::map<trackedit::TrackId, size_t> lane;
+    for (const trackedit::TrackId trackId : project->trackIdList()) {
+        lane.emplace(trackId, lane.size());
+    }
+    std::vector<bool> under(clips.size(), false);
+    for (size_t i = 0; i < clips.size(); ++i) {
+        for (size_t j = 0; j < clips.size() && !under[i]; ++j) {
+            under[i] = i != j && layered(clips[i], clips[j]) && lane[clips[j].key.trackId] < lane[clips[i].key.trackId];
+        }
+    }
+    for (size_t ia = 0; ia < clips.size(); ++ia) {
+        const trackedit::Clip& a = clips[ia];
+        for (size_t ib = 0; ib < clips.size(); ++ib) {
+            const trackedit::Clip& b = clips[ib];
+            if (a.key.trackId == b.key.trackId || under[ia] || under[ib]) {
+                continue;   // same track: clips there can't overlap; layers share their top clip's pill
             }
             // a is outgoing when it starts first (ties broken by clip id so a
             // pair is listed once).
@@ -396,6 +490,9 @@ void MixHouseTransitions::clearTransitionEffects(const trackedit::ClipKey& clip)
 
 bool MixHouseTransitions::applyPreset(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, int index)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, "Transition", [&](const auto& o, const auto& i) { return applyPreset(o, i, index); })) {
+        return *r;
+    }
     const auto& all = presets();
     if (index < 0 || index >= static_cast<int>(all.size())) {
         return false;
@@ -406,6 +503,9 @@ bool MixHouseTransitions::applyPreset(const trackedit::ClipKey& outgoing, const 
 bool MixHouseTransitions::applyTransition(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                                           const std::string& name)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, name, [&](const auto& o, const auto& i) { return applyTransition(o, i, name); })) {
+        return *r;
+    }
     // The same conversion Mix Now uses, so a transition applied from the zone's
     // menu is exactly the one the Preferences preview draws.
     const auto spec = transitionConfiguration() ? transitionConfiguration()->spec(name) : std::nullopt;
@@ -643,6 +743,9 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
 
 bool MixHouseTransitions::applyCrossfade(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, "Crossfade", [&](const auto& o, const auto& i) { return applyCrossfade(o, i); })) {
+        return *r;
+    }
     m_disabled.erase({ outgoing, incoming });
     return crossfadeFrom(outgoing, incoming, -1.0);
 }
@@ -698,6 +801,9 @@ bool MixHouseTransitions::crossfadeFrom(const trackedit::ClipKey& outgoing, cons
 
 bool MixHouseTransitions::removeCrossfade(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, "Removed the transition", [&](const auto& o, const auto& i) { return removeCrossfade(o, i); })) {
+        return *r;
+    }
     Zone zone;
     if (!clipGain() || !findZone(outgoing, incoming, zone)) {
         return false;
@@ -998,6 +1104,10 @@ bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, cons
                                         bool outgoingSide, const std::vector<std::pair<double, double> >& points,
                                         bool consolidate)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, consolidate ? std::string() : std::string("Edited the transition"),
+                                  [&](const auto& o, const auto& i) { return setLanePoints(o, i, lane, outgoingSide, points, consolidate); })) {
+        return *r;
+    }
     Zone zone;
     if (!clipGain() || !findZone(outgoing, incoming, zone)) {
         return false;
@@ -1101,7 +1211,7 @@ bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, cons
         break;
     }
     }
-    projectHistory()->pushHistoryState("Edited the transition's " + what, "Transition lane",
+    if (m_editDepth == 0) projectHistory()->pushHistoryState("Edited the transition's " + what, "Transition lane",
                                        consolidate ? trackedit::UndoPushType::CONSOLIDATE : trackedit::UndoPushType::NONE);
     m_zonesChanged.notify();
     return ok;
@@ -1110,6 +1220,9 @@ bool MixHouseTransitions::setLanePoints(const trackedit::ClipKey& outgoing, cons
 bool MixHouseTransitions::addEffect(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                                     const std::string& kind)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, "Added an effect to the transition", [&](const auto& o, const auto& i) { return addEffect(o, i, kind); })) {
+        return *r;
+    }
     Zone zone;
     const auto project = globalContext()->currentTrackeditProject();
     if (!project || !findZone(outgoing, incoming, zone)) {
@@ -1183,7 +1296,7 @@ bool MixHouseTransitions::addEffect(const trackedit::ClipKey& outgoing, const tr
                list.end());
     const bool ok = writeEffectLines(key, entry, entry.info.amount);
     list.push_back(entry);
-    projectHistory()->pushHistoryState("Added " + preset.name + " to the transition", "Transition effect");
+    if (m_editDepth == 0) projectHistory()->pushHistoryState("Added " + preset.name + " to the transition", "Transition effect");
     m_zonesChanged.notify();
     return ok;
 }
@@ -1252,6 +1365,9 @@ std::vector<IMixHouseTransitions::AddedEffect> MixHouseTransitions::addedEffects
 bool MixHouseTransitions::setEffectAmount(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                                           const std::string& kind, double amount)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, "Changed an effect in the transition", [&](const auto& o, const auto& i) { return setEffectAmount(o, i, kind, amount); })) {
+        return *r;
+    }
     const auto it = m_effects.find({ outgoing, incoming });
     if (it == m_effects.end()) {
         return false;
@@ -1260,7 +1376,7 @@ bool MixHouseTransitions::setEffectAmount(const trackedit::ClipKey& outgoing, co
         if (e.info.kind == kind) {
             e.info.amount = std::clamp(amount, 0.0, 1.0);
             const bool ok = writeEffectLines(it->first, e, e.info.enabled ? e.info.amount : 0.0);
-            projectHistory()->pushHistoryState("Changed " + e.info.name + " in the transition", "Transition effect");
+            if (m_editDepth == 0) projectHistory()->pushHistoryState("Changed " + e.info.name + " in the transition", "Transition effect");
             m_zonesChanged.notify();
             return ok;
         }
@@ -1271,6 +1387,9 @@ bool MixHouseTransitions::setEffectAmount(const trackedit::ClipKey& outgoing, co
 bool MixHouseTransitions::setEffectEnabled(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                                            const std::string& kind, bool enabled)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, enabled ? "Switched on an effect" : "Switched off an effect", [&](const auto& o, const auto& i) { return setEffectEnabled(o, i, kind, enabled); })) {
+        return *r;
+    }
     const auto it = m_effects.find({ outgoing, incoming });
     if (it == m_effects.end()) {
         return false;
@@ -1279,7 +1398,7 @@ bool MixHouseTransitions::setEffectEnabled(const trackedit::ClipKey& outgoing, c
         if (e.info.kind == kind) {
             e.info.enabled = enabled;
             const bool ok = writeEffectLines(it->first, e, enabled ? e.info.amount : 0.0);
-            projectHistory()->pushHistoryState((enabled ? "Switched on " : "Switched off ") + e.info.name,
+            if (m_editDepth == 0) projectHistory()->pushHistoryState((enabled ? "Switched on " : "Switched off ") + e.info.name,
                                                "Transition effect");
             m_zonesChanged.notify();
             return ok;
@@ -1291,6 +1410,9 @@ bool MixHouseTransitions::setEffectEnabled(const trackedit::ClipKey& outgoing, c
 bool MixHouseTransitions::removeEffect(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                                        const std::string& kind)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, "Removed an effect from the transition", [&](const auto& o, const auto& i) { return removeEffect(o, i, kind); })) {
+        return *r;
+    }
     const auto it = m_effects.find({ outgoing, incoming });
     if (it == m_effects.end()) {
         return false;
@@ -1301,7 +1423,7 @@ bool MixHouseTransitions::removeEffect(const trackedit::ClipKey& outgoing, const
             const std::string name = e->info.name;
             const bool ok = writeEffectLines(it->first, *e, 0.0);   // neutral all along
             list.erase(e);
-            projectHistory()->pushHistoryState("Removed " + name + " from the transition", "Transition effect");
+            if (m_editDepth == 0) projectHistory()->pushHistoryState("Removed " + name + " from the transition", "Transition effect");
             m_zonesChanged.notify();
             return ok;
         }
@@ -1312,6 +1434,9 @@ bool MixHouseTransitions::removeEffect(const trackedit::ClipKey& outgoing, const
 bool MixHouseTransitions::setTransitionEnabled(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
                                                bool enabled)
 {
+    if (auto r = forEachLayerPair(outgoing, incoming, enabled ? "Switched the transition on" : "Switched the transition off", [&](const auto& o, const auto& i) { return setTransitionEnabled(o, i, enabled); })) {
+        return *r;
+    }
     const ZoneKey key { outgoing, incoming };
     if (!enabled) {
         if (m_disabled.count(key)) {

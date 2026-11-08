@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
+#include <QLinearGradient>
 #include "bezierautomationlane.h"
 
 #include <algorithm>
@@ -155,6 +156,51 @@ void BezierAutomationLane::paint(QPainter* painter)
     // styles on master): a plain 2px line, no dark halo, solid 5px points;
     // the hovered point is a 1px white centre, 2px black ring and 3px outline
     // in the line colour; the hover ghost is a plain 4px dot.     // 2026-09-13: the dark halo/outlines made the line "more yellow", not crisp.
+    if (m_glow && !m_curve.segments.empty()) {
+        // The pill's glow: one outline along the line, closed down to the base
+        // value, filled strong at the line and almost clear at the base.
+        QPainterPath fill;
+        bool started = false;
+        double far = 0.0;
+        const double baseY = map({ m_start, m_glowBase }).y();
+        for (const auto& s : m_curve.segments) {
+            if (s.endPoint.timeOffset < m_start || s.startPoint.timeOffset > m_end) { continue; }
+            const QPointF from = map(s.startPoint), to = map(s.endPoint);
+            if (!started) {
+                fill.moveTo(from.x(), baseY);
+                fill.lineTo(from);
+                started = true;
+            } else {
+                fill.lineTo(from);
+            }
+            if (m_stepped) {
+                fill.lineTo(to.x(), from.y());
+                fill.lineTo(to);
+            } else if (s.eased) {
+                const auto [c1, c2] = s.CubicControlPoints();
+                fill.cubicTo(map(c1), map(c2), to);
+            } else {
+                fill.quadTo(map(s.ControlPoint()), to);
+            }
+            far = std::max({ far, std::abs(from.y() - baseY), std::abs(to.y() - baseY) });
+        }
+        if (started) {
+            fill.lineTo(fill.currentPosition().x(), baseY);
+            fill.closeSubpath();
+            const double farY = fill.boundingRect().top() < baseY - 0.5 ? fill.boundingRect().top() : fill.boundingRect().bottom();
+            QLinearGradient g(0, farY, 0, baseY);
+            QColor strong = m_color, faint = m_color;
+            strong.setAlphaF(m_dashed ? 0.35 : 0.5);
+            faint.setAlphaF(0.04);
+            g.setColorAt(0, strong);
+            g.setColorAt(1, faint);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(g);
+            painter->drawPath(fill);
+        }
+        Q_UNUSED(far)
+    }
+
     painter->setPen(QPen(m_color, 2, m_dashed ? Qt::DashLine : Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter->setBrush(Qt::NoBrush);
     painter->drawPath(path);

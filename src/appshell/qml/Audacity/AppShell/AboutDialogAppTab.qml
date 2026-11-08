@@ -250,13 +250,31 @@ ColumnLayout {
                         font: ui.theme.bodyFont
                     }
 
-                    StyledTextLabel {
+                    // Steinberg's usage rules: the VST Compatible logo (their
+                    // artwork, at least 20 mm wide) next to the trademark notice.
+                    Row {
                         width: parent.width
-                        horizontalAlignment: Text.AlignLeft
-                        wrapMode: Text.WordWrap
-                        text: qsTrc("appshell/about", "Audacity®, MuseScore®, Mixxx and VST® are trademarks of their respective owners. GlideMix is an independent project, not affiliated with or endorsed by them.")
-                        font: ui.theme.bodyFont
-                        color: ui.theme.fontSecondaryColor
+                        spacing: 12
+
+                        Image {
+                            id: vstLogo
+                            source: "qrc:/resources/about/VstCompatible.png"
+                            width: 76
+                            height: 71
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+
+                        StyledTextLabel {
+                            width: parent.width - vstLogo.width - parent.spacing
+                            anchors.verticalCenter: vstLogo.verticalCenter
+                            horizontalAlignment: Text.AlignLeft
+                            wrapMode: Text.WordWrap
+                            text: qsTrc("appshell/about", "VST® is a registered trademark of Steinberg Media Technologies GmbH. Audacity®, MuseScore® and Mixxx are trademarks of their respective owners. GlideMix is an independent project, not affiliated with or endorsed by them.")
+                            font: ui.theme.bodyFont
+                            color: ui.theme.fontSecondaryColor
+                        }
                     }
                 }
             }

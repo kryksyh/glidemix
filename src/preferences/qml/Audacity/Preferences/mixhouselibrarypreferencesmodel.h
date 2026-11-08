@@ -71,6 +71,7 @@ class MixHouseLibraryPreferencesModel : public QObject
     Q_PROPERTY(bool showWaveformMinuteMarkers READ showWaveformMinuteMarkers WRITE setShowWaveformMinuteMarkers
                    NOTIFY showWaveformMinuteMarkersChanged)
     Q_PROPERTY(QString settingsDirectoryPath READ settingsDirectoryPath CONSTANT)
+    Q_PROPERTY(QStringList djAppFolders READ djAppFolders NOTIFY djAppFoldersChanged)
 
 public:
     explicit MixHouseLibraryPreferencesModel(QObject* parent = nullptr);
@@ -143,6 +144,15 @@ public:
     void setUseRekordboxAnalysis(bool use);
     bool useLexiconLibrary() const;
     void setUseLexiconLibrary(bool use);
+    //! Preferences > Library > Other DJ Apps: show or hide each app's library
+    //! ("rekordbox", "engine", "traktor", "serato", "vdj", "djay"). Shown by
+    //! default; the sidebar picks a change up within a second (mixhousedjapps).
+    Q_INVOKABLE bool djAppShown(const QString& source) const;
+    Q_INVOKABLE void setDjAppShown(const QString& source, bool shown);
+    //! More folders holding a DJ app's library (any drive's root is found anyway).
+    QStringList djAppFolders() const;
+    Q_INVOKABLE void addDjAppFolder(const QString& path);
+    Q_INVOKABLE void removeDjAppFolder(const QString& path);
     void setSyncMetadataToFileTags(bool sync);
 
     /// DlgPrefWaveform's "Overview Waveforms" type combo -- see
@@ -176,6 +186,8 @@ signals:
     void syncMetadataToFileTagsChanged();
     void useRekordboxAnalysisChanged();
     void useLexiconLibraryChanged();
+    void djAppsShownChanged();
+    void djAppFoldersChanged();
     void waveformOverviewTypeChanged();
     void showWaveformMinuteMarkersChanged();
 };

@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include <QColor>
 #include <QImage>
 #include <QString>
 
@@ -37,6 +38,12 @@ struct MixHouseHdWave {
     size_t size() const { return low.size(); }
 };
 using MixHouseHdWavePtr = std::shared_ptr<const MixHouseHdWave>;
+
+/// The Beatgrid editor's colour for band levels 0..1 (each band's peak against
+/// its own loud level): bass red, mids green, highs blue, the leading band
+/// winning clearly. The timeline and the library paint with it too, so every
+/// waveform has the same colours.
+QColor hdBandColor(float low, float mid, float high);
 
 /// Paints `wave` from file second `fromSec` to `toSec` into `image` (whole
 /// image), style E. The grain is tied to the audio, so it does not shimmer

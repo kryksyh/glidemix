@@ -213,6 +213,14 @@ bool ClipPluginAutomationModel::isColor() const
     return spec().instanceId == kColorInstance;
 }
 
+bool ClipPluginAutomationModel::bandLine() const
+{
+    // The header's band lines: the built-in EQ (tracksviewstatemodel.cpp kBuiltinInstance).
+    const auto f = spec();
+    return isColor() || (f.instanceId == "b7c3e0a2-4d1f-4c8e-9a55-6f1d2e7a4b10"
+                         && (f.parameterId == "low" || f.parameterId == "mid" || f.parameterId == "high"));
+}
+
 std::string ClipPluginAutomationModel::filterEffectId() const
 {
     return mixxxEffectIds() ? mixxxEffectIds()->effectIdForMixxxId("org.mixxx.effects.filter").toStdString() : std::string();

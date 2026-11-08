@@ -332,7 +332,10 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
 #else
                 ok = run(QStringLiteral("mps"));
 #endif
-                if (!ok && !progress.Cancelled() && deviceSetting == MixHouseStemsDevice::Automatic) {
+                // Any GPU failure falls back to the CPU, also when GPU was
+                // chosen: on Windows the installed engine is CPU-only, so an
+                // old "GPU" setting would otherwise never separate anything.
+                if (!ok && !progress.Cancelled()) {
                     LOGW() << "GlideMix stems: GPU separation failed, trying the CPU";
                     ok = run(QStringLiteral("cpu"));
                 }

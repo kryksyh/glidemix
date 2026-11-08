@@ -3,6 +3,8 @@
  */
 #include "mixhousegrideditormodel.h"
 
+#include "mixhouse/mixhousehdwaveform.h"
+
 #include <algorithm>
 #include <cmath>
 #include <thread>
@@ -296,19 +298,7 @@ void MixHouseGridEditorModel::tick()
 
 QColor MixHouseGridEditorModel::bandColor(float low, float mid, float high)
 {
-    // Mids under-weighted a little: rekordbox's colours lean red/blue (pink
-    // kicks, blue hats), green only where the mids really lead.
-    // Squared, so the leading band wins clearly and colours don't wash to white.
-    double r = std::pow(low, 2.0);
-    double g = std::pow(mid * 0.75, 2.0);
-    double b = std::pow(high * 0.9, 2.0);
-    const double top = std::max({ r, g, b, 1e-6 });
-    r /= top;
-    g /= top;
-    b /= top;
-    const double floorLevel = 0.06;
-    const auto channel = [floorLevel](double v) { return static_cast<int>(std::lround(255.0 * (floorLevel + (1.0 - floorLevel) * v))); };
-    return QColor(channel(r), channel(g), channel(b));
+    return hdBandColor(low, mid, high);   // one formula for every waveform (mixhousehdwaveform.h)
 }
 
 double MixHouseGridEditorModel::livePosition() const

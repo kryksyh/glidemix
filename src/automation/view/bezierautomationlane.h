@@ -27,6 +27,10 @@ class BezierAutomationLane : public QQuickPaintedItem
     Q_PROPERTY(bool stepped MEMBER m_stepped NOTIFY lineColorChanged)
     //! GlideMix: the lowest value sits this far above the bottom, clear of the phrase ribbon.
     Q_PROPERTY(double bottomInset MEMBER m_bottomInset NOTIFY lineColorChanged)
+    //! GlideMix: the transition pill's glow, filled from the line towards glowBase
+    //! (a value: 0 = the bottom; 0.5 = the centre, for the Color line).
+    Q_PROPERTY(bool glow MEMBER m_glow NOTIFY lineColorChanged)
+    Q_PROPERTY(double glowBase MEMBER m_glowBase NOTIFY lineColorChanged)
     // Live drag feedback -- e.g. a floating dB readout while a point is being
     // dragged, the same job PolylinePlot's activePoint* properties did before
     // this component replaced it. Normalized 0..1, same as the values in
@@ -116,6 +120,8 @@ private:
     double m_selectionStart{}, m_selectionEnd{};
     QColor m_color{QStringLiteral("#F5BB42")};
     double m_bottomInset{10.0};
+    bool m_glow = false;
+    double m_glowBase = 0.0;
     bool m_dashed = false;
     bool m_stepped = false;
     QPointF m_press;

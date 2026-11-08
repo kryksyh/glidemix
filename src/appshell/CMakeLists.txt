@@ -86,6 +86,7 @@ qt_add_resources(appshell appshell_resources
         resources/about/AppIconDark.png
         resources/about/AppIconLight.png
         resources/about/components.json
+        resources/about/VstCompatible.png
         ${ABOUT_LICENSE_FILES}
         resources/Classic.svg
         resources/Colorful.svg

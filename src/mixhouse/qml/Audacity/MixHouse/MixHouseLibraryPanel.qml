@@ -852,8 +852,8 @@ Item {
         if (nodeId === "recordings") return "ic_library_recordings.svg"
         if (nodeId === "history") return "ic_library_history.svg"
         if (nodeId === "analyze") return "ic_library_prepare.svg"
-        if (nodeId === "rekordbox") return "ic_library_rekordbox.svg"
-        if (nodeId === "lexicon") return "ic_library_lexicon.png"
+        // Other DJ apps: one icon of our own, never their logos.
+        if (["rekordbox", "lexicon", "engine", "traktor", "serato", "vdj", "djay"].indexOf(nodeId) >= 0) return "ic_library_djapp.svg"
         return ""
     }
 
@@ -1051,7 +1051,11 @@ Item {
             FlatButton {
                 Layout.alignment: Qt.AlignRight
                 text: qsTrc("mixhouse", "Reset")
-                visible: keyWheel.hasSelection
+                // Keeps its space while hidden, so picking a key doesn't push
+                // the sidebar down under the mouse (FINDINGS F39).
+                visible: keyWheel.visible
+                opacity: keyWheel.hasSelection ? 1 : 0
+                enabled: keyWheel.hasSelection
                 onClicked: keyWheel.clearSelection()
             }
 
@@ -1579,8 +1583,7 @@ Item {
                                 // (a ShaderEffectSource-based recolor) to be able
                                 // to sample this Image as its source at all.
                                 layer.enabled: true
-                                // The Lexicon DJ app icon keeps its own colours.
-                                visible: modelData.nodeId === "lexicon"
+                                visible: false
                                 onStatusChanged: {
                                     if (status === Image.Error) {
                                         console.warn("GlideMix sidebar icon failed:", source)
@@ -1591,7 +1594,7 @@ Item {
                                 anchors.fill: featureIconSource
                                 source: featureIconSource
                                 color: ui.theme.accentColor
-                                visible: featureIconSource.status === Image.Ready && modelData.nodeId !== "lexicon"
+                                visible: featureIconSource.status === Image.Ready
                             }
                             // Real fallback now (not a permanent bypass): the
                             // hand-drawn silhouettes below only show for a
@@ -3186,6 +3189,43 @@ Item {
             }
 
             SeparatorLine {}
+
+            // GlideMix: an empty collection says what to do instead of showing a
+            // blank table (FINDINGS F9). Drawn over the table, outside the layout.
+            Column {
+                parent: trackTableView
+                anchors.centerIn: parent
+                width: Math.min(parent ? parent.width - 40 : 360, 420)
+                spacing: 12
+                visible: tracksModel.trackCount === 0 && trackTableView.rows === 0
+                z: 5
+
+                StyledTextLabel {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    font: ui.theme.largeBodyFont
+                    text: qsTrc("mixhouse", "Your collection is empty")
+                }
+                StyledTextLabel {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    opacity: 0.7
+                    text: qsTrc("mixhouse", "Add a folder with your music, or drag one here. GlideMix finds every song in it and its subfolders.")
+                }
+                FlatButton {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: qsTrc("mixhouse", "Add music folder…")
+                    accentButton: true
+                    onClicked: {
+                        var chosen = folderPicker.selectDirectory()
+                        if (chosen) {
+                            tracksModel.addFolderToLibrary(chosen)
+                        }
+                    }
+                }
+            }
 
             // Real TableView, not a ListView + hand-rolled per-cell x/width Repeater --
             // ported alongside the header from mixxx's res/qml/Library/TrackList.qml.

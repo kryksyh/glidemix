@@ -2,6 +2,8 @@
  * Audacity: A Digital Audio Editor
  */
 #include <QDir>
+#include <QSettings>
+#include <QUrl>
 #include <QStandardPaths>
 #include "mixhouselibrarypreferencesmodel.h"
 
@@ -349,6 +351,68 @@ void MixHouseLibraryPreferencesModel::setUseLexiconLibrary(bool use)
     }
     configuration()->setUseLexiconLibrary(use);
     emit useLexiconLibraryChanged();
+}
+
+// The same key mixhousedjapps.cpp reads (hiddenDjApps()).
+static const char* kHiddenDjApps = "GlideMix/hiddenDjApps";
+
+bool MixHouseLibraryPreferencesModel::djAppShown(const QString& source) const
+{
+    return !QSettings().value(QLatin1String(kHiddenDjApps)).toStringList().contains(source);
+}
+
+void MixHouseLibraryPreferencesModel::setDjAppShown(const QString& source, bool shown)
+{
+    QSettings settings;
+    QStringList hidden = settings.value(QLatin1String(kHiddenDjApps)).toStringList();
+    if (shown == !hidden.contains(source)) {
+        return;
+    }
+    if (shown) {
+        hidden.removeAll(source);
+    } else {
+        hidden << source;
+    }
+    if (hidden.isEmpty()) {
+        settings.remove(QLatin1String(kHiddenDjApps));
+    } else {
+        settings.setValue(QLatin1String(kHiddenDjApps), hidden);
+    }
+    emit djAppsShownChanged();
+}
+
+// The same key mixhousedjapps.cpp reads (djAppFolders()).
+static const char* kDjAppFolders = "GlideMix/djAppFolders";
+
+QStringList MixHouseLibraryPreferencesModel::djAppFolders() const
+{
+    return QSettings().value(QLatin1String(kDjAppFolders)).toStringList();
+}
+
+void MixHouseLibraryPreferencesModel::addDjAppFolder(const QString& path)
+{
+    const QString folder = QDir::cleanPath(path.startsWith(u"file:") ? QUrl(path).toLocalFile() : path);
+    QStringList folders = djAppFolders();
+    if (folder.isEmpty() || folders.contains(folder)) {
+        return;
+    }
+    folders << folder;
+    QSettings().setValue(QLatin1String(kDjAppFolders), folders);
+    emit djAppFoldersChanged();
+}
+
+void MixHouseLibraryPreferencesModel::removeDjAppFolder(const QString& path)
+{
+    QStringList folders = djAppFolders();
+    if (folders.removeAll(path) == 0) {
+        return;
+    }
+    if (folders.isEmpty()) {
+        QSettings().remove(QLatin1String(kDjAppFolders));
+    } else {
+        QSettings().setValue(QLatin1String(kDjAppFolders), folders);
+    }
+    emit djAppFoldersChanged();
 }
 
 int MixHouseLibraryPreferencesModel::waveformOverviewType() const

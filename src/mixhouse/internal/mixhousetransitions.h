@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -128,6 +129,18 @@ private:
     //! Switched-off zones, with the transition that was there ("" = a crossfade).
     std::map<ZoneKey, std::string> m_disabled;
     int m_editDepth = 0;   ///< > 0 between beginEdit() and endEdit()
+
+    //! A song and its stems are clips laid over each other on several lanes:
+    //! one transition for all of them (FINDINGS F47). `key` first, then the
+    //! clips layered with it, top lane first.
+    std::vector<trackedit::ClipKey> layersOf(const trackedit::ClipKey& key) const;
+    //! Runs `op` for every pair of layers as one undo step named `undoName`
+    //! ("" = folded into the step on top). Nothing (nullopt) when neither side
+    //! has layers: the caller then just does the plain edit.
+    std::optional<bool> forEachLayerPair(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming,
+                                         const std::string& undoName,
+                                         const std::function<bool(const trackedit::ClipKey&, const trackedit::ClipKey&)>& op);
+    bool m_inLayerPairs = false;   ///< inside forEachLayerPair: edit just this pair
     void* m_namesFor = nullptr;   ///< the au3 project whose saved names were read
 };
 }

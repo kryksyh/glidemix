@@ -37,6 +37,10 @@ class ClipPluginAutomationModel : public QObject, public muse::Contextable, publ
     //! Automation in New Lane"): this parameter, whatever the focus is.
     //! { instanceId, pluginId, parameterId, label, color, defaultValue, stepped }
     Q_PROPERTY(QVariantMap lane READ lane WRITE setLane NOTIFY changed)
+    //! GlideMix: one of the track header's Low/Mid/High/Color lines: drawn
+    //! with the transition pill's glow under it (colorLine: towards the centre).
+    Q_PROPERTY(bool bandLine READ bandLine NOTIFY changed)
+    Q_PROPERTY(bool colorLine READ isColor NOTIFY changed)
     muse::ContextInject<context::IGlobalContext> globalContext{this};
     muse::ContextInject<trackedit::IProjectHistory> projectHistory{this};
     muse::GlobalInject<effects::IMixxxEffectIds> mixxxEffectIds;
@@ -58,6 +62,7 @@ public:
     bool stepped() const;
     QVariantList otherLines() const;
     QVariantMap lane() const { return m_lane; }
+    bool bandLine() const;
     void setLane(const QVariantMap& lane) { m_lane = lane; emit changed(); }
     //! The edited line gets a lane of its own under its track.
     Q_INVOKABLE void showInOwnLane();
