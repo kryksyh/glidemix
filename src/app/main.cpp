@@ -51,7 +51,11 @@ static void crashCallback(int signum)
         break;
     }
     LOGE() << "Oops! Application crashed with signal: [" << signum << "] " << signame << "-" << sigdescript;
-    exit(EXIT_FAILURE);
+    // GlideMix: exit() ran the static destructors on a broken process; they aborted
+    // and the crash report showed that abort instead of the real crash. Let the
+    // system handle the signal so the report shows where it happened.
+    signal(signum, SIG_DFL);
+    raise(signum);
 }
 
 #endif

@@ -68,7 +68,10 @@ StyledPopupView {
         repeat: false
 
         onTriggered: {
-            root.open()
+            //! GlideMix: the control can be gone by the time the delay ends
+            if (root.parent && root.parent.visible) {
+                root.open()
+            }
         }
     }
 

@@ -69,6 +69,9 @@ void PopupViewCloseController::setParentItem(QQuickItem* parentItem)
     }
 
     m_parentItem = parentItem;
+    if (!m_parentItem) {
+        return;
+    }
 
     connect(m_parentItem, &QQuickItem::visibleChanged, this, [this]() {
         if (!m_parentItem || !m_parentItem->isVisible()) {
@@ -77,6 +80,7 @@ void PopupViewCloseController::setParentItem(QQuickItem* parentItem)
     });
 
     connect(m_parentItem, &QQuickItem::destroyed, this, [this]() {
+        m_parentItem = nullptr;
         qApp->removeEventFilter(this);
         notifyAboutClose();
     });
@@ -168,6 +172,9 @@ bool PopupViewCloseController::isMouseWithinBoundaries(const QPointF& mousePos) 
     //! NOTE We also check the parent because often clicking on the parent should toggle the popup,
     //! but if we don't check a parent here, the popup will be closed and reopened.
     QQuickItem* parent = parentItem();
+    if (!parent) {
+        return false;
+    }
     QPointF localPos = parent->mapFromGlobal(mousePos);
     QRectF parentRect = QRectF(0, 0, parent->width(), parent->height());
     if (parentRect.contains(localPos)) {

@@ -68,7 +68,13 @@ bool MacOSPopupViewCloseController::nativeEventFilter(const QByteArray& eventTyp
 
 void MacOSPopupViewCloseController::initWindowMinimizedObserver()
 {
-    WId wid = parentItem()->window()->winId();
+    //! GlideMix: the parent item can be missing; parentWindow() falls back to the main window
+    QWindow* window = parentWindow();
+    if (!window) {
+        return;
+    }
+
+    WId wid = window->winId();
     NSView* nsView = (__bridge NSView*)reinterpret_cast<void*>(wid);
     NSWindow* nsWindow = [nsView window];
 

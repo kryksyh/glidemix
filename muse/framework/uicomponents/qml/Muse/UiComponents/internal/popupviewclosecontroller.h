@@ -72,8 +72,9 @@ protected:
 
     void notifyAboutClose();
 
-private:
     QWindow* parentWindow() const;
+
+private:
 
     bool m_active = false;
 

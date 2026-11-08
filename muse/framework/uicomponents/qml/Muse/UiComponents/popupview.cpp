@@ -114,6 +114,14 @@ void PopupView::setParentItem(QQuickItem* parent)
     }
 }
 
+bool PopupView::canOpen() const
+{
+    //! GlideMix: a delayed open (e.g. a tooltip timer) can fire after its parent
+    //! left the window; opening then crashed in the close controller (1.1.29)
+    const QQuickItem* parent = parentItem();
+    return parent && parent->window();
+}
+
 void PopupView::beforeOpen()
 {
     WindowView::beforeOpen();

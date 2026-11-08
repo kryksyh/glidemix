@@ -172,6 +172,8 @@ protected:
     virtual void initView();
     void setViewContent(QQuickItem* item);
 
+    //! GlideMix: a view that cannot be shown right now (e.g. its parent is gone) is not opened
+    virtual bool canOpen() const { return true; }
     virtual void beforeOpen();
     virtual void afterShow() {}
     void doOpen();

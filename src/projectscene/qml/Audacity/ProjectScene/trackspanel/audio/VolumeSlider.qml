@@ -30,7 +30,8 @@ DjSlider {
         id: prv
 
         property bool dragActive: false
-        property real handleWidth: root.handle ? root.handle.width : 0
+        // GlideMix: DjSlider's cap; root.handle can still be StyledSlider's replaced one
+        property real handleWidth: root.capWidth
         property real innerMargin: handleWidth / 2
         property real startPos: 0.0
         property real startFineValue: 0.0
@@ -47,10 +48,23 @@ DjSlider {
         }
     }
 
+    // GlideMix: the tooltip sits over the fader cap through this item. It was
+    // parented to root.handle, which still pointed at StyledSlider's handle that
+    // DjSlider replaces: that one is outside the window, and opening the tooltip
+    // on it crashed 1.1.29 on the Mac at the first hover.
+    Item {
+        id: tooltipAnchor
+
+        x: root.leftPadding + root.visualPosition * (root.availableWidth - width)
+        y: root.topPadding + (root.availableHeight - height) / 2
+        width: root.capWidth
+        height: root.capHeight
+    }
+
     ValueTooltip {
         id: tooltip
 
-        parent: root.handle
+        parent: tooltipAnchor
 
         unitText: "dB"
         sizingText: "-60.0dB"

@@ -140,6 +140,7 @@ signals:
 protected:
     void initView() override;
 
+    bool canOpen() const override;
     void beforeOpen() override;
     void onHidden() override;
 

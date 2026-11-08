@@ -152,6 +152,10 @@ void WindowView::doOpen()
         return;
     }
 
+    if (!canOpen()) {
+        return;
+    }
+
     IF_ASSERT_FAILED(m_view) {
         return;
     }
