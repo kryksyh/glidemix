@@ -28,6 +28,12 @@ public:
     std::vector<MixHouseCue> cues(int trackId) const override;
 
 private:
+    // GlideMix (fast library): each list read once, then searched and sorted
+    // in memory; read again when Lexicon's database file changes.
+    MixHouseTrackList readTracks(int playlistId, const IMixHouseLibrary::TrackQuery& query) const;
+    mutable QHash<int, MixHouseTrackList> m_listCache;
+    mutable QString m_listCacheStamp;
+
     bool open() const;
 
     mutable QSqlDatabase m_db;

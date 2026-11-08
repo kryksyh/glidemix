@@ -11,6 +11,8 @@
 #include <QtQmlIntegration>
 #include <QHash>
 #include <QSet>
+#include <QCollator>
+#include <unordered_map>
 #include <QPixmap>
 #include <deque>
 
@@ -636,7 +638,7 @@ public:
     /// one at a time in a blocking for-loop with no yield point at all,
     /// which is the real freeze we hit analyzing a 1372-track selection
     /// from this exact menu item; not true anymore.
-    Q_INVOKABLE void analyzeTracksWithConfirm(const QVariantList& rows);
+    Q_INVOKABLE void analyzeTracksWithConfirm(const QVariantList& rows, bool allMatching = false);
 
     /// The "Analysis" stats bar above the header (real mixxx: DlgAnalysis/
     /// AnalysisFeature, library/analysis/dlganalysis.cpp) -- New/All radio
@@ -665,6 +667,10 @@ public:
     Q_PROPERTY(bool analyzing READ analyzing NOTIFY analyzingChanged)
     //! GlideMix: how far the rekordbox XML has been read, 0-100 (-1 = not reading).
     Q_PROPERTY(int rekordboxLoadProgress READ rekordboxLoadProgress NOTIFY rekordboxLoadProgressChanged)
+    // GlideMix: the small Import from Rekordbox XML window (reading, then done).
+    Q_PROPERTY(bool rekordboxImportShown READ rekordboxImportShown NOTIFY rekordboxImportChanged)
+    Q_PROPERTY(bool rekordboxImportDone READ rekordboxImportDone NOTIFY rekordboxImportChanged)
+    Q_PROPERTY(QString rekordboxImportStatus READ rekordboxImportStatus NOTIFY rekordboxImportChanged)
     Q_PROPERTY(bool duplicatesView READ duplicatesView NOTIFY loaded)
     Q_PROPERTY(int duplicateGroups READ duplicateGroups NOTIFY loaded)
     /// A few seconds of "Analysis finished/stopped" text after a batch.
@@ -712,7 +718,7 @@ public:
     /// Preview from the next phrase start of this row's track: after the
     /// current position while it is previewing, otherwise from the start.
     Q_INVOKABLE void previewNextPhrase(int row);
-    Q_INVOKABLE void startBatchAnalysis(const QVariantList& rows);
+    Q_INVOKABLE void startBatchAnalysis(const QVariantList& rows, bool allMatching = false);
     Q_INVOKABLE void stopBatchAnalysis();
     bool scanning() const;
     QString scanStatusText() const;
@@ -746,6 +752,7 @@ signals:
     //! `mode`: 0 the track, 1 its album, 2 its artist (IMixHouseLibrary::RevealMode).
     void revealTrackRequested(int trackId, int mode);
     void rekordboxLoadProgressChanged();
+    void rekordboxImportChanged();
     void uiColumnCountChanged();
     void analyzingChanged();
     void analyzeProgressChanged();
@@ -896,9 +903,25 @@ private:
     int m_unanalyzedCount = -1;
     mutable bool m_countsStale = true;
     mutable QTimer m_countsTimer;
+    QTimer m_unanalyzedCountTimer;   // the Analyze row while analysing
+    // GlideMix fast library: every collection row in memory (see indexedTracks()).
+    std::unordered_map<int, MixHouseTrack> m_index;
+    std::unordered_map<int, std::unordered_map<int, QCollatorSortKey> > m_indexSortKeys;   // per sort column
+    bool m_indexLoaded = false;
+    void ensureIndex();
+    void refreshIndexRows(const QList<int>& ids);
+    void updateIndexRow(const MixHouseTrack& t);
+    MixHouseTrackList indexedTracks();
     QElapsedTimer m_lastRecount;
     bool duplicatesView() const { return m_externalSource == u"duplicates"; }
     int rekordboxLoadProgress() const;
+    bool rekordboxImportShown() const { return m_rekordboxImportShown; }
+    bool rekordboxImportDone() const { return m_rekordboxImportDone; }
+    QString rekordboxImportStatus() const { return m_rekordboxImportStatus; }
+    Q_INVOKABLE void closeRekordboxImport();
+    bool m_rekordboxImportShown = false;
+    bool m_rekordboxImportDone = false;
+    QString m_rekordboxImportStatus;
     QTimer m_rekordboxProgressTimer;
     int m_rekordboxProgress = -1;
     //! The rekordbox XML whose read result was last looked at: a file that
@@ -930,7 +953,8 @@ private:
     std::vector<MixHousePhrase> phrasesForExport(const MixHouseTrack& track) const;
     int libraryIdForFile(const QString& filePath) const;
     //! Library ids and external files of `rows`, for analysis.
-    void collectAnalysisTargets(const QVariantList& rows, QList<int>& ids, QStringList& externalFiles) const;
+    void collectAnalysisTargets(const QVariantList& rows, QList<int>& ids,
+                                QStringList& externalFiles, bool allMatching = false) const;
     //! Adds external files not yet in the Music Collection (analysis results
     //! live there) and returns every id to analyze.
     QList<int> analysisTrackIds(QList<int> ids, const QStringList& externalFiles);

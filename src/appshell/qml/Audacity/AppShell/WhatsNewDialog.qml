@@ -35,9 +35,12 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.31**\n\n"
-                      + "- **Freeze fixed (Windows):** with a mapped network drive that was offline or not ready, GlideMix froze for up to 40 seconds about every 40 seconds. Drives are now looked at in the background, and only local ones (internal, USB, SD card).\n"
-                      + "- A DJ library on a network share is still read when you add its folder in Preferences > Library > Other DJ Apps.\n"
+                text: "**GlideMix v1.1.32: a faster library**\n\n"
+                      + "- **Every song, at once:** the song list holds your whole collection, not 2000 songs at a time. Scrolling to the end, sorting and searching no longer stall, even with 40,000 songs. The same for rekordbox XML, Lexicon and your other DJ apps.\n"
+                      + "- **Select All means all:** Analyze and the other actions now reach every song in the list.\n"
+                      + "- **Analyze:** songs never analysed go first, and the Analyze count goes down as they finish.\n"
+                      + "- **Import from Rekordbox XML** shows a small window while it reads, and what it found.\n"
+                      + "- Quitting while GlideMix was still reading your DJ apps could crash it on the Mac. Fixed.\n"
             }
         }
 

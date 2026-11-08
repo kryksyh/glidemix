@@ -884,6 +884,7 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
     // QCollator, same as mixxx's own StringCollator (case-insensitive,
     // locale-aware). SQL still does the filtering/JOINs; only the final
     // ORDER BY for these columns moves to C++.
+    const QString sqlTextOrder = orderBy;   // GlideMix: idsOnly keeps SQL's own text order
     bool sortIsLocaleAwareText = false;
     switch (query.sort) {
     case SortKey::Title: case SortKey::Artist: case SortKey::Album: case SortKey::Genre:
@@ -937,6 +938,14 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
     if (query.trackId >= 0) {
         sql += QStringLiteral("AND l.id = :trackid ");
     }
+    if (!query.trackIds.isEmpty()) {
+        QStringList idList;
+        idList.reserve(query.trackIds.size());
+        for (int id : query.trackIds) {
+            idList << QString::number(id);
+        }
+        sql += QStringLiteral("AND l.id IN (%1) ").arg(idList.join(QLatin1Char(',')));
+    }
     if (!query.location.isEmpty()) {
         sql += QStringLiteral("AND t.location = :location ");
     }
@@ -975,14 +984,28 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
         // whatever text a track happens to have stored.
         sql += QStringLiteral("AND l.key_id IN (%1) ").arg(marks.join(QStringLiteral(", ")));
     }
+    if (query.idsOnly) {
+        // GlideMix (fast library): the same FROM/JOIN/WHERE, only the id
+        // (and the playlist position) selected; text sorts in SQL's order.
+        const qsizetype from = sql.indexOf(QStringLiteral("FROM library l "));
+        sql = QStringLiteral("SELECT l.id, %1 ").arg(query.playlistId >= 0 ? QStringLiteral("pt.position")
+                                                                            : QStringLiteral("-1"))
+              + sql.mid(from);
+        if (sortIsLocaleAwareText) {
+            orderBy = sqlTextOrder;
+        }
+    }
     sql += QStringLiteral("ORDER BY %1 %2 ").arg(orderBy,
              query.ascending ? QStringLiteral("ASC") : QStringLiteral("DESC"));
+    if (query.idsOnly) {
+        sql += QStringLiteral(", l.id ");   // a stable order for ties
+    }
     // A locale-aware text sort happens in C++ below, AFTER fetching every
     // matching row -- same "don't sort an already-truncated page" rule the
     // comment above this function states, just with the real sort moved
     // past the SQL boundary. Applying SQL's LIMIT here would truncate
     // BEFORE that real sort ever runs.
-    if (query.limit > 0 && !sortIsLocaleAwareText) {
+    if (query.limit > 0 && !sortIsLocaleAwareText && !query.idsOnly) {
         sql += QStringLiteral("LIMIT :lim");
     }
 
@@ -1003,13 +1026,22 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
     for (int i = 0; i < query.keyFilters.size(); ++i) {
         q.bindValue(QStringLiteral(":k%1").arg(i), keyIdFromText(query.keyFilters.at(i)));
     }
-    if (query.limit > 0 && !sortIsLocaleAwareText) { q.bindValue(QStringLiteral(":lim"), query.limit); }
+    if (query.limit > 0 && !sortIsLocaleAwareText && !query.idsOnly) { q.bindValue(QStringLiteral(":lim"), query.limit); }
 
     if (!q.exec()) {
         LOGE() << "library query failed: " << q.lastError().text();
         return out;
     }
 
+    if (query.idsOnly) {
+        while (q.next()) {
+            MixHouseTrack t;
+            t.id = q.value(0).toInt();
+            t.playlistPosition = q.value(1).toInt();
+            out.push_back(std::move(t));
+        }
+        return out;
+    }
     while (q.next()) {
         MixHouseTrack t;
         t.id           = q.value(0).toInt();
@@ -1333,6 +1365,22 @@ int MixHouseLibrary::missingTrackCount() const
     return q.value(0).toInt();
 }
 
+int MixHouseLibrary::unanalyzedTrackCount() const
+{
+    if (!ensureOpen()) {
+        return 0;
+    }
+    // GlideMix: the same "no analysis" test as tracks()' unanalyzedOnly, as a
+    // count: the Analyze row used to load every such song's whole row.
+    QSqlQuery q(m_db);
+    if (!q.exec(QStringLiteral(
+            "SELECT COUNT(*) FROM library l WHERE l.mixxx_deleted = 0 AND "
+            "NOT EXISTS(SELECT 1 FROM track_analysis ta WHERE ta.track_id = l.id AND ta.type = 2)")) || !q.next()) {
+        return 0;
+    }
+    return q.value(0).toInt();
+}
+
 int MixHouseLibrary::verifyTrackLocations()
 {
     if (!ensureWritable()) {
@@ -1637,7 +1685,63 @@ bool MixHouseLibrary::ensureWritable()
     } else {
         LOGW() << "could not read Playlists schema: " << columnCheck.lastError().text();
     }
+    installChangeTriggers();
     return true;
+}
+
+// GlideMix (fast library): the song list keeps every row in memory and
+// re-reads only the songs changed since it last looked. TEMP triggers on this
+// write connection note each changed song id; nothing is stored in the file.
+void MixHouseLibrary::installChangeTriggers()
+{
+    QSqlQuery q(m_writeDb);
+    QStringList statements = {
+        QStringLiteral("CREATE TEMP TABLE IF NOT EXISTS gm_changed (id INTEGER PRIMARY KEY)"),
+        QStringLiteral("CREATE TEMP TRIGGER IF NOT EXISTS gm_lib_ins AFTER INSERT ON main.library "
+                       "BEGIN INSERT OR IGNORE INTO gm_changed VALUES (NEW.id); END"),
+        QStringLiteral("CREATE TEMP TRIGGER IF NOT EXISTS gm_lib_upd AFTER UPDATE ON main.library "
+                       "BEGIN INSERT OR IGNORE INTO gm_changed VALUES (NEW.id); END"),
+        QStringLiteral("CREATE TEMP TRIGGER IF NOT EXISTS gm_loc_upd AFTER UPDATE ON main.track_locations "
+                       "BEGIN INSERT OR IGNORE INTO gm_changed SELECT id FROM main.library WHERE location = NEW.id; END"),
+        QStringLiteral("CREATE TEMP TRIGGER IF NOT EXISTS gm_an_ins AFTER INSERT ON main.track_analysis "
+                       "BEGIN INSERT OR IGNORE INTO gm_changed VALUES (NEW.track_id); END"),
+        QStringLiteral("CREATE TEMP TRIGGER IF NOT EXISTS gm_an_del AFTER DELETE ON main.track_analysis "
+                       "BEGIN INSERT OR IGNORE INTO gm_changed VALUES (OLD.track_id); END"),
+    };
+    for (const char* table : { "mixhouse_energy", "mixhouse_downbeats" }) {
+        QSqlQuery has(m_writeDb);
+        if (has.exec(QStringLiteral("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '%1'").arg(QLatin1String(table)))
+            && has.next()) {
+            for (const char* when : { "INSERT", "UPDATE" }) {
+                statements << QStringLiteral("CREATE TEMP TRIGGER IF NOT EXISTS gm_%1_%2 AFTER %3 ON main.%1 "
+                                             "BEGIN INSERT OR IGNORE INTO gm_changed VALUES (NEW.track_id); END")
+                              .arg(QLatin1String(table), QString::fromLatin1(when).toLower(), QLatin1String(when));
+            }
+        }
+    }
+    for (const QString& statement : statements) {
+        if (!q.exec(statement)) {
+            LOGW() << "GlideMix fast library: " << q.lastError().text() << " (" << statement << ")";
+        }
+    }
+}
+
+QList<int> MixHouseLibrary::takeChangedTrackIds()
+{
+    QList<int> ids;
+    if (!m_writeOpen) {
+        return ids;   // nothing written yet
+    }
+    QSqlQuery q(m_writeDb);
+    if (q.exec(QStringLiteral("SELECT id FROM temp.gm_changed"))) {
+        while (q.next()) {
+            ids << q.value(0).toInt();
+        }
+    }
+    if (!ids.isEmpty()) {
+        q.exec(QStringLiteral("DELETE FROM temp.gm_changed"));
+    }
+    return ids;
 }
 
 au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFolder(const QString& folder)

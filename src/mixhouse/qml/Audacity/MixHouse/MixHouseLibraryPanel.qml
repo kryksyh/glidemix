@@ -2627,6 +2627,10 @@ Item {
                         }
                         root.selectedRows = rows
                         root.currentRow = rows.length > 0 ? rows[0] : -1
+                        // GlideMix: "All" means every song in the view, not the 2000 rows
+                        // loaded so far (Chris: "it takes only 2000"). Analyze resolves the
+                        // whole view from this flag.
+                        root.allMatchingSelected = !analysisRow.analysisScopeIsNew && rows.length > 0
                     }
                 }
 
@@ -2667,7 +2671,7 @@ Item {
                         if (tracksModel.analyzing) {
                             tracksModel.stopBatchAnalysis()
                         } else {
-                            tracksModel.startBatchAnalysis(root.selectedRows)
+                            tracksModel.startBatchAnalysis(root.selectedRows, root.allMatchingSelected)
                             // GlideMix: drop the selection once analysis starts,
                             // so a later drag can't carry every track onto
                             // the timeline by mistake.
@@ -3227,6 +3231,63 @@ Item {
                 }
             }
 
+            // GlideMix: Import from Rekordbox XML shows what it does -- reading
+            // with a progress bar, then how many songs and where they are.
+            Rectangle {
+                parent: trackTableView
+                anchors.centerIn: parent
+                width: Math.min(parent ? parent.width - 40 : 380, 440)
+                height: importColumn.implicitHeight + 32
+                visible: tracksModel.rekordboxImportShown
+                z: 6
+                radius: 6
+                color: ui.theme.popupBackgroundColor
+                border.width: 1
+                border.color: ui.theme.strokeColor
+
+                Column {
+                    id: importColumn
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 12
+
+                    StyledTextLabel {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignLeft
+                        font: ui.theme.bodyBoldFont
+                        text: qsTrc("mixhouse", "Import from Rekordbox XML")
+                    }
+                    StyledTextLabel {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignLeft
+                        wrapMode: Text.WordWrap
+                        text: tracksModel.rekordboxImportStatus
+                              + (!tracksModel.rekordboxImportDone && tracksModel.rekordboxLoadProgress >= 0
+                                 ? "  " + tracksModel.rekordboxLoadProgress + "%" : "")
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 6
+                        radius: 3
+                        visible: !tracksModel.rekordboxImportDone
+                        color: ui.theme.buttonColor
+                        Rectangle {
+                            height: parent.height
+                            radius: 3
+                            width: parent.width * Math.max(0, tracksModel.rekordboxLoadProgress) / 100
+                            color: ui.theme.accentColor
+                        }
+                    }
+                    FlatButton {
+                        anchors.right: parent.right
+                        visible: tracksModel.rekordboxImportDone
+                        text: qsTrc("global", "OK")
+                        accentButton: true
+                        onClicked: tracksModel.closeRekordboxImport()
+                    }
+                }
+            }
+
             // Real TableView, not a ListView + hand-rolled per-cell x/width Repeater --
             // ported alongside the header from mixxx's res/qml/Library/TrackList.qml.
             // columnWidthProvider is the SAME root.columnWidthFor() the header syncs
@@ -3298,7 +3359,12 @@ Item {
                 // header on a couple of rows) after a column toggle/reorder.
                 // 1372 rows, ~20 visible at once either way -- the correctness
                 // is worth more than the recycling saved.
-                reuseItems: false
+                // GlideMix (fast library): ON again. The stale cells it once
+                // showed came from state set only on creation; the cells now
+                // follow their row (the waveform overview redraws when its row
+                // changes, see overview.boundRow) -- recycling keeps scrolling
+                // through 36k songs from building every cell anew.
+                reuseItems: true
 
                 model: tracksModel
                 columnWidthProvider: function(column) { return root.columnWidthFor(column) }
@@ -3383,6 +3449,17 @@ Item {
                     // drag has already been dropped or cancelled and this
                     // just needs resetting for the next gesture.
                     property bool dragStarted: false
+
+                    // GlideMix (fast library): recycled cells start clean.
+                    TableView.onPooled: {
+                        cell.dragStarted = false
+                        overview.buckets = null
+                        overview.cues = []
+                    }
+                    TableView.onReused: {
+                        cell.dragStarted = false
+                        overview.refresh()
+                    }
 
                     mouseArea.onPositionChanged: function(mouse) {
                         if (cell.dragStarted || !(mouse.buttons & Qt.LeftButton)) {
@@ -3735,6 +3812,9 @@ Item {
 
                         onWidthChanged: overview.refresh()
                         onVisibleChanged: if (visible) overview.refresh()
+                        // A recycled cell shows another row: its own waveform.
+                        readonly property int boundRow: cell.row
+                        onBoundRowChanged: overview.refresh()
 
                         // Same guarded-subscribe reasoning as
                         // trackTableView's own onLibraryRowHeightChanged-
@@ -4380,7 +4460,7 @@ Item {
                         // the active selection), not just the clicked row --
                         // this is exactly the "shift-click several, only one
                         // got analyzed" bug we hit.
-                        tracksModel.analyzeTracksWithConfirm(trackMenu.targetRows)
+                        tracksModel.analyzeTracksWithConfirm(trackMenu.targetRows, trackMenu.targetAllMatching)
                         root.clearRowSelection()
                     } else if (itemId === "collection-remove") {
                         if (trackMenu.targetAllMatching) {

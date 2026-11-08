@@ -72,6 +72,15 @@ MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
     // directly); it now just delegates to MixHouseLibrary's own real
     // background worker pool (startBackgroundAnalysis), which owns its own
     // threads -- nothing left for this constructor to wire.
+    m_unanalyzedCountTimer.setSingleShot(true);
+    m_unanalyzedCountTimer.setInterval(1000);
+    QObject::connect(&m_unanalyzedCountTimer, &QTimer::timeout, this, [this]() {
+        const int count = library()->unanalyzedTrackCount();
+        if (count != m_unanalyzedCount) {
+            m_unanalyzedCount = count;
+            emit sidebarCountsChanged();
+        }
+    });
     m_countsTimer.setSingleShot(true);
     m_countsTimer.setInterval(3000);
     QObject::connect(&m_countsTimer, &QTimer::timeout, this, [this]() {
@@ -376,6 +385,18 @@ void MixHouseTrackListModel::load()
             if (!rekordboxXml()->loading() && rekordboxXml()->path() != m_rekordboxCheckedPath) {
                 m_rekordboxCheckedPath = rekordboxXml()->path();
                 const QString error = rekordboxXml()->loadError();
+                if (m_rekordboxImportShown && !m_rekordboxImportDone) {
+                    if (!error.isEmpty()) {
+                        closeRekordboxImport();   // the warning below says why
+                    } else {
+                        m_rekordboxImportDone = true;
+                        const int songs = rekordboxXml()->trackCount();
+                        m_rekordboxImportStatus = muse::qtrc("mixhouse",
+                            "%1 songs read. They are under Rekordbox XML in the sidebar. To add them to your "
+                            "Music Collection, use Copy Rekordbox XML into Music Collection…").arg(QLocale().toString(songs));
+                        emit rekordboxImportChanged();
+                    }
+                }
                 if (!error.isEmpty()) {
                     interactive()->warning(muse::trc("mixhouse", "Rekordbox XML"),
                                            muse::qtrc("mixhouse", "This file couldn't be read as a rekordbox collection: %1\n\n"
@@ -389,6 +410,9 @@ void MixHouseTrackListModel::load()
         m_subscribedToLibraryChanged = true;
         library()->libraryChanged().onNotify(this, [this]() {
             m_customTagCache.clear();
+            // Bulk changes (a scan, an import, grids): read the index again.
+            // Single-song edits are picked up by takeChangedTrackIds().
+            m_indexLoaded = false;
             load();
             m_countsStale = true;
             // Not restarted while waiting: analysis changes the library every
@@ -509,6 +533,11 @@ void MixHouseTrackListModel::load()
             m_analyzeProcessed = processed;
             m_analyzeTotal = total;
             emit analyzeProgressChanged();
+            // GlideMix: the Analyze row counts down as songs finish (it stood
+            // still for 30 s and more), at most once a second.
+            if (!m_unanalyzedCountTimer.isActive()) {
+                m_unanalyzedCountTimer.start();
+            }
         });
         library()->trackAnalysisProgress().onReceive(this, [this](int trackId, int percent) {
             if (percent == -3) {
@@ -516,6 +545,9 @@ void MixHouseTrackListModel::load()
                 IMixHouseLibrary::TrackQuery one;
                 one.trackId = trackId;
                 const MixHouseTrackList fresh = library()->tracks(one);
+                if (!fresh.empty()) {
+                    updateIndexRow(fresh.front());
+                }
                 for (MixHouseTrack& t : m_tracks) {
                     if (t.id == trackId && !fresh.empty()) {
                         t.energy = fresh.front().energy;
@@ -531,6 +563,15 @@ void MixHouseTrackListModel::load()
                 }
                 m_overviewCache.remove(trackId);   // the fresh waveform was just written
                 m_overviewCueCache.remove(trackId);
+                if (percent == -1 && m_indexLoaded) {
+                    // GlideMix fast library: the in-memory row too, shown or not.
+                    IMixHouseLibrary::TrackQuery one;
+                    one.trackId = trackId;
+                    const MixHouseTrackList fresh = library()->tracks(one);
+                    if (!fresh.empty()) {
+                        updateIndexRow(fresh.front());
+                    }
+                }
                 if (percent == -1) {
                     // Succeeded: re-read this one row now (BPM, key, grid,
                     // downbeat, "Analyzed") instead of leaving "--" until the
@@ -622,8 +663,21 @@ void MixHouseTrackListModel::load()
             fresh = duplicateTracks();
         } else if (!m_externalSource.isEmpty()) {
             const IMixHouseExternalLibrary* external = externalLibrary(m_externalSource);
-            fresh = external ? external->tracks(m_externalPlaylist, m_query) : MixHouseTrackList();
+            // GlideMix fast library: every song of the other apps' lists, no
+            // 2000 pages (rekordbox XML and the DJ apps are in memory already;
+            // Lexicon reads its own database per view).
+            IMixHouseLibrary::TrackQuery q = m_query;
+            q.limit = 0;   // every song (Lexicon too: measured before keeping it)
+            m_pageLimit = std::numeric_limits<int>::max();
+            QElapsedTimer externalTook;
+            externalTook.start();
+            fresh = external ? external->tracks(m_externalPlaylist, q) : MixHouseTrackList();
+            LOGI() << "GlideMix fast library: " << m_externalSource << " view of " << fresh.size() << " songs in "
+                   << externalTook.elapsed() << " ms";
             applyOwnOverrides(fresh);
+        } else if (!m_query.hiddenOnly) {
+            fresh = indexedTracks();   // GlideMix (fast library): every row, from memory
+            m_pageLimit = std::numeric_limits<int>::max();   // nothing more to load
         } else {
             fresh = library()->tracks(m_query);
         }
@@ -910,8 +964,21 @@ void MixHouseTrackListModel::setRekordboxXmlPath(const QString& path)
 {
     if (rekordboxXml() && !path.isEmpty()) {
         m_rekordboxCheckedPath.clear();   // report on this file even when it is the same one again
+        // GlideMix: a small window shows the reading and what came of it
+        // (Chris: "Import ... looks like it does nothing").
+        m_rekordboxImportShown = true;
+        m_rekordboxImportDone = false;
+        m_rekordboxImportStatus = muse::qtrc("mixhouse", "Reading %1…").arg(QFileInfo(path).fileName());
+        emit rekordboxImportChanged();
         rekordboxXml()->setPath(path);
     }
+}
+
+void MixHouseTrackListModel::closeRekordboxImport()
+{
+    m_rekordboxImportShown = false;
+    m_rekordboxImportDone = false;
+    emit rekordboxImportChanged();
 }
 
 int MixHouseTrackListModel::rekordboxLoadProgress() const
@@ -2334,8 +2401,7 @@ void MixHouseTrackListModel::recountSidebar()
     IMixHouseLibrary::TrackQuery q;
     q.limit = 0;
     m_duplicateCount = static_cast<int>(duplicateTracks(q, nullptr, nullptr).size());
-    q.unanalyzedOnly = true;
-    m_unanalyzedCount = static_cast<int>(library()->tracks(q).size());
+    m_unanalyzedCount = library()->unanalyzedTrackCount();
     LOGI() << "GlideMix: sidebar counts in " << took.elapsed() << " ms";
     emit sidebarCountsChanged();
 }
@@ -3875,8 +3941,28 @@ int MixHouseTrackListModel::libraryIdForFile(const QString& filePath) const
 }
 
 void MixHouseTrackListModel::collectAnalysisTargets(const QVariantList& rows, QList<int>& ids,
-                                                    QStringList& externalFiles) const
+                                                    QStringList& externalFiles, bool allMatching) const
 {
+    // GlideMix: Select All means every song in the view, not the 2000 rows
+    // loaded so far (Chris, 36,674 songs: "it takes only 2000").
+    if (allMatching) {
+        if (m_externalSource.isEmpty()) {
+            ids = library()->matchingTracks(m_query).ids;
+            return;
+        }
+        if (const IMixHouseExternalLibrary* external = externalLibrary(m_externalSource)) {
+            IMixHouseLibrary::TrackQuery all = m_query;
+            all.limit = 0;
+            for (const MixHouseTrack& t : external->tracks(m_externalPlaylist, all)) {
+                if (t.id > 0) {
+                    ids << t.id;
+                } else if (!t.filePath.isEmpty()) {
+                    externalFiles << t.filePath;
+                }
+            }
+            return;
+        }
+    }
     ids = resolveTrackIds(rows);
     for (const QVariant& v : rows) {
         const int row = v.toInt();
@@ -4209,7 +4295,7 @@ void MixHouseTrackListModel::analyzeTrackWithConfirm(int row, const QString& tit
     });
 }
 
-void MixHouseTrackListModel::analyzeTracksWithConfirm(const QVariantList& rows)
+void MixHouseTrackListModel::analyzeTracksWithConfirm(const QVariantList& rows, bool allMatching)
 {
     // Resolve ids now, before the dialog -- same rule as every other
     // confirm-dialog batch action in this file.
@@ -4217,7 +4303,7 @@ void MixHouseTrackListModel::analyzeTracksWithConfirm(const QVariantList& rows)
     // files get added there).
     QList<int> trackIds;
     QStringList externalFiles;
-    collectAnalysisTargets(rows, trackIds, externalFiles);
+    collectAnalysisTargets(rows, trackIds, externalFiles, allMatching);
     if (trackIds.isEmpty() && externalFiles.isEmpty()) {
         return;
     }
@@ -4266,19 +4352,34 @@ bool MixHouseTrackListModel::analyzing() const { return library()->isAnalyzing()
 int MixHouseTrackListModel::analyzeProcessed() const { return m_analyzeProcessed; }
 int MixHouseTrackListModel::analyzeTotal() const { return m_analyzeTotal; }
 
-void MixHouseTrackListModel::startBatchAnalysis(const QVariantList& rows)
+void MixHouseTrackListModel::startBatchAnalysis(const QVariantList& rows, bool allMatching)
 {
     QList<int> ids;
     QStringList externalFiles;
-    collectAnalysisTargets(rows, ids, externalFiles);
+    collectAnalysisTargets(rows, ids, externalFiles, allMatching);
     startBatchAnalysisForIds(analysisTrackIds(ids, externalFiles));
 }
 
-void MixHouseTrackListModel::startBatchAnalysisForIds(const QList<int>& trackIds)
+void MixHouseTrackListModel::startBatchAnalysisForIds(const QList<int>& requestedIds)
 {
-    if (analyzing() || trackIds.isEmpty()) {
+    if (analyzing() || requestedIds.isEmpty()) {
         return;   // already running -- the QML button is Stop while this is true, but guard anyway
     }
+    // GlideMix: songs never analysed go first, then the ones being redone --
+    // with the list newest-first, Select All re-analysed 5,532 done songs
+    // before the first new one and the Analyze count stood still (Chris).
+    QList<int> trackIds;
+    trackIds.reserve(requestedIds.size());
+    QList<int> redo;
+    for (int id : requestedIds) {
+        const auto it = m_index.find(id);
+        if (it != m_index.end() && it->second.analyzed) {
+            redo << id;
+        } else {
+            trackIds << id;
+        }
+    }
+    trackIds += redo;
     for (int trackId : trackIds) {
         m_overviewCache.remove(trackId);   // see analyzeTrackWithConfirm's own comment
     }
@@ -4912,7 +5013,14 @@ void MixHouseTrackListModel::checkDjAppPlaces()
     m_djAppPlacesChecking = true;
     QPointer<MixHouseTrackListModel> self(this);
     std::thread([self]() {
+        DjAppReaderScope reader;   // quitting waits for this one too
+        if (reader.quitting()) {
+            return;
+        }
         const QString places = djAppPlacesSignature();
+        if (reader.quitting() || !qApp) {
+            return;
+        }
         QMetaObject::invokeMethod(qApp, [self, places]() {
             if (!self) {
                 return;
@@ -4930,4 +5038,160 @@ void MixHouseTrackListModel::checkDjAppPlaces()
             }
         }, Qt::QueuedConnection);
     }).detach();
+}
+
+// ---- GlideMix fast library (in-memory index) --------------------------------
+// Idea from rbxport's rbl-index (GPL-2.0-or-later, github.com/chrisle/rbxport):
+// the whole collection in memory once, a view is only the order of its rows.
+// Here SQL still decides which songs a view has and their order (search
+// syntax, playlists, crates, key filters) -- ids only, which is quick -- and
+// the rows come from memory. No 2000-row pages: the list has every song.
+
+void MixHouseTrackListModel::ensureIndex()
+{
+    if (m_indexLoaded) {
+        // Songs edited since the last look: re-read only those rows.
+        const QList<int> changed = library()->takeChangedTrackIds();
+        if (!changed.isEmpty()) {
+            refreshIndexRows(changed);
+        }
+        return;
+    }
+    QElapsedTimer took;
+    took.start();
+    library()->takeChangedTrackIds();   // the full read below has them all
+    IMixHouseLibrary::TrackQuery all;
+    all.limit = 0;
+    MixHouseTrackList rows = library()->tracks(all);
+    m_index.clear();
+    m_index.reserve(rows.size());
+    for (MixHouseTrack& t : rows) {
+        const int id = t.id;
+        m_index.emplace(id, std::move(t));
+    }
+    m_indexSortKeys.clear();
+    m_indexLoaded = true;
+    LOGI() << "GlideMix fast library: " << m_index.size() << " songs in memory in " << took.elapsed() << " ms";
+}
+
+void MixHouseTrackListModel::refreshIndexRows(const QList<int>& ids)
+{
+    // In batches: an IN list per few thousand ids.
+    for (qsizetype from = 0; from < ids.size(); from += 2000) {
+        IMixHouseLibrary::TrackQuery q;
+        q.trackIds = ids.mid(from, 2000);
+        const MixHouseTrackList rows = library()->tracks(q);
+        QSet<int> found;
+        for (const MixHouseTrack& t : rows) {
+            found.insert(t.id);
+            m_index[t.id] = t;
+        }
+        for (int id : q.trackIds) {
+            if (!found.contains(id)) {
+                m_index.erase(id);   // removed or hidden
+            }
+        }
+    }
+    for (auto& [key, keys] : m_indexSortKeys) {
+        for (int id : ids) {
+            keys.erase(id);
+        }
+    }
+}
+
+void MixHouseTrackListModel::updateIndexRow(const MixHouseTrack& t)
+{
+    if (!m_indexLoaded) {
+        return;
+    }
+    m_index[t.id] = t;
+    for (auto& [key, keys] : m_indexSortKeys) {
+        keys.erase(t.id);
+    }
+}
+
+MixHouseTrackList MixHouseTrackListModel::indexedTracks()
+{
+    QElapsedTimer took;
+    took.start();
+    ensureIndex();
+    IMixHouseLibrary::TrackQuery q = m_query;
+    q.limit = 0;
+    q.idsOnly = true;
+    const MixHouseTrackList order = library()->tracks(q);
+    const qint64 sqlMs = took.elapsed();
+
+    // A song the index hasn't got (added by another connection): read it now.
+    QList<int> missing;
+    for (const MixHouseTrack& o : order) {
+        if (m_index.find(o.id) == m_index.end()) {
+            missing << o.id;
+        }
+    }
+    if (!missing.isEmpty()) {
+        refreshIndexRows(missing);
+    }
+
+    MixHouseTrackList out;
+    out.reserve(order.size());
+    for (const MixHouseTrack& o : order) {
+        const auto it = m_index.find(o.id);
+        if (it == m_index.end()) {
+            continue;
+        }
+        out.push_back(it->second);
+        out.back().playlistPosition = o.playlistPosition;
+    }
+
+    // Text columns: SQL's order is ASCII; sort like the old list did, with a
+    // collator (accents where a person expects them), using cached sort keys.
+    using SortKey = IMixHouseLibrary::SortKey;
+    const SortKey key = m_query.sort;
+    const bool textSort = key == SortKey::Title || key == SortKey::Artist || key == SortKey::Album
+                          || key == SortKey::Genre || key == SortKey::AlbumArtist || key == SortKey::Composer
+                          || key == SortKey::Grouping || key == SortKey::FileType || key == SortKey::Comment;
+    if (textSort && out.size() > 1) {
+        auto textOf = [key](const MixHouseTrack& t) -> const QString& {
+            switch (key) {
+            case SortKey::Artist: return t.artist;
+            case SortKey::Album: return t.album;
+            case SortKey::Genre: return t.genre;
+            case SortKey::AlbumArtist: return t.albumArtist;
+            case SortKey::Composer: return t.composer;
+            case SortKey::Grouping: return t.grouping;
+            case SortKey::FileType: return t.fileType;
+            case SortKey::Comment: return t.comment;
+            default: return t.title;
+            }
+        };
+        static QCollator collator = []() {
+            QCollator c;
+            c.setCaseSensitivity(Qt::CaseInsensitive);
+            return c;
+        }();
+        auto& keys = m_indexSortKeys[static_cast<int>(key)];
+        std::vector<std::pair<const QCollatorSortKey*, size_t> > order2;
+        order2.reserve(out.size());
+        for (size_t i = 0; i < out.size(); ++i) {
+            auto it = keys.find(out[i].id);
+            if (it == keys.end()) {
+                it = keys.emplace(out[i].id, collator.sortKey(textOf(out[i]))).first;
+            }
+            order2.emplace_back(&it->second, i);
+        }
+        const bool asc = m_query.ascending;
+        std::stable_sort(order2.begin(), order2.end(), [asc](const auto& a, const auto& b) {
+            const int cmp = a.first->compare(*b.first);
+            return asc ? cmp < 0 : cmp > 0;
+        });
+        MixHouseTrackList sorted;
+        sorted.reserve(out.size());
+        for (const auto& [k, i] : order2) {
+            sorted.push_back(std::move(out[i]));
+        }
+        out = std::move(sorted);
+    }
+    LOGI() << "GlideMix fast library: view of " << out.size() << " songs in " << took.elapsed()
+           << " ms (order from SQL " << sqlMs << " ms)";
+    return out;
 }

@@ -133,6 +133,14 @@ public:
         /// exactly this -- how a timeline clip (named after its file) finds
         /// its library track again.
         QString fileBaseName;
+        /// GlideMix (fast library): only each matching row's id (and its
+        /// playlist position), in the query's order, never limited -- the
+        /// song list keeps the full rows in memory and only needs the order.
+        /// Text sorts come back in SQL's ASCII order; the caller re-sorts
+        /// them with a collator.
+        bool idsOnly = false;
+        /// GlideMix: non-empty = only these library ids (refreshing rows).
+        QList<int> trackIds;
     };
 
     virtual MixHouseTrackList tracks(const TrackQuery& query) const = 0;
@@ -178,6 +186,12 @@ public:
 
     /// Counts for the fixed nodes at the top of the tree.
     virtual int missingTrackCount() const = 0;
+    /// GlideMix: songs with no analysis yet (the Analyze row), counted in SQL.
+    virtual int unanalyzedTrackCount() const = 0;
+    /// GlideMix (fast library): ids of songs changed through this library
+    /// since the last call (recorded by triggers on the write connection),
+    /// so the song list re-reads only those rows. Empties the record.
+    virtual QList<int> takeChangedTrackIds() = 0;
     virtual int hiddenTrackCount() const = 0;
 
     /// Real mixxx's LibraryScanner runs TrackDAO::verifyRemainingTracks as

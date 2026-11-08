@@ -47,6 +47,22 @@ QString djAppPlacesSignature();
 //! Reads the apps again (after that preference changed).
 void reloadDjApps();
 
+//! GlideMix: a background thread that reads DJ apps or drives holds one of
+//! these, so quitting waits for it (a reader still running while Qt shut down
+//! crashed 1.1.31). Stop early when quitting() says so.
+class DjAppReaderScope
+{
+public:
+    DjAppReaderScope();
+    ~DjAppReaderScope();
+    DjAppReaderScope(const DjAppReaderScope&) = delete;
+    DjAppReaderScope& operator=(const DjAppReaderScope&) = delete;
+    bool quitting() const;
+};
+
+//! At quit: tells the readers to stop and waits for them (5 s at most).
+void stopDjAppReaders();
+
 //! True once the background load has finished (the sidebar refreshes then).
 bool djAppsLoaded();
 //! Bumps whenever a library arrives (the first load, Traktor after its click).

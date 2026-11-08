@@ -36,6 +36,7 @@
 #include <atomic>
 #include <cmath>
 #include <map>
+#include <condition_variable>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -165,6 +166,15 @@ std::atomic<bool> g_loaded { false };
 std::atomic<int> g_generation { 0 };   // bumps when a library arrives later (Traktor after its click)
 bool g_started = false;
 std::atomic<int> g_loadTicket { 0 };   // a newer load (after a preference change) wins
+
+// GlideMix: the readers are background threads. Quitting while one still
+// parsed crashed 1.1.31 in Qt's shutdown (Chris, 2026-11-08: VirtualDJ's
+// database.xml, QRegularExpression after exit()). At quit they are told to
+// stop (their loops check g_quitting) and are waited for.
+std::atomic<bool> g_quitting { false };
+std::mutex g_readersMutex;
+std::condition_variable g_readersDone;
+int g_readers = 0;
 
 const QStringList kSources = { QStringLiteral("engine"), QStringLiteral("traktor"), QStringLiteral("serato"),
                                QStringLiteral("vdj"), QStringLiteral("djay") };
@@ -413,7 +423,7 @@ AppData loadEngineAt(Table& table, QString base)
             if (q.exec(QStringLiteral("SELECT t.id, t.path, t.title, t.artist, t.album, t.genre, t.year, t.length, "
                                       "t.bpmAnalyzed, t.key, t.rating, p.beatData, p.quickCues, t.comment FROM Track t "
                                       "LEFT JOIN PerformanceData p ON p.trackId = t.id"))) {
-                while (q.next()) {
+                while (q.next() && !g_quitting) {
                     AppData::Track entry;
                     MixHouseTrack& t = entry.track;
                     QString path = q.value(1).toString();
@@ -562,7 +572,7 @@ AppData loadTraktorAt(Table& table, const QString& path)
     std::vector<int> nodeStack;   // playlist node ids, for folders
     int nextNodeId = 0;
     int currentList = -1;
-    while (!xml.atEnd()) {
+    while (!xml.atEnd() && !g_quitting) {
         xml.readNext();
         if (xml.isStartElement()) {
             const auto name = xml.name();
@@ -708,7 +718,7 @@ AppData loadVirtualDjAt(Table& table, const QStringList& candidates, const QStri
         AppData::Track entry;
         double firstBeat = 0.0;
         bool hasGrid = false;
-        while (!xml.atEnd()) {
+        while (!xml.atEnd() && !g_quitting) {
             xml.readNext();
             if (xml.isStartElement()) {
                 const auto a = xml.attributes();
@@ -831,6 +841,9 @@ AppData loadSeratoAt(Table& table, const QString& folder, const QString& driveRo
     }
     QHash<QString, int> indexByStored;
     for (const Chunk& c : chunks(file.readAll())) {
+        if (g_quitting) {
+            break;
+        }
         if (c.tag != "otrk") {
             continue;
         }
@@ -985,7 +998,7 @@ AppData loadDjay(Table& table)
             if (q.exec(QStringLiteral("SELECT d.key, s.bpm, s.keySignatureIndex, d.data FROM database2 d "
                                       "JOIN secondaryIndex_mediaItemAnalyzedDataIndex s ON s.rowid = d.rowid "
                                       "WHERE d.collection = 'mediaItemAnalyzedData'"))) {
-                while (q.next()) {
+                while (q.next() && !g_quitting) {
                     const auto it = locations.constFind(q.value(0).toString());
                     if (it == locations.constEnd()) {
                         continue;
@@ -1104,6 +1117,10 @@ void startLoadingDjApps()
     const bool readTraktor = true;
 #endif
     std::thread([readTraktor, hidden, ticket]() {
+        DjAppReaderScope reader;
+        if (reader.quitting()) {
+            return;
+        }
         auto table = std::make_shared<Table>();
         std::map<QString, std::shared_ptr<const AppLibrary> > libraries;
         // Grid sources first, so analysis takes theirs; then BPM and key only.
@@ -1118,11 +1135,17 @@ void startLoadingDjApps()
             if ((source == u"traktor" && !readTraktor) || hidden.contains(source)) {
                 continue;
             }
+            if (g_quitting) {
+                return;
+            }
             AppData data = load(*table);
             if (!data.tracks.empty()) {
                 const int idBase = -2 * kIdBlock - static_cast<int>(kSources.indexOf(source)) * kIdBlock;
                 libraries.emplace(source, std::make_shared<const AppLibrary>(idBase, std::move(data)));
             }
+        }
+        if (g_quitting) {
+            return;
         }
         LOGI() << "GlideMix DJ apps: " << table->size() << " songs known";
         {
@@ -1171,6 +1194,10 @@ void readDjAppNow(const QString& source)
     }
     QSettings().setValue(QStringLiteral("GlideMix/readTraktor"), true);
     std::thread([]() {
+        DjAppReaderScope reader;
+        if (reader.quitting()) {
+            return;
+        }
         std::shared_ptr<const Table> current;
         {
             std::lock_guard lock(g_mutex);
@@ -1237,5 +1264,36 @@ const IMixHouseExternalLibrary* djAppLibrary(const QString& source)
     std::lock_guard lock(g_mutex);
     const auto it = g_libraries.find(source);
     return it == g_libraries.end() ? nullptr : it->second.get();
+}
+}
+
+namespace au::mixhouse {
+// ---- quitting ---------------------------------------------------------------
+DjAppReaderScope::DjAppReaderScope()
+{
+    std::lock_guard lock(g_readersMutex);
+    ++g_readers;
+}
+
+DjAppReaderScope::~DjAppReaderScope()
+{
+    std::lock_guard lock(g_readersMutex);
+    if (--g_readers == 0) {
+        g_readersDone.notify_all();
+    }
+}
+
+bool DjAppReaderScope::quitting() const
+{
+    return g_quitting;
+}
+
+void stopDjAppReaders()
+{
+    g_quitting = true;
+    std::unique_lock lock(g_readersMutex);
+    if (!g_readersDone.wait_for(lock, std::chrono::seconds(5), [] { return g_readers == 0; })) {
+        LOGW() << "GlideMix DJ apps: " << g_readers << " reader(s) still running at quit";
+    }
 }
 }

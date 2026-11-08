@@ -28,6 +28,9 @@
 #include "internal/mixhouserekordboxxml.h"
 #include "internal/mixhouserekordboxphrases.h"
 #include "internal/mixhouseclipcolors.h"
+#include "internal/mixhousedjapps.h"
+
+#include <QCoreApplication>
 #include "internal/mixhousestems.h"
 #include "internal/mixhouseactivity.h"
 #include "internal/mixhouselibraryconfiguration.h"
@@ -74,6 +77,14 @@ void MixHouseModule::onInit(const muse::IApplication::RunMode& mode)
     m_libraryConfiguration->init();
     m_transitionConfiguration->init();
     m_licence->init();
+
+    // GlideMix: no DJ-app reader may still run while Qt shuts down (1.1.31
+    // crashed on quit during the first minute). Both hooks: aboutToQuit for a
+    // normal quit, the post-routine for any other way the app object goes.
+    if (qApp) {
+        QObject::connect(qApp, &QCoreApplication::aboutToQuit, qApp, []() { stopDjAppReaders(); });
+    }
+    qAddPostRoutine([]() { stopDjAppReaders(); });
 }
 
 void MixHouseModule::registerResources()

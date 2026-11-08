@@ -13,6 +13,7 @@
 #include <QVariant>
 
 #include "mixhouse/imixhousekeymatch.h"
+#include "mixhouse/imixhouseexternallibrary.h"
 
 #include "log.h"
 
@@ -157,6 +158,46 @@ int MixHouseLexicon::trackCount() const
 }
 
 MixHouseTrackList MixHouseLexicon::tracks(int playlistId, const IMixHouseLibrary::TrackQuery& query) const
+{
+    // One file lookups (a dropped file, a clip's name) go straight to SQL.
+    if (!query.location.isEmpty() || !query.fileBaseName.isEmpty()) {
+        return readTracks(playlistId, query);
+    }
+    // GlideMix (fast library): the whole list once (~0.5 s for 37k songs),
+    // then every sort and search from memory. Lexicon writing its database
+    // changes the file's time stamp, and the lists are read again.
+    const QString db = databasePath();
+    const QString stamp = QFileInfo(db).lastModified().toString(Qt::ISODateWithMs) + QLatin1Char('|')
+                          + QFileInfo(db + QStringLiteral("-wal")).lastModified().toString(Qt::ISODateWithMs);
+    if (stamp != m_listCacheStamp) {
+        m_listCache.clear();
+        m_listCacheStamp = stamp;
+    }
+    auto it = m_listCache.find(playlistId);
+    if (it == m_listCache.end()) {
+        IMixHouseLibrary::TrackQuery all;
+        all.limit = 0;
+        all.sort = IMixHouseLibrary::SortKey::Position;   // the SQL default order
+        it = m_listCache.insert(playlistId, readTracks(playlistId, all));
+    }
+    MixHouseTrackList result;
+    result.reserve(it->size());
+    for (const MixHouseTrack& t : *it) {
+        if (!query.filter.isEmpty() && !t.title.contains(query.filter, Qt::CaseInsensitive)
+            && !t.artist.contains(query.filter, Qt::CaseInsensitive)
+            && !t.album.contains(query.filter, Qt::CaseInsensitive)) {
+            continue;
+        }
+        if (!query.keyFilters.isEmpty() && !query.keyFilters.contains(t.key)) {
+            continue;
+        }
+        result.push_back(t);
+    }
+    sortAndLimitTracks(result, query, playlistId >= 0);
+    return result;
+}
+
+MixHouseTrackList MixHouseLexicon::readTracks(int playlistId, const IMixHouseLibrary::TrackQuery& query) const
 {
     MixHouseTrackList result;
     if (!open()) {

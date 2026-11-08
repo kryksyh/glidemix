@@ -66,6 +66,9 @@ public:
     MixHouseNamedList historySessions() const override;
     MixHouseNamedList crates() const override;
     int missingTrackCount() const override;
+    int unanalyzedTrackCount() const override;
+    QList<int> takeChangedTrackIds() override;
+    void installChangeTriggers();
     int hiddenTrackCount() const override;
     int verifyTrackLocations() override;
     ScanResult addTracksFromFolder(const QString& folder) override;
