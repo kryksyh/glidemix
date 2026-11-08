@@ -8,6 +8,7 @@
  * this is "add it to the project as a real track", not playback.
  */
 #include "mixhousetracklistmodel.h"
+#include "mixhouse/internal/mixhousedjapps.h"
 #include "mixhouse/internal/mixhousepreviewplayer.h"
 #include "mixhouse/internal/mixhouseprojectaligner.h"
 #include "mixhouse/imixhousekeymatch.h"
@@ -71,6 +72,19 @@ MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
     // directly); it now just delegates to MixHouseLibrary's own real
     // background worker pool (startBackgroundAnalysis), which owns its own
     // threads -- nothing left for this constructor to wire.
+    m_countsTimer.setSingleShot(true);
+    m_countsTimer.setInterval(3000);
+    QObject::connect(&m_countsTimer, &QTimer::timeout, this, [this]() {
+        // GlideMix: counting reads the whole library (~0.4 s for 37,000
+        // songs), so while analysis keeps changing it, at most every 30 s.
+        constexpr qint64 minGap = 30000;
+        if (m_lastRecount.isValid() && m_lastRecount.elapsed() < minGap) {
+            m_countsTimer.start(static_cast<int>(minGap - m_lastRecount.elapsed()));
+            return;
+        }
+        m_countsTimer.setInterval(3000);
+        recountSidebar();
+    });
 }
 
 MixHouseTrackListModel::~MixHouseTrackListModel()
@@ -80,12 +94,28 @@ MixHouseTrackListModel::~MixHouseTrackListModel()
     }
 }
 
+double MixHouseTrackListModel::previewVolume() const
+{
+    return QSettings().value(QStringLiteral("GlideMix/previewVolume"), 0.7).toDouble();
+}
+
+void MixHouseTrackListModel::setPreviewVolume(double volume)
+{
+    volume = std::clamp(volume, 0.0, 1.0);
+    QSettings().setValue(QStringLiteral("GlideMix/previewVolume"), volume);
+    if (m_previewPlayer) {
+        m_previewPlayer->setVolume(volume);
+    }
+    emit previewStateChanged();
+}
+
 void MixHouseTrackListModel::ensurePreviewPlayer()
 {
     if (m_previewPlayer) {
         return;
     }
     m_previewPlayer = std::make_unique<MixHousePreviewPlayer>();
+    m_previewPlayer->setVolume(previewVolume());
 
     // MixHouse DJ's OverviewDelegate: "Seeks are coalesced rather than issued
     // per click" -- restarted on each request, so a burst of clicks costs
@@ -288,6 +318,18 @@ void MixHouseTrackListModel::load()
     // only once no matter how many times load() itself gets called.
     if (!m_subscribedToExternal && rekordboxXml()) {
         m_subscribedToExternal = true;
+        // GlideMix: the DJ apps load in the background; show them once read.
+        {
+            auto* poll = new QTimer(this);
+            poll->setInterval(1000);
+            connect(poll, &QTimer::timeout, this, [this]() {
+                if (djAppsGeneration() != m_djAppsGeneration) {
+                    m_djAppsGeneration = djAppsGeneration();
+                    emit loaded();   // the sidebar re-reads its nodes
+                }
+            });
+            poll->start();
+        }
         if (projectHistory()) {
             projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent) { updateProjectFiles(); });
         }
@@ -334,7 +376,14 @@ void MixHouseTrackListModel::load()
     if (!m_subscribedToLibraryChanged) {
         m_subscribedToLibraryChanged = true;
         library()->libraryChanged().onNotify(this, [this]() {
+            m_customTagCache.clear();
             load();
+            m_countsStale = true;
+            // Not restarted while waiting: analysis changes the library every
+            // second, and a restarting timer never fired.
+            if (!m_countsTimer.isActive()) {
+                m_countsTimer.start();
+            }
         });
     }
     // Same reasoning, same guard pattern -- see this model's own
@@ -541,7 +590,18 @@ void MixHouseTrackListModel::load()
         // Capped: the panel shows a page of this, and an unbounded query on a large
         // collection would stall the UI thread. Sorting happens in SQL so the cap
         // takes the right rows, not an arbitrary slice.
-        m_query.limit = 2000;
+        // GlideMix (Marc Mont): 2000 at a time; scrolling near the end loads
+        // the next 2000 (loadMore). A different list or search starts again.
+        const QString view = m_externalSource + QLatin1Char('|') + QString::number(m_externalPlaylist) + QLatin1Char('|')
+                             + m_query.filter + QLatin1Char('|') + m_query.keyFilters.join(QLatin1Char(','))
+                             + QStringLiteral("|%1|%2|%3%4%5%6|%7%8").arg(m_query.playlistId).arg(m_query.crateId)
+                             .arg(m_query.missingOnly).arg(m_query.unanalyzedOnly).arg(m_query.playedOnly)
+                             .arg(m_query.hiddenOnly).arg(static_cast<int>(m_query.sort)).arg(m_query.ascending);
+        if (view != m_pageView) {
+            m_pageView = view;
+            m_pageLimit = kPageSize;
+        }
+        m_query.limit = m_pageLimit;
         if (m_externalSource == u"folder") {
             fresh = browseFolderTracks();
         } else if (m_externalSource == u"smart") {
@@ -570,6 +630,17 @@ void MixHouseTrackListModel::load()
         emit dataChanged(index(0, 0), index(static_cast<int>(m_tracks.size()) - 1, std::max(0, m_uiColumnCount - 1)));
         return;
     }
+    // More of the same list (loadMore): add the new rows, so the view stays put.
+    const bool grows = !m_tracks.empty() && fresh.size() > m_tracks.size()
+                       && std::equal(m_tracks.begin(), m_tracks.end(), fresh.begin(),
+                                     [](const MixHouseTrack& a, const MixHouseTrack& b) { return a.id == b.id; });
+    if (grows) {
+        beginInsertRows(QModelIndex(), static_cast<int>(m_tracks.size()), static_cast<int>(fresh.size()) - 1);
+        m_tracks = std::move(fresh);
+        endInsertRows();
+        emit loaded();
+        return;
+    }
     beginResetModel();
     m_tracks = std::move(fresh);
     endResetModel();
@@ -577,6 +648,21 @@ void MixHouseTrackListModel::load()
     if (loadTimer.elapsed() >= 50) {
         LOGI() << "GlideMix library view: " << m_tracks.size() << " rows loaded in " << loadTimer.elapsed() << " ms";
     }
+}
+
+bool MixHouseTrackListModel::canLoadMore() const
+{
+    return static_cast<int>(m_tracks.size()) >= m_pageLimit;
+}
+
+void MixHouseTrackListModel::loadMore()
+{
+    if (!canLoadMore()) {
+        return;
+    }
+    m_pageLimit += kPageSize;
+    load();
+    LOGI() << "GlideMix library: list now shows " << m_tracks.size() << " songs (page " << m_pageLimit << ")";
 }
 
 void MixHouseTrackListModel::sortBy(int sortKey)
@@ -794,7 +880,18 @@ const IMixHouseExternalLibrary* MixHouseTrackListModel::externalLibrary(const QS
     if (source == u"rekordbox") {
         return rekordboxXml().get();
     }
-    return nullptr;
+    // GlideMix: Engine DJ, Traktor, Serato, VirtualDJ, djay (mixhousedjapps.h).
+    return djAppLibrary(source);
+}
+
+void MixHouseTrackListModel::readDjApp(const QString& source)
+{
+    readDjAppNow(source);
+}
+
+QStringList MixHouseTrackListModel::externalSources()
+{
+    return QStringList { QStringLiteral("lexicon"), QStringLiteral("rekordbox") } + djAppSources();
 }
 
 void MixHouseTrackListModel::setRekordboxXmlPath(const QString& path)
@@ -893,6 +990,7 @@ IMixHouseLibrary::SortKey sortKeyForSmartField(const QString& field)
 
 void MixHouseTrackListModel::setSmartPlaylist(int id)
 {
+    m_smartCounts.remove(id);   // just edited, maybe: count it again
     m_externalSource = QStringLiteral("smart");
     m_externalPlaylist = id;
     m_query.playlistId = -1;
@@ -960,12 +1058,21 @@ double copyQuality(const MixHouseTrack& t)
 
 MixHouseTrackList MixHouseTrackListModel::duplicateTracks()
 {
-    m_duplicateExtras.clear();
-    m_duplicateGroups = 0;
     IMixHouseLibrary::TrackQuery q = m_query;
     q.limit = 0;
     q.playlistId = -1;
     q.crateId = -1;
+    QSet<int> extras;
+    int groupCount = 0;
+    MixHouseTrackList out = duplicateTracks(q, &extras, &groupCount);
+    m_duplicateExtras = extras;
+    m_duplicateGroups = groupCount;
+    return out;
+}
+
+MixHouseTrackList MixHouseTrackListModel::duplicateTracks(const IMixHouseLibrary::TrackQuery& q, QSet<int>* extras,
+                                                          int* groupCount) const
+{
     MixHouseTrackList all = library()->tracks(q);
 
     QHash<QString, std::vector<size_t> > byKey;
@@ -1016,13 +1123,15 @@ MixHouseTrackList MixHouseTrackListModel::duplicateTracks()
     MixHouseTrackList out;
     for (const std::vector<size_t>& g : groups) {
         for (size_t k = 0; k < g.size(); ++k) {
-            if (k > 0) {
-                m_duplicateExtras.insert(all[g[k]].id);
+            if (k > 0 && extras) {
+                extras->insert(all[g[k]].id);
             }
             out.push_back(all[g[k]]);
         }
     }
-    m_duplicateGroups = static_cast<int>(groups.size());
+    if (groupCount) {
+        *groupCount = static_cast<int>(groups.size());
+    }
     return out;
 }
 
@@ -1251,7 +1360,7 @@ MixHouseTrackList MixHouseTrackListModel::smartCandidates(const QString& source,
     if (source == u"collection" || source == u"all") {
         add(library()->tracks(q));
     }
-    for (const QString& ext : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+    for (const QString& ext : externalSources()) {
         if (source != ext && source != u"all") {
             continue;
         }
@@ -1290,6 +1399,38 @@ QSet<QString> MixHouseTrackListModel::smartPlaylistFiles(const QString& ref) con
     return files;
 }
 
+MixHouseSmartContext MixHouseTrackListModel::smartContextFor(const MixHouseSmartPlaylist& playlist) const
+{
+    MixHouseSmartContext context;
+    for (const auto& group : playlist.groups) {
+        for (const MixHouseSmartRule& r : group) {
+            if (r.field == u"inPlaylist" && !context.playlistFiles.contains(r.value)) {
+                context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
+            } else if (r.field == u"search" && !context.searchFiles.contains(r.value)) {
+                // The search box's own reading of the text, over the playlist's source.
+                IMixHouseLibrary::TrackQuery q;
+                q.filter = r.value;
+                q.limit = 0;
+                QSet<QString> files;
+                for (const MixHouseTrack& t : smartCandidates(playlist.source, q)) {
+                    files.insert(t.filePath);
+                }
+                context.searchFiles.insert(r.value, files);
+            }
+        }
+    }
+    return context;
+}
+
+int MixHouseTrackListModel::smartPlaylistCount(const MixHouseSmartPlaylist& playlist) const
+{
+    // The whole playlist: not the search box, not the list's 2,000-row page.
+    IMixHouseLibrary::TrackQuery all;
+    all.limit = 0;
+    return static_cast<int>(applySmartPlaylist(playlist, smartCandidates(playlist.source, all),
+                                               smartContextFor(playlist)).size());
+}
+
 MixHouseTrackList MixHouseTrackListModel::smartPlaylistTracks(int id) const
 {
     MixHouseSmartPlaylist playlist;
@@ -1303,14 +1444,7 @@ MixHouseTrackList MixHouseTrackListModel::smartPlaylistTracks(int id) const
     if (!found) {
         return {};
     }
-    MixHouseSmartContext context;
-    for (const auto& group : playlist.groups) {
-        for (const MixHouseSmartRule& r : group) {
-            if (r.field == u"inPlaylist" && !context.playlistFiles.contains(r.value)) {
-                context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
-            }
-        }
-    }
+    const MixHouseSmartContext context = smartContextFor(playlist);
     // The search box and key wheel narrow the candidates; the rules pick.
     MixHouseTrackList tracks = applySmartPlaylist(playlist, smartCandidates(playlist.source, m_query), context);
     IMixHouseLibrary::TrackQuery sortOnly;
@@ -1383,14 +1517,7 @@ void MixHouseTrackListModel::deleteSmartPlaylistWithConfirm(int id, const QStrin
 int MixHouseTrackListModel::smartPlaylistPreviewCount(const QVariantMap& definition) const
 {
     const MixHouseSmartPlaylist p = smartFromVariant(definition);
-    MixHouseSmartContext context;
-    for (const auto& group : p.groups) {
-        for (const MixHouseSmartRule& r : group) {
-            if (r.field == u"inPlaylist" && !context.playlistFiles.contains(r.value)) {
-                context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
-            }
-        }
-    }
+    const MixHouseSmartContext context = smartContextFor(p);
     return static_cast<int>(applySmartPlaylist(p, smartCandidates(p.source, IMixHouseLibrary::TrackQuery()), context).size());
 }
 
@@ -1404,7 +1531,7 @@ QVariantList MixHouseTrackListModel::smartPlaylistChoices(const QString& source)
             }
         }
     }
-    for (const QString& ext : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+    for (const QString& ext : externalSources()) {
         if (source != ext && source != u"all") {
             continue;
         }
@@ -1412,7 +1539,8 @@ QVariantList MixHouseTrackListModel::smartPlaylistChoices(const QString& source)
         if (!external || !external->available()) {
             continue;
         }
-        const QString prefix = ext == u"lexicon" ? QStringLiteral("Lexicon: ") : QStringLiteral("rekordbox: ");
+        const QString prefix = ext == u"lexicon" ? QStringLiteral("Lexicon: ")
+                               : ext == u"rekordbox" ? QStringLiteral("rekordbox: ") : djAppName(ext) + QStringLiteral(": ");
         for (const IMixHouseExternalLibrary::Node& n : external->nodes()) {
             if (n.type != IMixHouseExternalLibrary::NodeType::Folder) {
                 out << QVariantMap { { "value", QStringLiteral("%1:%2").arg(ext).arg(n.id) },
@@ -1468,6 +1596,11 @@ MixHouseTrackList MixHouseTrackListModel::playlistTracksForExport(const QString&
         q.playlistId = id;
         return library()->tracks(q);
     }
+    if (kind == u"crate") {
+        q.crateId = id;
+        q.sort = IMixHouseLibrary::SortKey::Artist;
+        return library()->tracks(q);
+    }
     if (kind == u"smart-playlist") {
         MixHouseSmartPlaylist playlist;
         for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
@@ -1475,14 +1608,7 @@ MixHouseTrackList MixHouseTrackListModel::playlistTracksForExport(const QString&
                 playlist = p;
             }
         }
-        MixHouseSmartContext context;
-        for (const auto& group : playlist.groups) {
-            for (const MixHouseSmartRule& r : group) {
-                if (r.field == u"inPlaylist") {
-                    context.playlistFiles.insert(r.value, smartPlaylistFiles(r.value));
-                }
-            }
-        }
+        const MixHouseSmartContext context = smartContextFor(playlist);
         MixHouseTrackList tracks = applySmartPlaylist(playlist, smartCandidates(playlist.source, IMixHouseLibrary::TrackQuery()), context);
         IMixHouseLibrary::TrackQuery order;
         order.sort = sortKeyForSmartField(playlist.sort);
@@ -1603,6 +1729,43 @@ void MixHouseTrackListModel::exportPlaylistToFolder(const QString& kind, int id,
     }).detach();
 }
 
+void MixHouseTrackListModel::exportPlaylistM3u(const QString& kind, int id, const QString& name)
+{
+    const MixHouseTrackList tracks = playlistTracksForExport(kind, id);
+    if (tracks.empty()) {
+        setAnalysisMessage(muse::qtrc("mixhouse", "Nothing to export: the playlist is empty."));
+        return;
+    }
+    static const QRegularExpression kUnsafe(QStringLiteral("[\\\\/:*?\"<>|]"));
+    QString base = name.trimmed();
+    base.replace(kUnsafe, QStringLiteral("-"));
+    if (base.isEmpty()) {
+        base = QStringLiteral("Playlist");
+    }
+    const QString path = interactive()->selectSavingFileSync(
+        muse::trc("mixhouse", "Export as M3U8 Playlist"),
+        muse::io::path_t(QDir(musicFolder()).filePath(base + QStringLiteral(".m3u8"))),
+        { muse::trc("mixhouse", "M3U8 playlist") + " (*.m3u8)" }).toQString();
+    if (path.isEmpty()) {
+        return;
+    }
+    QStringList lines { QStringLiteral("#EXTM3U") };
+    for (const MixHouseTrack& t : tracks) {
+        const QString who = t.artist.isEmpty() ? t.title : t.artist + QStringLiteral(" - ") + t.title;
+        lines << QStringLiteral("#EXTINF:%1,%2").arg(static_cast<int>(std::lround(std::max(0.0, t.durationSec)))).arg(who);
+        lines << QDir::toNativeSeparators(t.filePath);
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        interactive()->error(muse::trc("mixhouse", "Export as M3U8 Playlist"),
+                             muse::qtrc("mixhouse", "Could not write %1.").arg(path).toStdString());
+        return;
+    }
+    file.write(lines.join(QLatin1Char('\n')).toUtf8());
+    file.write("\n");
+    setAnalysisMessage(muse::qtrc("mixhouse", "Exported %1 songs to %2").arg(tracks.size()).arg(QFileInfo(path).fileName()));
+}
+
 void MixHouseTrackListModel::exportRekordboxXml()
 {
     const QString path = interactive()->selectSavingFileSync(
@@ -1684,7 +1847,7 @@ void MixHouseTrackListModel::exportRekordboxXml()
     }
     MixHouseXmlPlaylist changedList;
     changedList.name = muse::qtrc("mixhouse", "Changed in GlideMix");
-    for (const QString& source : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+    for (const QString& source : externalSources()) {
         const IMixHouseExternalLibrary* external = externalLibrary(source);
         if (changed.isEmpty() || !external || !external->available()) {
             continue;
@@ -2143,8 +2306,33 @@ void appendExternalTree(QVariantList& out, const std::vector<IMixHouseExternalLi
 }
 }  // namespace
 
+void MixHouseTrackListModel::recountSidebar()
+{
+    if (!library()) {
+        return;
+    }
+    QElapsedTimer took;
+    took.start();
+    m_lastRecount.start();
+    m_countsStale = false;
+    m_smartCounts.clear();
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        m_smartCounts.insert(p.id, smartPlaylistCount(p));
+    }
+    IMixHouseLibrary::TrackQuery q;
+    q.limit = 0;
+    m_duplicateCount = static_cast<int>(duplicateTracks(q, nullptr, nullptr).size());
+    q.unanalyzedOnly = true;
+    m_unanalyzedCount = static_cast<int>(library()->tracks(q).size());
+    LOGI() << "GlideMix: sidebar counts in " << took.elapsed() << " ms";
+    emit sidebarCountsChanged();
+}
+
 QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds) const
 {
+    if (m_countsStale && !m_countsTimer.isActive()) {
+        m_countsTimer.start();
+    }
     // Mixxx's sidebar is a FIXED hierarchy of features. Listing the Playlists
     // table directly is what produced 123 date-named rows at the top level --
     // those are session logs (PLHT_SET_LOG), and they belong under History.
@@ -2159,7 +2347,7 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     if (isOpen("tracks")) {
         out << node("missing", QObject::tr("Missing Tracks"), 1, "missing", -1,
                     library()->missingTrackCount(), false);
-        out << node("duplicates", QObject::tr("Duplicates"), 1, "duplicates", -1, -1, false);
+        out << node("duplicates", QObject::tr("Duplicates"), 1, "duplicates", -1, m_duplicateCount, false);
         // GlideMix: no Hidden Tracks node. Nothing hides a track here
         // (Remove from Library deletes it), so it was always empty.
     }
@@ -2188,7 +2376,12 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     out << node("smart", QObject::tr("Smart Playlists"), 0, "none", -1, static_cast<int>(smart.size()), true);
     if (isOpen("smart")) {
         for (const MixHouseSmartPlaylist& p : smart) {
-            out << node("sp-" + QString::number(p.id), p.name, 1, "smart-playlist", p.id, 0, false);
+            // A new or edited playlist: counted on its own now (one playlist is quick).
+            if (!m_smartCounts.contains(p.id) && !m_countsStale) {
+                m_smartCounts.insert(p.id, smartPlaylistCount(p));
+            }
+            out << node("sp-" + QString::number(p.id), p.name, 1, "smart-playlist", p.id,
+                        m_smartCounts.value(p.id, -1), false);
         }
     }
 
@@ -2240,7 +2433,7 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
         }
     }
 
-    out << node("analyze", QObject::tr("Analyze"), 0, "analyze-view", -1, 0, false);
+    out << node("analyze", QObject::tr("Analyze"), 0, "analyze-view", -1, m_unanalyzedCount, false);
     // GlideMix: a rekordbox XML export and Lexicon DJ's own library --
     // each one's tracks under the parent, its folders and playlists as
     // children (read-only).
@@ -2260,6 +2453,23 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
         out << node("lexicon", QObject::tr("Lexicon DJ"), 0, "lexicon-all", -1, lexicon()->trackCount(), true);
         if (isOpen("lexicon")) {
             appendExternalTree(out, lexicon()->nodes(), QStringLiteral("lx-"), QStringLiteral("lexicon-playlist"), -1, 1,
+                               expandedIds);
+        }
+    }
+    // GlideMix: the other DJ apps on this computer, read-only, like Lexicon.
+    for (const QString& source : djAppSources()) {
+        if (djAppWaitsForClick(source)) {
+            out << node(source, djAppName(source), 0, source + QStringLiteral("-read"), -1, 0, false);
+            continue;
+        }
+        const IMixHouseExternalLibrary* app = djAppLibrary(source);
+        if (!app || !app->available()) {
+            continue;
+        }
+        const std::vector<IMixHouseExternalLibrary::Node> nodes = app->nodes();
+        out << node(source, djAppName(source), 0, source + QStringLiteral("-all"), -1, app->trackCount(), !nodes.empty());
+        if (!nodes.empty() && isOpen(source)) {
+            appendExternalTree(out, nodes, source + QStringLiteral(":"), source + QStringLiteral("-playlist"), -1, 1,
                                expandedIds);
         }
     }
@@ -3287,6 +3497,28 @@ void MixHouseTrackListModel::applyTagFields(MixHouseTrack& t, const QVariantMap&
     take("comment", t.comment);
 }
 
+QStringList MixHouseTrackListModel::customTagNames() const
+{
+    return library() ? library()->customTagNames() : QStringList();
+}
+
+QString MixHouseTrackListModel::customTag(int trackId, const QString& name) const
+{
+    if (!library() || name.isEmpty()) {
+        return {};
+    }
+    auto it = m_customTagCache.find(name);
+    if (it == m_customTagCache.end()) {
+        it = m_customTagCache.insert(name, library()->customTagValues(name));
+    }
+    return it->value(trackId);
+}
+
+int MixHouseTrackListModel::trackIdAt(int row) const
+{
+    return row >= 0 && row < static_cast<int>(m_tracks.size()) ? m_tracks[static_cast<size_t>(row)].id : -1;
+}
+
 QVariantMap MixHouseTrackListModel::tagsForRow(int row) const
 {
     QVariantMap m;
@@ -3304,11 +3536,43 @@ QVariantMap MixHouseTrackListModel::tagsForRow(int row) const
     m[QStringLiteral("composer")] = t.composer;
     m[QStringLiteral("grouping")] = t.grouping;
     m[QStringLiteral("comment")] = t.comment;
+    m[QStringLiteral("key")] = t.keyId > 0 ? IMixHouseKeyMatch::camelot(t.keyId) : QString();
+    m[QStringLiteral("energy")] = t.energy > 0.0 ? QString::number(std::lround(t.energy)) : QString();
+    m[QStringLiteral("rating")] = QString::number(t.rating);
     return m;
 }
 
-bool MixHouseTrackListModel::editTags(const QVariantList& rows, const QVariantMap& fields, bool writeFile)
+bool MixHouseTrackListModel::editTags(const QVariantList& rows, const QVariantMap& fieldsIn, bool writeFile)
 {
+    // GlideMix: Key (normalised, written to the file's key tag), Energy and
+    // Rating (kept in the library) next to the text tags.
+    QVariantMap fields = fieldsIn;
+    const QVariant energy = fields.take(QStringLiteral("energy"));
+    const QVariant rating = fields.take(QStringLiteral("rating"));
+    if (fields.contains(QStringLiteral("key"))) {
+        const QString typed = fields.value(QStringLiteral("key")).toString().trimmed();
+        const int keyId = djKeyIdFromText(typed);
+        if (!typed.isEmpty() && keyId == 0) {
+            fields.remove(QStringLiteral("key"));   // not a key: left as it was
+        } else {
+            fields.insert(QStringLiteral("key"), keyId > 0 ? IMixHouseKeyMatch::traditional(keyId) : QString());
+        }
+    }
+    if (energy.isValid() || rating.isValid()) {
+        const QList<int> ids = resolveOrImportTrackIds(rows);
+        for (int id : ids) {
+            if (energy.isValid() && energy.toDouble() >= 1.0 && energy.toDouble() <= 10.0) {
+                library()->setTrackEnergy(id, std::round(energy.toDouble()));
+            }
+            if (rating.isValid() && rating.toInt() >= 0 && rating.toInt() <= 5) {
+                library()->setTrackRating(id, rating.toInt());
+            }
+        }
+        if (fields.isEmpty()) {
+            load();
+            return true;
+        }
+    }
     if (fields.isEmpty()) {
         return false;
     }
@@ -3492,7 +3756,7 @@ void MixHouseTrackListModel::moveTrackFileToTrashWithConfirm(int row, const QStr
 
 std::vector<MixHouseCue> MixHouseTrackListModel::cuesFor(const MixHouseTrack& t, bool* generated) const
 {
-    for (const QString& source : { QStringLiteral("lexicon"), QStringLiteral("rekordbox") }) {
+    for (const QString& source : externalSources()) {
         const IMixHouseExternalLibrary* external = externalLibrary(source);
         if (external && external->ownsTrack(t.id)) {
             std::vector<MixHouseCue> own = external->cues(t.id);
@@ -4455,9 +4719,17 @@ void MixHouseTrackListModel::setUiColumnCount(int n)
     if (m_uiColumnCount == n) {
         return;
     }
-    beginResetModel();
-    m_uiColumnCount = n;
-    endResetModel();
+    // GlideMix: a column added later (a tag column) is inserted, not a reset:
+    // a reset makes the table fill every row down to where it is scrolled.
+    if (n > m_uiColumnCount && m_uiColumnCount > 1) {
+        beginInsertColumns(QModelIndex(), m_uiColumnCount, n - 1);
+        m_uiColumnCount = n;
+        endInsertColumns();
+    } else {
+        beginResetModel();
+        m_uiColumnCount = n;
+        endResetModel();
+    }
     emit uiColumnCountChanged();
 }
 
@@ -4539,6 +4811,16 @@ QString MixHouseTrackListModel::scanStatusText() const
 int MixHouseTrackListModel::trackCount() const { return library()->trackCount(); }
 int MixHouseTrackListModel::matchingCount() const
 {
+    // A smart playlist, Duplicates, a folder or another app's list: the
+    // collection query would count the whole collection.
+    if (!m_externalSource.isEmpty()) {
+        const int shown = static_cast<int>(m_tracks.size());
+        if (m_externalSource == u"smart" && shown >= m_pageLimit && m_query.filter.isEmpty()
+            && m_smartCounts.contains(m_externalPlaylist)) {
+            return m_smartCounts.value(m_externalPlaylist);
+        }
+        return shown;
+    }
     return static_cast<int>(library()->matchingTracks(m_query).ids.size());
 }
 bool MixHouseTrackListModel::available() const { return library()->isAvailable(); }

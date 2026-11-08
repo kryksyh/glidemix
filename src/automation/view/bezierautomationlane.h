@@ -4,6 +4,7 @@
 #include <QQuickPaintedItem>
 #include <QColor>
 #include <QVariantList>
+#include <QSet>
 #include "au3-components/BezierAutomation.h"
 
 namespace au::automation {
@@ -51,6 +52,10 @@ public:
     /// Removes the point, joining its two segments (one undoable edit). The
     /// clip's first and last points can't be removed.
     Q_INVOKABLE bool deletePoint(int node);
+    /// GlideMix: a point's value (0..1, as in `segments`), and typing one in
+    /// (one undoable edit). -1 for no such point.
+    Q_INVOKABLE double pointValue(int node) const;
+    Q_INVOKABLE bool setPointValue(int node, double value);
     /// GlideMix: the line from point `node` to the next -- S-curve or straight.
     Q_INVOKABLE bool isSCurve(int node) const;
     Q_INVOKABLE bool setSCurve(int node, bool sCurve);
@@ -101,6 +106,8 @@ private:
     //! GlideMix: false for points that only repeat the flat line around them.
     bool nodeShown(int node) const;
     void cancel();
+    //! GlideMix: the Shift-picked points, moved together from m_before.
+    void movePicked(double dt, double dv);
     void setActivePoint(QPointF position, double value);
     void clearActivePoint();
     clipautomation::Curve m_curve;
@@ -119,6 +126,9 @@ private:
     bool m_hasActivePoint{};
     int m_hoverNode{-1};
     int m_selectedNode{-1};   ///< the point whose menu is open
+    QSet<int> m_picked;       ///< GlideMix: Shift-clicked points that move together
+    int m_lastClickedNode{-1};
+    bool m_groupDrag{};
     QPointF m_activePoint;
     double m_activePointValue{};
 };

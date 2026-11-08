@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 import Muse.Ui
 import Muse.UiComponents
@@ -500,6 +501,55 @@ Rectangle {
             color: tempoLane.backgroundColor
         }
 
+        // GlideMix: right-click a tempo point > Set tempo… -- the BPM typed in.
+        Popup {
+            id: tempoValuePopup
+            property int node: -1
+            parent: Overlay.overlay
+            anchors.centerIn: parent
+            modal: true
+            padding: 12
+
+            function openFor(pointNode) {
+                node = pointNode
+                const bpm = tempoLane.pointBpm(node)
+                tempoField.currentText = bpm > 0 ? (Math.round(bpm * 100) / 100).toString() : ""
+                open()
+                tempoField.ensureActiveFocus()
+                tempoField.selectAll()
+            }
+            function apply() {
+                const bpm = parseFloat(String(tempoField.inputField.text).trim().replace(",", ".").replace(/bpm$/i, ""))
+                if (isNaN(bpm) || bpm <= 0) {
+                    return
+                }
+                tempoLane.setPointBpm(node, bpm)
+                close()
+            }
+
+            background: Rectangle {
+                color: ui.theme.backgroundPrimaryColor
+                border.color: ui.theme.strokeColor
+                radius: 4
+            }
+            contentItem: RowLayout {
+                spacing: 8
+                StyledTextLabel { text: qsTrc("projectscene", "Tempo") }
+                TextInputField {
+                    id: tempoField
+                    Layout.preferredWidth: 90
+                    onAccepted: tempoValuePopup.apply()
+                    onEscaped: tempoValuePopup.close()
+                }
+                StyledTextLabel { text: "BPM" }
+                FlatButton {
+                    text: qsTrc("global", "OK")
+                    accentButton: true
+                    onClicked: tempoValuePopup.apply()
+                }
+            }
+        }
+
         MixHouseTempoLane {
             id: tempoLane
 
@@ -522,7 +572,9 @@ Rectangle {
                 id: tempoPointMenu
                 property int node: -1
                 onHandleMenuItem: function(itemId) {
-                    if (itemId === "delete-point") {
+                    if (itemId === "set-tempo") {
+                        tempoValuePopup.openFor(node)
+                    } else if (itemId === "delete-point") {
                         tempoLane.deletePoint(node)
                     } else if (itemId === "glide-straight") {
                         tempoLane.setGlideShape(node, false)
@@ -534,7 +586,7 @@ Rectangle {
             }
             onPointMenuRequested: function(node, x, y) {
                 tempoPointMenu.node = node
-                let items = []
+                let items = [{ id: "set-tempo", title: qsTrc("projectscene", "Set tempo…") }, {}]
                 // GlideMix: how the tempo glides on to the next point.
                 if (tempoLane.hasNextPoint(node)) {
                     const sCurve = tempoLane.isSCurve(node)
@@ -1592,14 +1644,18 @@ Rectangle {
                 readonly property string laneKey: model.outgoingTrackId + ":" + model.incomingTrackId
                 // GlideMix: no lane shown until a dot is clicked -- the volume
                 // curve's gradient used to cover every transition by default.
+                // (A Volume lane remembered from before has no dot any more: none shown.)
                 property int lane: transitionZonesModel.shownLanes[laneKey] !== undefined
+                                   && transitionZonesModel.shownLanes[laneKey] !== 0
                                    ? transitionZonesModel.shownLanes[laneKey] : -1
                 // By lane id: 0 volume, 1 low, 2 color, 3 mid, 4 high.
                 readonly property var laneColors: ["#5CC8F0", "#F0506E", "#A07CF5", "#F5A04A", "#EDD85A"]
                 readonly property var laneNames: [qsTrc("mixhouse", "Volume"), qsTrc("mixhouse", "Low"), qsTrc("mixhouse", "Color"),
                     qsTrc("mixhouse", "Mid"), qsTrc("mixhouse", "High")]
                 // The dots' order on the pill.
-                readonly property var laneOrder: [0, 1, 3, 4, 2]
+                // GlideMix (Chris): no Volume dot -- it is the song's own volume
+                // line, always shown on the clip. Low, Mid, High, Color.
+                readonly property var laneOrder: [1, 3, 4, 2]
                 onLaneChanged: laneCanvas.reload()
                 onOutTopChanged: laneCanvas.requestPaint()
                 onInTopChanged: laneCanvas.requestPaint()

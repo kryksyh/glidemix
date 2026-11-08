@@ -82,6 +82,10 @@ public:
     QHash<QString, QVariantMap> tagEditsByLocation() const override;
     QHash<int, QString> trackLocations(const QList<int>& trackIds) const override;
     int applyFileTags(const std::vector<std::pair<int, MixHouseFileTags> >& tags) override;
+    QStringList customTagNames() const override;
+    QHash<int, QString> customTagValues(const QString& name) const override;
+    //! Replaces a track's custom tags with these (m_writeDb).
+    void storeCustomTags(int trackId, const QMap<QString, QString>& tags);
     void requestRevealTrack(int trackId, RevealMode mode) override;
     muse::async::Channel<int, RevealMode> revealTrackRequested() const override;
     std::vector<MixHouseSmartPlaylist> smartPlaylists() const override;
@@ -319,6 +323,7 @@ private:
     //! analysed when GlideMix stopped. A song left over twice is skipped.
     QSet<int> m_analysisInFlight;
     QHash<int, int> m_analysisSuspects;   // track id -> crashes it was part of
+    QHash<int, int> m_mikEnergy;          // track id -> Mixed In Key energy from the comment
     bool m_analysisGuardLoaded = false;
     void loadAnalysisGuard();
     void saveAnalysisGuard() const;

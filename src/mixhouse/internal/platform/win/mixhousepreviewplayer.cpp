@@ -275,7 +275,15 @@ void MixHousePreviewPlayer::setRate(double rate)
 {
     // The Media Engine keeps the pitch while it changes the speed.
     if (m_impl->engine) {
+        // The engine goes back to its default rate when playback starts, so set both.
+        m_impl->engine->SetDefaultPlaybackRate(std::clamp(rate, 0.5, 2.0));
         m_impl->engine->SetPlaybackRate(std::clamp(rate, 0.5, 2.0));
+    }
+}
+void MixHousePreviewPlayer::setVolume(double volume)
+{
+    if (m_impl->engine) {
+        m_impl->engine->SetVolume(std::clamp(volume, 0.0, 1.0));
     }
 }
 }

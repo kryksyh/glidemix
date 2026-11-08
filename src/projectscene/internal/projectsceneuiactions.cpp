@@ -574,6 +574,7 @@ const ToolConfig& ProjectSceneUiActions::defaultPlaybackToolBarConfig()
             { "mixhouse-tempo-lane", true },
             { "mixhouse-energy-lane", true },
             { "mixhouse-keylock", true },
+            { "mixhouse-link", true },
             { "mixhouse-perform", true },
             { "mixhouse-reset-performance", true },
             { "mixhouse-broadcast", true },

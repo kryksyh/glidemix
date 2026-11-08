@@ -532,6 +532,31 @@ bool MixHouseTempoLane::deletePoint(int index)
     return true;
 }
 
+double MixHouseTempoLane::pointBpm(int index) const
+{
+    if (!tempoMap()) {
+        return -1.0;
+    }
+    const Points points = tempoMap()->points();
+    return index >= 0 && index < static_cast<int>(points.size()) ? points[index].bpm : -1.0;
+}
+
+bool MixHouseTempoLane::setPointBpm(int index, double bpm)
+{
+    if (!tempoMap() || m_drag != Drag::None || !std::isfinite(bpm)) {
+        return false;
+    }
+    Points points = tempoMap()->points();
+    if (index < 0 || index >= static_cast<int>(points.size())) {
+        return false;
+    }
+    points[index].bpm = std::clamp(bpm, IMixHouseTempoMap::kMinBpm, IMixHouseTempoMap::kMaxBpm);
+    m_selectedIndex = -1;
+    tempoMap()->setPoints(points, true);
+    update();
+    return true;
+}
+
 bool MixHouseTempoLane::isSCurve(int index) const
 {
     if (!tempoMap()) {

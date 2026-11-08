@@ -48,6 +48,12 @@ public:
     Q_INVOKABLE void toggleClipGainAutomation();
     Q_INVOKABLE void showClipGainAutomation();
     Q_INVOKABLE void showPluginAutomation();
+    //! GlideMix: the track header's Low / Mid / High buttons -- the song's own
+    //! EQ line (the one transitions write) shown over the whole song.
+    //! band 0 Low, 1 Mid, 2 High; again on the shown one hides it.
+    Q_INVOKABLE void toggleBandLine(const QVariant& trackId, int band);
+    //! The band shown on that track, -1 = none.
+    Q_INVOKABLE int shownBandLine(const QVariant& trackId) const;
 
     bool tracksVerticalScrollLocked() const;
     int tracksVerticalScrollPadding() const;
@@ -75,6 +81,7 @@ public:
     Q_INVOKABLE int trackVerticalPosition(trackedit::TrackId trackId) const;
 
 signals:
+    void bandLineChanged();
     void blackCanvasChanged();
     void clipGainAutomationEnabledChanged();
     void tracksVerticalOffsetChanged();

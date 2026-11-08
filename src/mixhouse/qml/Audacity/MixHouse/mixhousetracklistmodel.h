@@ -15,6 +15,7 @@
 #include <deque>
 
 #include <QTimer>
+#include <QElapsedTimer>
 
 #include <memory>
 
@@ -195,6 +196,8 @@ public:
     //! GlideMix: show another DJ app's tracks -- `source` "lexicon" or
     //! "rekordbox", `playlistId` -1 = all -- read-only, see
     //! IMixHouseExternalLibrary.
+    //! GlideMix: reads a DJ app's library that waits for a click (Traktor on macOS).
+    Q_INVOKABLE void readDjApp(const QString& source);
     Q_INVOKABLE void setExternalPlaylist(const QString& source, int playlistId);
 
     //! GlideMix: smart playlists (rekordbox's Intelligent Playlists,
@@ -235,6 +238,12 @@ public:
     //! .m3u8. `kind`: "playlist", "smart-playlist", "lexicon-playlist",
     //! "rekordbox-playlist". Runs in the background; the status line reports.
     Q_INVOKABLE void exportPlaylistToFolder(const QString& kind, int id, const QString& name, const QString& destination);
+    //! GlideMix: the playlist as an .m3u8 file (UTF-8, #EXTINF, the songs where
+    //! they are), saved where the user picks. Same kinds as above.
+    Q_INVOKABLE void exportPlaylistM3u(const QString& kind, int id, const QString& name);
+    //! GlideMix: the list holds 2000 rows at a time; near the end, the next 2000.
+    Q_INVOKABLE bool canLoadMore() const;
+    Q_INVOKABLE void loadMore();
 
     //! GlideMix: the Music Collection, its playlists, the smart playlists and
     //! the Lexicon / rekordbox songs changed in GlideMix, as a rekordbox XML
@@ -262,6 +271,12 @@ public:
     Q_INVOKABLE void importTagsFromFiles(const QVariantList& rows, bool allMatching);
     //! The row of a track in this view, -1 when it is not in it.
     Q_INVOKABLE int rowOfTrack(int trackId) const;
+    //! The track id on a row of this view, -1 for no row.
+    Q_INVOKABLE int trackIdAt(int row) const;
+    //! GlideMix (Marc Mont): the files' other tags (MOOD, MUSICBRAINZ_*...)
+    //! the library has seen, and one song's value -- custom tag columns.
+    Q_INVOKABLE QStringList customTagNames() const;
+    Q_INVOKABLE QString customTag(int trackId, const QString& name) const;
     //! title, album and artist of a track, in this view or not (it shows at most
     //! 2000 rows), for Show in Library.
     Q_INVOKABLE QVariantMap trackInfo(int trackId) const;
@@ -663,6 +678,8 @@ public:
     /// preview deck.
     Q_PROPERTY(int previewTrackId READ previewTrackId NOTIFY previewStateChanged)
     Q_PROPERTY(bool previewPlaying READ previewPlaying NOTIFY previewStateChanged)
+    //! GlideMix: the library preview's own level, 0..1, remembered.
+    Q_PROPERTY(double previewVolume READ previewVolume WRITE setPreviewVolume NOTIFY previewStateChanged)
     Q_PROPERTY(double previewPosition READ previewPosition NOTIFY previewPositionChanged)
 
     /// Backs the status line's real-time "Scanning..." state -- see
@@ -684,6 +701,8 @@ public:
     int analyzeTotal() const;
     int previewTrackId() const { return m_previewTrackId; }
     bool previewPlaying() const { return m_previewPlaying; }
+    double previewVolume() const;
+    void setPreviewVolume(double volume);
     double previewPosition() const { return m_previewPosition; }
     /// Click on a row's Waveform Overview at `fraction` (0..1): starts
     /// previewing that track from there, or -- if it's already the preview
@@ -721,6 +740,7 @@ public:
     void setUiColumnCount(int n);
 
 signals:
+    void sidebarCountsChanged();
     void analysisMessageChanged();
     void loaded();
     //! `mode`: 0 the track, 1 its album, 2 its artist (IMixHouseLibrary::RevealMode).
@@ -815,6 +835,10 @@ private:
     void emitAnalysisProgressChanged(int trackId, bool allRoles = false);
 
     MixHouseTrackList m_tracks;
+    //! GlideMix: how many rows the list loads now (2000 more per loadMore()).
+    static constexpr int kPageSize = 2000;
+    int m_pageLimit = kPageSize;
+    QString m_pageView;
     //! GlideMix: the files on the timeline, for the mark in the list.
     void updateProjectFiles();
     QSet<QString> m_projectFiles;
@@ -848,10 +872,25 @@ private:
     bool m_subscribedToExternal = false;
     void leaveExternal();
     const IMixHouseExternalLibrary* externalLibrary(const QString& source) const;
+    static QStringList externalSources();
+    int m_djAppsGeneration = 0;
     void applyOwnOverrides(MixHouseTrackList& tracks) const;
     //! GlideMix: the tracks a smart playlist picks, filtered by the search box.
     MixHouseTrackList smartPlaylistTracks(int id) const;
     MixHouseTrackList duplicateTracks();
+    MixHouseTrackList duplicateTracks(const IMixHouseLibrary::TrackQuery& q, QSet<int>* extras, int* groupCount) const;
+    /// GlideMix: the sidebar's counts for smart playlists, Duplicates and
+    /// Analyze. Working them out reads the whole library, so they're kept
+    /// and redone a moment after the library changes, never while the
+    /// sidebar draws.
+    void recountSidebar();
+    mutable QHash<int, int> m_smartCounts;
+    mutable QHash<QString, QHash<int, QString> > m_customTagCache;
+    int m_duplicateCount = -1;
+    int m_unanalyzedCount = -1;
+    mutable bool m_countsStale = true;
+    mutable QTimer m_countsTimer;
+    QElapsedTimer m_lastRecount;
     bool duplicatesView() const { return m_externalSource == u"duplicates"; }
     int rekordboxLoadProgress() const;
     QTimer m_rekordboxProgressTimer;
@@ -863,6 +902,8 @@ private:
     QSet<int> m_duplicateExtras;   ///< ids of the copies that aren't the best
     int m_duplicateGroups = 0;
     MixHouseTrackList smartCandidates(const QString& source, const IMixHouseLibrary::TrackQuery& query) const;
+    MixHouseSmartContext smartContextFor(const MixHouseSmartPlaylist& playlist) const;
+    int smartPlaylistCount(const MixHouseSmartPlaylist& playlist) const;
     QSet<QString> smartPlaylistFiles(const QString& playlistRef) const;
     MixHouseTrackList playlistTracksForExport(const QString& kind, int id) const;
     //! A track from another DJ app's library: not in this library, so

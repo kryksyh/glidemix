@@ -14,6 +14,7 @@
 #include "iprojectsceneuistate.h"
 #include "playback/itrackplaybackcontrol.h"
 #include "mixhouse/imixhousebeatgrids.h"
+#include "mixhouse/imixhousekeymatch.h"
 #include "mixhouse/mixhousehdwaveform.h"
 #include "../timeline/timelinecontext.h"
 #include "types/projectscenetypes.h"
@@ -56,6 +57,7 @@ class WaveView : public QQuickPaintedItem, public muse::async::Asyncable, public
     muse::ContextInject<au::projectscene::IWavePainter> wavePainter{ this };
     muse::ContextInject<au::trackedit::IProjectHistory> projectHistory{ this };
     muse::ContextInject<au::mixhouse::IMixHouseBeatGrids> beatGrids{ this };   // GlideMix: bar marks
+    muse::ContextInject<au::mixhouse::IMixHouseKeyMatch> keyMatch{ this };     // GlideMix: the key in the header
     muse::GlobalInject<au::mixhouse::IMixHouseHdWaveforms> hdWaveforms;        // GlideMix: HD colour waveform
     muse::ContextInject<IProjectSceneUiState> projectSceneUiState { this };    // GlideMix: the workspace's lane look
     muse::ContextInject<au::playback::ITrackPlaybackControl> trackPlaybackControl { this };   // GlideMix: track volume
@@ -110,6 +112,9 @@ public:
     Q_INVOKABLE void setLastMousePos(const unsigned int x, const unsigned int y);
     //! GlideMix: MixMeister anchors, x in this view (-1 = none): [intro, outro].
     Q_INVOKABLE QVariantList anchorPositions() const;
+    //! GlideMix (Marc Mont): the key the song sounds in now (Camelot), for the
+    //! clip header; empty when unknown.
+    Q_INVOKABLE QString keyText() const;
     Q_INVOKABLE void dragAnchor(int which, double x, bool completed);
     Q_INVOKABLE void resetAnchors();
     Q_INVOKABLE void setLastClickPos(unsigned lastX, unsigned lastY, unsigned int x, const unsigned int y);

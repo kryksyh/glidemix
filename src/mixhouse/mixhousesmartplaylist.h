@@ -44,7 +44,7 @@ struct MixHouseSmartPlaylist {
 struct MixHouseSmartField {
     QString id;
     QString title;
-    /// "text", "number", "key", "color", "date", "bool", "playlist"
+    /// "text", "number", "key", "color", "date", "bool", "playlist", "search"
     QString type;
 };
 const std::vector<MixHouseSmartField>& smartFields();
@@ -59,6 +59,9 @@ struct MixHouseSmartContext {
     /// "In playlist" rules: the file paths of each playlist named in a rule
     /// (key: playlist id as text).
     QHash<QString, QSet<QString> > playlistFiles;
+    /// "Search" rules: the files the search box would find for each rule's
+    /// text ("genre:house bpm:>125"), so a saved search is a smart playlist.
+    QHash<QString, QSet<QString> > searchFiles;
 };
 
 bool smartRuleMatches(const MixHouseSmartRule& rule, const MixHouseTrack& track, const MixHouseSmartContext& context);

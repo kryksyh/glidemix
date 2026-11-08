@@ -360,6 +360,11 @@ public:
     virtual QHash<int, QString> trackLocations(const QList<int>& trackIds) const = 0;
     virtual int applyFileTags(const std::vector<std::pair<int, MixHouseFileTags> >& tags) = 0;
 
+    /// GlideMix (Marc Mont): the files' other tags (MOOD, MUSICBRAINZ_*...),
+    /// kept whenever a file's tags are read, for custom tag columns.
+    virtual QStringList customTagNames() const { return {}; }
+    virtual QHash<int, QString> customTagValues(const QString& name) const { (void)name; return {}; }
+
     /// "Show in Library" from anywhere: the library panel goes to the track.
     enum class RevealMode { Track, Album, Artist };
     virtual void requestRevealTrack(int trackId, RevealMode mode) = 0;

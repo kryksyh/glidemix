@@ -188,6 +188,7 @@ const std::vector<MixHouseSmartField>& smartFields()
         { "timesPlayed", "Play Count", "number" },
         { "analyzed", "Analyzed", "bool" },
         { "inPlaylist", "Playlist", "playlist" },
+        { "search", "Search", "search" },
         { "fileName", "File Name", "text" },
         { "fileType", "File Type", "text" },
         { "bitrate", "Bitrate (kbps)", "number" },
@@ -231,6 +232,9 @@ std::vector<std::pair<QString, QString> > smartOperators(const QString& type)
     }
     if (type == u"playlist") {
         return { { "is", "is in" }, { "isNot", "is not in" } };
+    }
+    if (type == u"search") {
+        return { { "is", "finds" }, { "isNot", "does not find" } };
     }
     return {};
 }
@@ -332,6 +336,11 @@ bool smartRuleMatches(const MixHouseSmartRule& rule, const MixHouseTrack& t, con
         const auto it = context.playlistFiles.constFind(rule.value);
         const bool inside = it != context.playlistFiles.constEnd() && it->contains(t.filePath);
         return op == u"is" ? inside : !inside;
+    }
+    if (type == u"search") {
+        const auto it = context.searchFiles.constFind(rule.value);
+        const bool found = it != context.searchFiles.constEnd() && it->contains(t.filePath);
+        return op == u"is" ? found : !found;
     }
     return false;
 }

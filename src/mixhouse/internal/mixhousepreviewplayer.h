@@ -41,6 +41,8 @@ public:
     /// GlideMix: playback speed, keeping the pitch (1 = normal). Used to play a
     /// library song at the timeline's tempo. No effect where unsupported.
     void setRate(double rate);
+    /// GlideMix: the preview's own level, 0..1 (Marc Mont: louder than the mix).
+    void setVolume(double volume);
 
 private:
     struct Impl;

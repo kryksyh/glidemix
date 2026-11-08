@@ -24,6 +24,6 @@ public:
     //! MixHouseTrack::id of a Lexicon track: -(id + 1), never -1 ("none").
     static int trackIdForLexicon(int lexiconId) { return -(lexiconId + 1); }
     static int lexiconIdForTrack(int trackId) { return -trackId - 1; }
-    static bool isLexiconTrack(int trackId) { return trackId < -1 && trackId > -1000000000; }
+    static bool isLexiconTrack(int trackId) { return trackId < -1 && trackId > -100000000; }   // GlideMix: other DJ apps below
 };
 }

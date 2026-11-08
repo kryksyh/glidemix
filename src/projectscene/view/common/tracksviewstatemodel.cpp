@@ -38,6 +38,9 @@ void TracksViewStateModel::init()
     vs->clipGainAutomationEnabled().ch.onReceive(this, [this](bool) {
         emit clipGainAutomationEnabledChanged();
     }, muse::async::Asyncable::Mode::SetReplace);
+    vs->pluginAutomationFocusChanged().onNotify(this, [this]() {
+        emit bandLineChanged();
+    }, muse::async::Asyncable::Mode::SetReplace);
 
     const auto bumpLayout = [this]() {
         ++m_tracksLayoutRevision;
@@ -128,6 +131,60 @@ void TracksViewStateModel::showClipGainAutomation()
         // remain identical to pressing the automation button.
         dispatcher()->dispatch("clip-gain");
     }
+}
+
+namespace {
+// ClipParameterAutomation.h: the built-in band lines transitions write.
+constexpr const char* kBuiltinInstance = "b7c3e0a2-4d1f-4c8e-9a55-6f1d2e7a4b10";
+constexpr const char* kBuiltinPlugin = "mixtape.builtin";
+constexpr const char* kBandParameter[4] = { "low", "mid", "high", "color" };
+constexpr const char* kBandLabel[4] = { "Low", "Mid", "High", "Color" };
+// The transition pill's lane colours (TracksItemsView.qml laneColors).
+constexpr const char* kBandColor[4] = { "#F0506E", "#F5A04A", "#EDD85A", "#A07CF5" };
+// Color: the Filter DJ effect's two lines as one (ClipPluginAutomationModel).
+constexpr const char* kColorInstance = "glidemix-color";
+}
+
+void TracksViewStateModel::toggleBandLine(const QVariant& trackId, int band)
+{
+    const auto vs = viewState();
+    if (!vs || band < 0 || band > 3) {
+        return;
+    }
+    IProjectViewState::PluginAutomationFocus focus;
+    focus.trackId = trackId.toLongLong();
+    if (shownBandLine(trackId) == band) {
+        focus = vs->pluginAutomationFocus();
+        focus.visible = false;
+    } else {
+        focus.instanceId = band == 3 ? kColorInstance : kBuiltinInstance;
+        focus.pluginId = band == 3 ? "" : kBuiltinPlugin;
+        focus.parameterId = kBandParameter[band];
+        focus.label = kBandLabel[band];
+        focus.color = kBandColor[band];
+        focus.defaultValue = band == 3 ? 0.5 : 1.0;   // Color open / the band at full
+        focus.visible = true;
+    }
+    vs->setPluginAutomationFocus(std::move(focus));
+    emit bandLineChanged();
+}
+
+int TracksViewStateModel::shownBandLine(const QVariant& trackId) const
+{
+    const auto vs = viewState();
+    if (!vs) {
+        return -1;
+    }
+    const auto& f = vs->pluginAutomationFocus();
+    if (!f.visible || (f.instanceId != kBuiltinInstance && f.instanceId != kColorInstance) || f.trackId != trackId.toLongLong()) {
+        return -1;
+    }
+    for (int band = 0; band < 4; ++band) {
+        if (f.parameterId == kBandParameter[band]) {
+            return band;
+        }
+    }
+    return -1;
 }
 
 void TracksViewStateModel::showPluginAutomation()

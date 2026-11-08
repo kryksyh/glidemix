@@ -866,6 +866,15 @@ void WaveView::paintAnchors(QPainter& painter, const IWavePainter::Params& param
     painter.restore();
 }
 
+QString WaveView::keyText() const
+{
+    if (!keyMatch()) {
+        return QString();
+    }
+    const auto info = keyMatch()->keyInfo(m_clipKey.key);
+    return info.effectiveKeyId > 0 ? au::mixhouse::IMixHouseKeyMatch::camelot(info.effectiveKeyId) : QString();
+}
+
 QVariantList WaveView::anchorPositions() const
 {
     const auto grids = beatGrids();

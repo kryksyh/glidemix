@@ -231,4 +231,10 @@ void MixHousePreviewPlayer::setRate(double rate)
         m_impl->timePitch.rate = static_cast<float>(std::clamp(rate, 0.5, 2.0));
     }
 }
+void MixHousePreviewPlayer::setVolume(double volume)
+{
+    if (m_impl->player) {
+        m_impl->player.volume = static_cast<float>(std::clamp(volume, 0.0, 1.0));
+    }
+}
 }

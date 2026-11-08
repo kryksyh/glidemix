@@ -255,7 +255,20 @@ Item {
         search.searchText = text
     }
 
+    // GlideMix (Marc Mont): Show in Library leaves the list you were in; Back
+    // (beside the search box) returns to it -- the same list, search and song.
+    property var backView: null
+
     function revealTrack(trackId, mode) {
+        var here = sourceList.currentIndex >= 0 && sourceList.currentIndex < sourceList.model.length
+                   ? sourceList.model[sourceList.currentIndex] : null
+        var selectedRow = root.selectedRows.length > 0 ? root.selectedRows[0] : -1
+        root.backView = here ? {
+            nodeId: here.nodeId, kind: here.kind, refId: here.refId, path: here.path || "",
+            search: search.searchText || "",
+            trackId: selectedRow >= 0 ? tracksModel.trackIdAt(selectedRow) : -1,
+            y: trackTableView.contentY
+        } : null
         root.rememberViewAndSwitch("all", -1)
         root.pendingViewRestore = null
         root.selectedSidebarRefIds = []
@@ -281,6 +294,58 @@ Item {
         }
         root.selectRow(row)
         Qt.callLater(function() { trackTableView.positionViewAtRow(row, TableView.Contain) })
+    }
+
+    function goBack() {
+        var back = root.backView
+        root.backView = null
+        if (!back) {
+            return
+        }
+        var nodes = sourceList.model
+        for (var i = 0; i < nodes.length; ++i) {
+            if (nodes[i].nodeId === back.nodeId) {
+                sourceList.currentIndex = i
+                break
+            }
+        }
+        root.rememberViewAndSwitch(back.kind, back.refId)
+        root.pendingViewRestore = null
+        root.selectedSidebarRefIds = []
+        var kind = back.kind
+        var refId = back.refId
+        if (kind === "history-view") {
+            tracksModel.setHistoryView()
+        } else if (kind === "analyze-view") {
+            tracksModel.setAnalyzeView()
+        } else if (kind === "folder-browse" && back.path) {
+            tracksModel.setBrowseFolder(back.path)
+        } else if (kind === "smart-playlist") {
+            tracksModel.setSmartPlaylist(refId)
+        } else if (root.isExternalAllKind(kind)) {
+            tracksModel.setExternalPlaylist(kind.split("-")[0], -1)
+        } else if (root.isExternalPlaylistKind(kind)) {
+            tracksModel.setExternalPlaylist(kind.split("-")[0], refId)
+        } else if (kind === "playlist") {
+            tracksModel.setPlaylist(refId)
+        } else if (kind === "crate") {
+            tracksModel.setCrate(refId)
+        } else if (kind === "missing") {
+            tracksModel.setMissing()
+        } else if (kind === "duplicates") {
+            tracksModel.setDuplicates()
+        } else {
+            tracksModel.setPlaylist(-1)
+        }
+        root.setSearchBox(back.search)
+        tracksModel.setSearch(back.search)
+        var row = back.trackId >= 0 ? tracksModel.rowOfTrack(back.trackId) : -1
+        if (row >= 0) {
+            root.selectRow(row)
+        }
+        Qt.callLater(function() {
+            trackTableView.contentY = Math.max(0, Math.min(back.y, trackTableView.contentHeight - trackTableView.height))
+        })
     }
 
     function applyViewRestore() {
@@ -601,6 +666,9 @@ Item {
                 var item = saved[j]
                 if (item.key === "preview") item.key = "analysisProgress"
                 var col = byKey[item.key]
+                if (!col && String(item.key).indexOf("tag:") === 0) {
+                    col = root.tagColumn(String(item.key).slice(4), true, 150)
+                }
                 if (!col) continue
                 col.visible = item.visible !== false
                 if (Number(item.width) > 0) col.width = Number(item.width)
@@ -724,8 +792,41 @@ Item {
         case "trackNumber":  return (model.inProject ? "\u25CF " : "") + (model.trackNumber ? model.trackNumber : "")
         // Rendered as their own item in the row delegate, not as text.
         case "analysisProgress": case "coverArt": case "color": case "overview": return ""
-        default: return model[key] !== undefined ? model[key] : ""
+        default:
+            // GlideMix (Marc Mont): a custom tag column, "tag:MOOD".
+            if (key.indexOf("tag:") === 0) {
+                return tracksModel.customTag(model.trackId, key.slice(4))
+            }
+            return model[key] !== undefined ? model[key] : ""
         }
+    }
+
+    // GlideMix (Marc Mont): adds a column for one of the files' own tags.
+    function addTagColumn(name) {
+        Qt.callLater(function() {
+            var c = root.columns.slice()
+            for (var i = 0; i < c.length; ++i) {
+                if (c[i].key === "tag:" + name) {
+                    c[i].visible = true
+                    root.columns = c
+                    saveColumnLayout()
+                    trackTableView.forceLayout()
+                    return
+                }
+            }
+            c.push(root.tagColumn(name, true, 150))
+            root.columns = c
+            tracksModel.uiColumnCount = c.length   // the table draws this many
+            saveColumnLayout()
+            // Show it: the new column is the last one, past the right edge.
+            Qt.callLater(function() {
+                trackTableView.contentX = Math.max(0, trackTableView.contentWidth - trackTableView.width)
+            })
+        })
+    }
+    function tagColumn(name, visible, width) {
+        return { key: "tag:" + name, label: name.charAt(0) + name.slice(1).toLowerCase().replace(/_/g, " "),
+                 sort: -1, width: width, align: Qt.AlignLeft, visible: visible, custom: true }
     }
 
     // Mixxx's sidebar uses its own 32px SVG artwork for each library feature
@@ -754,6 +855,16 @@ Item {
         if (nodeId === "rekordbox") return "ic_library_rekordbox.svg"
         if (nodeId === "lexicon") return "ic_library_lexicon.png"
         return ""
+    }
+
+    // GlideMix: another DJ app's library (read-only): rekordbox, Lexicon,
+    // Engine DJ, Traktor, Serato, VirtualDJ, djay.
+    readonly property var externalSources: ["lexicon", "rekordbox", "engine", "traktor", "serato", "vdj", "djay"]
+    function isExternalAllKind(kind) {
+        return kind.endsWith("-all") && externalSources.indexOf(kind.split("-")[0]) >= 0
+    }
+    function isExternalPlaylistKind(kind) {
+        return kind.endsWith("-playlist") && externalSources.indexOf(kind.split("-")[0]) >= 0
     }
 
     Component.onCompleted: {
@@ -1083,6 +1194,10 @@ Item {
                         sourceList.keepScroll()
                         sourceList.parent.sidebarRefreshToken++
                     }
+                    function onSidebarCountsChanged() {
+                        sourceList.keepScroll()
+                        sourceList.parent.sidebarRefreshToken++
+                    }
                 }
 
                 delegate: ListItemBlank {
@@ -1255,11 +1370,12 @@ Item {
                                     ] },
                                     { id: "delete-generated", title: qsTrc("mixhouse", "Delete Generated Smart Playlists…") }
                                 ])
-                            } else if ((kind === "lexicon-playlist" || kind === "rekordbox-playlist") && refId >= 0) {
+                            } else if (root.isExternalPlaylistKind(kind) && refId >= 0) {
                                 externalPlaylistMenu.kind = kind
                                 externalPlaylistMenu.playlistId = refId
                                 externalPlaylistMenu.playlistName = name
                                 externalPlaylistMenu.show(pos, [
+                                    { id: "export-m3u", title: qsTrc("mixhouse", "Export as M3U8 Playlist…") },
                                     { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") }
                                 ])
                             } else if (kind === "smart-playlist") {
@@ -1268,6 +1384,7 @@ Item {
                                 smartItemMenu.show(pos, [
                                     { id: "edit-smart", title: qsTrc("mixhouse", "Edit Smart Playlist…") },
                                     { id: "duplicate-smart", title: qsTrc("mixhouse", "Duplicate as Playlist") },
+                                    { id: "export-m3u", title: qsTrc("mixhouse", "Export as M3U8 Playlist…") },
                                     { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") },
                                     {},
                                     { id: "delete-smart", title: qsTrc("mixhouse", "Delete") }
@@ -1293,6 +1410,7 @@ Item {
                         // kind, matching the track table's own selectRow().
                         root.selectedSidebarRefIds = []
                         root.sidebarAnchorIndex = index
+                        root.backView = null   // went somewhere else: nothing to go back to
                         // Real mixxx restores/clears each feature's OWN
                         // remembered search on activation (library.cpp:
                         // 318-330); this port shares one search box across
@@ -1305,11 +1423,11 @@ Item {
                         // clears its OWN copy of the filter in each of
                         // these calls -- this just keeps the visible box in
                         // sync with that.)
-                        if (["all", "playlist", "crate", "missing", "duplicates", "lexicon-all", "lexicon-playlist",
-                             "rekordbox-all", "rekordbox-playlist", "smart-playlist", "history-view", "analyze-view"].indexOf(kind) >= 0) {
+                        if (["all", "playlist", "crate", "missing", "duplicates", "smart-playlist", "history-view",
+                             "analyze-view"].indexOf(kind) >= 0 || root.isExternalAllKind(kind) || root.isExternalPlaylistKind(kind)) {
                             root.rememberViewAndSwitch(kind, refId)
                         }
-                        if (["all", "playlist", "crate", "missing", "duplicates", "hidden", "placeholder", "lexicon-all", "lexicon-playlist", "rekordbox-all", "rekordbox-playlist", "folder-browse", "recordings-view", "history-view", "analyze-view", "smart-playlist"].indexOf(kind) >= 0) {
+                        if (["all", "playlist", "crate", "missing", "duplicates", "hidden", "placeholder", "lexicon-all", "lexicon-playlist", "rekordbox-all", "rekordbox-playlist", "folder-browse", "recordings-view", "history-view", "analyze-view", "smart-playlist"].indexOf(kind) >= 0 || root.isExternalAllKind(kind) || root.isExternalPlaylistKind(kind)) {
                             search.clear()
                         }
                         if (kind === "recordings-view") {
@@ -1325,10 +1443,14 @@ Item {
                             root.browseFolderLater(folderPath)
                         } else if (kind === "smart-playlist" && refId >= 0) {
                             tracksModel.setSmartPlaylist(refId)
-                        } else if (kind === "lexicon-all" || kind === "rekordbox-all") {
+                        } else if (kind.endsWith("-read") && root.externalSources.indexOf(kind.split("-")[0]) >= 0) {
+                            // GlideMix: Traktor on macOS -- reading its collection
+                            // (in Documents) asks for that folder, so only on a click.
+                            tracksModel.readDjApp(kind.split("-")[0])
+                        } else if (root.isExternalAllKind(kind)) {
                             // GlideMix: another DJ app's library (read-only).
                             tracksModel.setExternalPlaylist(kind.split("-")[0], -1)
-                        } else if ((kind === "lexicon-playlist" || kind === "rekordbox-playlist") && refId >= 0) {
+                        } else if (root.isExternalPlaylistKind(kind) && refId >= 0) {
                             tracksModel.setExternalPlaylist(kind.split("-")[0], refId)
                         } else if (kind === "all") {
                             tracksModel.setPlaylist(-1)
@@ -1994,6 +2116,8 @@ Item {
                 onHandleMenuItem: function(itemId) {
                     if (itemId === "export-folder") {
                         root.exportToFolder(kind, playlistId, playlistName)
+                    } else if (itemId === "export-m3u") {
+                        tracksModel.exportPlaylistM3u(kind, playlistId, playlistName)
                     }
                 }
             }
@@ -2026,6 +2150,8 @@ Item {
                         smartPlaylistEditor.openFor(playlistId)
                     } else if (itemId === "duplicate-smart") {
                         tracksModel.duplicateSmartPlaylistAsPlaylist(playlistId)
+                    } else if (itemId === "export-m3u") {
+                        tracksModel.exportPlaylistM3u("smart-playlist", playlistId, playlistName)
                     } else if (itemId === "export-folder") {
                         root.exportToFolder("smart-playlist", playlistId, playlistName)
                     } else if (itemId === "delete-smart") {
@@ -2119,7 +2245,8 @@ Item {
                     ] : []
                     if (!crate && !sidebarItemMenu.itemIsFolder) {
                         items = items.concat([
-                            { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") },
+                            { id: "export-m3u", title: qsTrc("mixhouse", "Export as M3U8 Playlist…") },
+                                    { id: "export-folder", title: qsTrc("mixhouse", "Export to Folder…") },
                             {}
                         ])
                     }
@@ -2188,6 +2315,9 @@ Item {
                         } else {
                             tracksModel.setPlaylistLocked(sidebarItemMenu.itemId, newLocked)
                         }
+                    } else if (itemId === "export-m3u") {
+                        tracksModel.exportPlaylistM3u(sidebarItemMenu.isCrate ? "crate" : "playlist", sidebarItemMenu.itemId,
+                                                      sidebarItemMenu.itemName)
                     } else if (itemId === "export-folder") {
                         root.exportToFolder("playlist", sidebarItemMenu.itemId, sidebarItemMenu.itemName)
                     } else if (itemId === "move-up") {
@@ -2210,8 +2340,18 @@ Item {
                 Layout.fillWidth: true
                 spacing: 8
 
+                FlatButton {
+                    // GlideMix: back to the list Show in Library came from.
+                    visible: root.backView !== null
+                    text: qsTrc("mixhouse", "‹ Back")
+                    toolTipTitle: qsTrc("mixhouse", "Back")
+                    toolTipDescription: qsTrc("mixhouse", "Return to the list you were in before Show in Library.")
+                    onClicked: root.goBack()
+                }
+
                 Item {
-                    Layout.preferredWidth: 220
+                    // GlideMix (Marc Mont): wider, for longer filters.
+                    Layout.preferredWidth: 360
                     Layout.preferredHeight: search.implicitHeight
 
                     SearchField {
@@ -2332,6 +2472,16 @@ Item {
                             }
                         }
                     }
+                }
+
+                FlatButton {
+                    // GlideMix (Marc Mont): keep this search as a smart
+                    // playlist -- it stays up to date as songs are added.
+                    visible: search.searchText.length > 0
+                    icon: IconCode.PLUS
+                    toolTipTitle: qsTrc("mixhouse", "Save as Smart Playlist")
+                    toolTipDescription: qsTrc("mixhouse", "Keep this search as a smart playlist that updates as songs are added.")
+                    onClicked: smartPlaylistEditor.openForSearch(search.searchText)
                 }
 
                 Timer {
@@ -2521,6 +2671,27 @@ Item {
                             root.clearRowSelection()
                         }
                     }
+                }
+
+                // GlideMix (Marc Mont, Chris): the library preview's own volume --
+                // it was often louder than the mix playing under it.
+                StyledTextLabel {
+                    Layout.leftMargin: 8
+                    text: qsTrc("mixhouse", "Preview volume")
+                    opacity: 0.7
+                }
+                DjSlider {
+                    id: previewVolumeSlider
+                    Layout.preferredWidth: 130
+                    from: 0
+                    to: 1
+                    // StyledSlider steps in whole units: on 0..1 that left only
+                    // 0 and 1, so the middle snapped to silence.
+                    stepSize: 0.01
+                    value: tracksModel.previewVolume
+                    onMoved: tracksModel.previewVolume = value
+                    ToolTip.visible: hovered || pressed
+                    ToolTip.text: qsTrc("mixhouse", "Preview volume: %1%").arg(Math.round(value * 100))
                 }
 
                 StyledTextLabel {
@@ -2984,15 +3155,33 @@ Item {
 
                 function open(pos) {
                     var items = []
+                    var shown = {}
                     for (var i = 0; i < root.columns.length; ++i) {
                         items.push({ id: String(i), title: root.columns[i].label,
                                      checkable: true, checked: root.columns[i].visible })
+                        shown[root.columns[i].key] = true
                     }
+                    // GlideMix (Marc Mont): the files' own tags, as columns.
+                    var tagItems = []
+                    var names = tracksModel.customTagNames()
+                    for (var j = 0; j < names.length; ++j) {
+                        if (!shown["tag:" + names[j]]) {
+                            tagItems.push({ id: "tag:" + names[j], title: names[j] })
+                        }
+                    }
+                    items.push({})
+                    items.push(tagItems.length > 0
+                               ? { id: "tag-columns", title: qsTrc("mixhouse", "Add Tag Column"), subitems: tagItems }
+                               : { id: "tag-none", title: qsTrc("mixhouse", "Add Tag Column (no other tags read yet)"), enabled: false })
                     columnMenu.show(pos, items)
                 }
 
                 onHandleMenuItem: function(itemId) {
-                    root.toggleColumn(parseInt(itemId))
+                    if (itemId.indexOf("tag:") === 0) {
+                        root.addTagColumn(itemId.slice(4))
+                    } else if (itemId !== "tag-none" && itemId !== "tag-columns") {
+                        root.toggleColumn(parseInt(itemId))
+                    }
                 }
             }
 
@@ -3009,6 +3198,58 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
+
+                // GlideMix (Marc Mont): past 2000 rows -- near the end, the next 2000.
+                onContentYChanged: {
+                    if (contentHeight > height && contentY + height > contentHeight - 600 && tracksModel.canLoadMore()) {
+                        Qt.callLater(tracksModel.loadMore)
+                    }
+                }
+
+                // GlideMix (Marc Mont): the keyboard in the song list -- Up / Down,
+                // Page Up / Down, Home / End move the selection (Shift extends it).
+                // A click in the list gives it the keyboard.
+                activeFocusOnTab: true
+                // The app's own shortcuts (track up/down, go to start/end) take
+                // these keys first; claiming them here gives them to the list.
+                Keys.onShortcutOverride: function(event) {
+                    if ([Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End].indexOf(event.key) >= 0
+                            && !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier))) {
+                        event.accepted = true
+                    }
+                }
+                Keys.onPressed: function(event) {
+                    const rows = tracksModel.rowCount()
+                    if (rows <= 0) {
+                        return
+                    }
+                    const page = Math.max(1, Math.floor(height / Math.max(1, tracksModel.libraryRowHeight)) - 1)
+                    const from = root.currentRow >= 0 ? root.currentRow : -1
+                    let to = -1
+                    switch (event.key) {
+                    case Qt.Key_Up: to = Math.max(0, from - 1); break
+                    case Qt.Key_Down: to = Math.min(rows - 1, from + 1); break
+                    case Qt.Key_PageUp: to = Math.max(0, from - page); break
+                    case Qt.Key_PageDown: to = Math.min(rows - 1, Math.max(0, from) + page); break
+                    case Qt.Key_Home: to = 0; break
+                    case Qt.Key_End: to = rows - 1; break
+                    default: return
+                    }
+                    if ((event.modifiers & Qt.ShiftModifier) && from >= 0) {
+                        const anchor = root.selectedRows.length > 0 ? root.selectedRows[0] : from
+                        root.selectRange(anchor, to)
+                        root.currentRow = to
+                    } else {
+                        root.selectRow(to)
+                    }
+                    positionViewAtRow(to, TableView.Contain)
+                    event.accepted = true
+                }
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    gesturePolicy: TapHandler.DragThreshold
+                    onPressedChanged: if (pressed) trackTableView.forceActiveFocus()
+                }
                 boundsBehavior: Flickable.StopAtBounds
                 // OFF: with the column set now this large (23 columns, most
                 // hidden and toggled on/off live), reuseItems showed a real
@@ -3034,6 +3275,12 @@ Item {
                     target: tracksModel
                     function onLibraryRowHeightChanged() {
                         trackTableView.forceLayout()
+                    }
+                    // GlideMix: a reset while scrolled far down (thousands of rows
+                    // loaded) made the table build every row from the top to
+                    // there -- GlideMix hung. Back to the top first.
+                    function onModelAboutToBeReset() {
+                        trackTableView.contentY = 0
                     }
                 }
 
@@ -3183,6 +3430,7 @@ Item {
                                            cell.row, cell.model)
                             return
                         }
+                        trackTableView.forceActiveFocus()   // the arrow keys move through the list
                         if (mouse && (mouse.modifiers & Qt.ShiftModifier)) {
                             if (root.currentRow < 0) {
                                 root.selectRow(cell.row)
@@ -4295,7 +4543,10 @@ Item {
                     { key: "trackNumber", label: qsTrc("mixhouse", "Track #") },
                     { key: "composer", label: qsTrc("mixhouse", "Composer") },
                     { key: "grouping", label: qsTrc("mixhouse", "Grouping") },
-                    { key: "comment", label: qsTrc("mixhouse", "Comment") }
+                    { key: "comment", label: qsTrc("mixhouse", "Comment") },
+                    { key: "key", label: qsTrc("mixhouse", "Key (6A, Gm)") },
+                    { key: "energy", label: qsTrc("mixhouse", "Energy (1–10)") },
+                    { key: "rating", label: qsTrc("mixhouse", "Rating (0–5)") }
                 ]
                 property var original: ({})   // key -> common value, or null when mixed
                 property var edited: ({})

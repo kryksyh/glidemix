@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 
 import Muse.Ui
 import Muse.UiComponents
@@ -948,6 +949,18 @@ Rectangle {
                     }
                 }
 
+                // GlideMix (Marc Mont): the song's key (as it sounds now), by the tempo.
+                StyledTextLabel {
+                    id: keyLabel
+                    anchors.verticalCenter: parent.verticalCenter
+                    // root.pitch: read again when the song is transposed.
+                    text: root.pitch !== undefined && waveView ? waveView.keyText() : ""
+                    visible: text.length > 0 && header.width > 120
+                    font.pixelSize: 10
+                    font.bold: true
+                    opacity: 0.85
+                }
+
                 ClipItemPropertyButton {
                     id: speedBtn
 
@@ -1215,8 +1228,11 @@ Rectangle {
                     ContextMenuLoader {
                         id: pluginPointMenu
                         property int node: -1
+                        property int valueNode: -1   // the point itself (node is the line after it)
                         onHandleMenuItem: function(itemId) {
-                            if (itemId === "delete-point") {
+                            if (itemId === "set-value") {
+                                pointValuePopup.openFor(pluginAutomationLane, pluginPointMenu.valueNode, false)
+                            } else if (itemId === "delete-point") {
                                 pluginAutomationLane.deletePoint(node)
                             } else if (itemId === "line-straight") {
                                 pluginAutomationLane.setSCurve(node, false)
@@ -1232,9 +1248,12 @@ Rectangle {
                         const pointNode = node
                         node = lastPoint ? node - 1 : node
                         pluginPointMenu.node = node
+                        pluginPointMenu.valueNode = pointNode
                         // GlideMix: the line on to the next point, like the tempo line's glides.
                         const sCurve = pluginAutomationLane.isSCurve(node)
                         let items = [
+                            { id: "set-value", title: qsTrc("projectscene", "Set value…") },
+                            {},
                             { id: "line-straight", title: qsTrc("projectscene", "Line: straight"), checkable: true, checked: !sCurve },
                             { id: "line-s-curve", title: qsTrc("projectscene", "Line: S-curve (smooth start and end)"), checkable: true, checked: sCurve }
                         ]
@@ -1310,8 +1329,11 @@ Rectangle {
                     ContextMenuLoader {
                         id: gainPointMenu
                         property int node: -1
+                        property int valueNode: -1   // the point itself (node is the line after it)
                         onHandleMenuItem: function(itemId) {
-                            if (itemId === "delete-point") {
+                            if (itemId === "set-value") {
+                                pointValuePopup.openFor(automation, gainPointMenu.valueNode, true)
+                            } else if (itemId === "delete-point") {
                                 automation.deletePoint(node)
                             } else if (itemId === "line-straight") {
                                 automation.setSCurve(node, false)
@@ -1327,9 +1349,12 @@ Rectangle {
                         const pointNode = node
                         node = lastPoint ? node - 1 : node
                         gainPointMenu.node = node
+                        gainPointMenu.valueNode = pointNode
                         // GlideMix: the line on to the next point, like the tempo line's glides.
                         const sCurve = automation.isSCurve(node)
                         let items = [
+                            { id: "set-value", title: qsTrc("projectscene", "Set value…") },
+                            {},
                             { id: "line-straight", title: qsTrc("projectscene", "Line: straight"), checkable: true, checked: !sCurve },
                             { id: "line-s-curve", title: qsTrc("projectscene", "Line: S-curve (smooth start and end)"), checkable: true, checked: sCurve }
                         ]
@@ -1638,4 +1663,77 @@ Rectangle {
             }
         }
     ]
+
+    // GlideMix: right-click a point > Set value… -- type it exactly. The
+    // volume line in dB; the other lines in %, 100% being their normal level
+    // (drawn at 80% of the height).
+    Popup {
+        id: pointValuePopup
+        property var lane: null
+        property int node: -1
+        property bool isGain: true
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        padding: 12
+
+        function textFor(v) {
+            if (isGain) {
+                const g = clipGainModel.gainFromNormalized(v)
+                return g < 0.001 ? "-inf" : (20 * Math.log10(g)).toFixed(1)
+            }
+            return Math.round(v / 0.8 * 100).toString()
+        }
+        function openFor(laneItem, pointNode, gain) {
+            lane = laneItem
+            node = pointNode
+            isGain = gain
+            valueField.currentText = textFor(lane.pointValue(node))
+            open()
+            valueField.ensureActiveFocus()
+            valueField.selectAll()
+        }
+        function apply() {
+            const text = String(valueField.inputField.text).trim().replace(",", ".").replace(/(dB|%)$/i, "").trim()
+            let v
+            if (isGain) {
+                if (/^-?inf/i.test(text)) {
+                    v = 0
+                } else {
+                    const db = parseFloat(text)
+                    if (isNaN(db)) { return }
+                    v = clipGainModel.normalizedFromGain(Math.pow(10, db / 20))
+                }
+            } else {
+                const pct = parseFloat(text)
+                if (isNaN(pct)) { return }
+                v = Math.max(0, Math.min(1, pct / 100 * 0.8))
+            }
+            lane.setPointValue(node, v)
+            close()
+        }
+
+        background: Rectangle {
+            color: ui.theme.backgroundPrimaryColor
+            border.color: ui.theme.strokeColor
+            radius: 4
+        }
+        contentItem: RowLayout {
+            spacing: 8
+            StyledTextLabel { text: qsTrc("projectscene", "Value") }
+            TextInputField {
+                id: valueField
+                Layout.preferredWidth: 90
+                onAccepted: pointValuePopup.apply()
+                onEscaped: pointValuePopup.close()
+            }
+            StyledTextLabel { text: pointValuePopup.isGain ? "dB" : "%" }
+            FlatButton {
+                text: qsTrc("global", "OK")
+                accentButton: true
+                onClicked: pointValuePopup.apply()
+            }
+        }
+    }
+
 }

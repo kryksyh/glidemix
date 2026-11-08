@@ -15,6 +15,7 @@ class MixHouseTransitions;
 class MixHouseRekordboxXml;
 class MixHouseRekordboxPhrases;
 class MixHouseActionsController;
+class MixHouseLink;
 class MixHouseLibraryConfiguration;
 class MixHouseTransitionConfiguration;
 
@@ -53,6 +54,7 @@ public:
 private:
     std::shared_ptr<MixHouseLibrary> m_library;
     std::shared_ptr<MixHouseActionsController> m_actionsController;
+    std::shared_ptr<MixHouseLink> m_link;
     std::shared_ptr<MixHouseUiActions> m_uiActions;
     std::shared_ptr<MixHouseBeatGrids> m_beatGrids;
     std::shared_ptr<MixHouseTempoMap> m_tempoMap;

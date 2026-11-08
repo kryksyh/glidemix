@@ -76,6 +76,8 @@ public:
     // the dB drag tooltip) -- the lane itself only knows 0..1, this model is
     // the one place that knows the real min/max/split mapping.
     Q_INVOKABLE double gainFromNormalized(double value) const;
+    //! And back: a typed-in point value (GlideMix: Set value…).
+    Q_INVOKABLE double normalizedFromGain(double value) const;
 
     projectscene::ClipKey clipKey() const;
     void setClipKey(const projectscene::ClipKey& key);
@@ -89,7 +91,6 @@ signals:
 private:
     void reload();
     void clear();
-    double normalizedFromGain(double value) const;
 
     enum Role {
         TimeRole = Qt::UserRole + 1,

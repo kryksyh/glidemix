@@ -11,6 +11,7 @@
 #include "automation/iclipgaininteraction.h"
 #include "projectscene/types/projectscenetypes.h"
 #include "projectscene/iprojectviewstate.h"
+#include "effects/effects_base/ieffectchainpresets.h"
 
 namespace au::automation {
 class ClipPluginAutomationModel : public QObject, public muse::Contextable, public muse::async::Asyncable
@@ -38,6 +39,7 @@ class ClipPluginAutomationModel : public QObject, public muse::Contextable, publ
     Q_PROPERTY(QVariantMap lane READ lane WRITE setLane NOTIFY changed)
     muse::ContextInject<context::IGlobalContext> globalContext{this};
     muse::ContextInject<trackedit::IProjectHistory> projectHistory{this};
+    muse::GlobalInject<effects::IMixxxEffectIds> mixxxEffectIds;
     muse::ContextInject<trackedit::IClipsInteraction> clipsInteraction{this};
     muse::ContextInject<IClipGainInteraction> clipGainInteraction{this};
 public:
@@ -66,5 +68,13 @@ private:
     projectscene::IProjectViewState::PluginAutomationFocus spec() const;
     projectscene::ClipKey m_key;
     QVariantMap m_lane;
+private:
+    //! GlideMix: the track header's Color button -- the Filter DJ effect's
+    //! low-pass and high-pass shown as one line (open in the middle), as the
+    //! transition pill's Color lane draws it.
+    bool isColor() const;
+    std::string filterEffectId() const;
+    QVariantList colorSegments() const;
+    bool commitColor(const QVariantList& segments);
 };
 }

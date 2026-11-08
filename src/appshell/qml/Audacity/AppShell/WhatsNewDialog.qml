@@ -35,15 +35,15 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.27**\n\n"
-                      + "- **Adding a song no longer resets your transitions** or moves your songs: only the new song moves.\n"
-                      + "- **No more sudden quits** when the project can't be backed up: GlideMix warns you instead.\n"
-                      + "- **Volume and automation lines:** easier to grab, no clusters of dots, press and drag adds a point. All lines work like the volume line.\n"
-                      + "- **Library:** click a song's waveform to preview it, in time with your mix while it plays.\n"
-                      + "- **Analysis** continues by itself after GlideMix closes or stops, and skips a file that stopped it twice.\n"
-                      + "- **Preferences > Waveforms:** mouse wheel zoom, and the phrase ribbon on or off.\n"
-                      + "- **Space** plays the song in the Beat grid editor. Your own transitions come first in the menus.\n"
-                      + "- **A +** beside the bottom tabs opens a closed tab again. The vertical ruler shows the volume in dB.\n"
+                text: "**GlideMix v1.1.28**\n\n"
+                      + "- **Ableton Link:** the LINK button shares your mix's tempo, beat and play/stop with Resolume, TouchDesigner and other Link apps.\n"
+                      + "- **Your other DJ apps:** Engine DJ, Traktor, Serato, VirtualDJ and djay show in the library, and their beat grids and keys are used instead of analysing again.\n"
+                      + "- **Mixed In Key:** key and energy are read from the comment. Comments are kept, and Edit Tags has Key, Energy and Rating.\n"
+                      + "- **Low, Mid, High and Color** buttons in the track header show each line over the whole song.\n"
+                      + "- **Library:** scroll past 2,000 songs, counts on smart playlists, Duplicates and Analyze, Back after Show in Library, save a search as a smart playlist, columns for any file tag (Mood, Label…), arrow keys in the song list, a preview volume.\n"
+                      + "- **Playlists:** right-click > Export as M3U8 Playlist.\n"
+                      + "- **Automation:** right-click a point > Set value… (Set tempo… on the tempo line). Shift-click several points to move them together.\n"
+                      + "- **Small fixes:** the key shows in the clip header, a library scan no longer makes GlideMix stall, the + tab menu no longer overlaps.\n"
             }
         }
 

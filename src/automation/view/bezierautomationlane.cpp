@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "bezierautomationlane.h"
+
+#include <algorithm>
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
@@ -63,6 +65,8 @@ void BezierAutomationLane::setSegments(const QVariantList& data)
     // selected point stays selected, so a new point stays visible.
     if (curve.segments.size() != m_curve.segments.size()) {
         m_selectedNode = -1;
+        m_picked.clear();
+        m_lastClickedNode = -1;
     }
     m_hoverPoint = false;
     m_curve = std::move(curve);
@@ -173,7 +177,7 @@ void BezierAutomationLane::paint(QPainter* painter)
     };
     const int nodeCount = m_curve.segments.empty() ? 0 : static_cast<int>(m_curve.segments.size()) + 1;
     for (int i = 0; i < nodeCount; ++i) {
-        const bool active = i == m_hoverNode || (m_dragging && i == m_node) || i == m_selectedNode;
+        const bool active = i == m_hoverNode || (m_dragging && i == m_node) || i == m_selectedNode || m_picked.contains(i);
         if (active || nodeShown(i)) {
             paintNode(nodePosition(i), active);
         }
@@ -303,6 +307,30 @@ void BezierAutomationLane::mousePressEvent(QMouseEvent* e)
     m_node = hitNode(e->position());
     m_segment = hitSegment(e->position());
     m_selectedNode = -1;
+    // GlideMix: Shift-click points to pick several; dragging one of them moves
+    // them all together. A plain click elsewhere lets go of them.
+    if (m_node >= 0 && e->modifiers().testFlag(Qt::ShiftModifier)) {
+        if (m_picked.isEmpty() && m_lastClickedNode >= 0 && m_lastClickedNode != m_node
+            && m_lastClickedNode < nodeCount()) {
+            m_picked.insert(m_lastClickedNode);
+        }
+        if (m_picked.contains(m_node)) {
+            m_picked.remove(m_node);
+        } else {
+            m_picked.insert(m_node);
+        }
+        m_lastClickedNode = m_node;
+        update();
+        forceActiveFocus();
+        e->accept();
+        return;
+    }
+    m_groupDrag = m_node >= 0 && m_picked.size() >= 2 && m_picked.contains(m_node);
+    if (!m_groupDrag && !m_picked.isEmpty()) {
+        m_picked.clear();
+        update();
+    }
+    m_lastClickedNode = m_node;
     if (m_node >= 0) {
         // A shared node belongs to the segment on its right, except for the
         // final endpoint. Both adjacent endpoints are still updated below.
@@ -361,6 +389,9 @@ void BezierAutomationLane::mouseMoveEvent(QMouseEvent* e)
             m_curve.BoxStep(from, to, value);
             setActivePoint(e->position(), value);
         }
+    } else if (m_node >= 0 && m_groupDrag) {
+        movePicked(timeAt(e->position().x()) - timeAt(m_press.x()), delta);
+        setActivePoint(nodePosition(m_node), nodeValue(m_node));
     } else if (m_node >= 0) {
         const auto n = static_cast<int>(m_curve.segments.size());
         const double lo = m_node ? m_curve.segments[m_node - 1].startPoint.timeOffset : m_curve.segments.front().startPoint.timeOffset;
@@ -392,10 +423,45 @@ void BezierAutomationLane::mouseMoveEvent(QMouseEvent* e)
     e->accept();
 }
 
+void BezierAutomationLane::movePicked(double dt, double dv)
+{
+    const int n = static_cast<int>(m_before.segments.size());
+    if (n == 0) { return; }
+    auto timeOf = [&](int i) { return i == n ? m_before.segments.back().endPoint.timeOffset : m_before.segments[i].startPoint.timeOffset; };
+    auto valueOf = [&](int i) { return i == n ? m_before.segments.back().endPoint.value : m_before.segments[i].startPoint.value; };
+    // Keep every value inside 0..1 and every point between the points that
+    // stay put (the clip's first and last points never move sideways).
+    double lowV = 1.0, highV = 0.0;
+    double dtMin = -1e18, dtMax = 1e18;
+    constexpr double gap = 1e-4;
+    for (int i : m_picked) {
+        if (i < 0 || i > n) { continue; }
+        lowV = std::min(lowV, valueOf(i));
+        highV = std::max(highV, valueOf(i));
+        if (i == 0 || i == n) { continue; }
+        int left = i - 1;
+        while (left > 0 && m_picked.contains(left)) { --left; }
+        int right = i + 1;
+        while (right < n && m_picked.contains(right)) { ++right; }
+        dtMin = std::max(dtMin, timeOf(left) + gap * (i - left) - timeOf(i));
+        dtMax = std::min(dtMax, timeOf(right) - gap * (right - i) - timeOf(i));
+    }
+    dv = std::clamp(dv, -lowV, 1.0 - highV);
+    dt = dtMin <= dtMax ? std::clamp(dt, dtMin, dtMax) : 0.0;
+    for (int i : m_picked) {
+        if (i < 0 || i > n) { continue; }
+        const double t = (i == 0 || i == n) ? timeOf(i) : timeOf(i) + dt;
+        const clipautomation::Point point{t, valueOf(i) + dv};
+        if (i > 0) { m_curve.segments[i - 1].endPoint = point; }
+        if (i < n) { m_curve.segments[i].startPoint = point; }
+    }
+}
+
 void BezierAutomationLane::mouseReleaseEvent(QMouseEvent* e)
 {
     if (!m_dragging) { e->ignore(); return; }
     m_dragging = false;
+    m_groupDrag = false;
     if (m_inserting) {
         m_inserting = false;
         const auto index = hitSegment(m_press);
@@ -424,7 +490,7 @@ void BezierAutomationLane::mouseDoubleClickEvent(QMouseEvent* e)
 void BezierAutomationLane::cancel()
 {
     if (!m_dragging) { return; }
-    m_dragging = false; m_inserting = false; m_curve = m_before;
+    m_dragging = false; m_inserting = false; m_groupDrag = false; m_curve = m_before;
     clearActivePoint();
     emit segmentsChanged(); emit editCancelled(); update();
 }
@@ -447,6 +513,7 @@ void BezierAutomationLane::clearActivePoint()
 void BezierAutomationLane::keyPressEvent(QKeyEvent* e)
 {
     if (e->key() == Qt::Key_Escape && m_dragging) { cancel(); e->accept(); }
+    else if (e->key() == Qt::Key_Escape && !m_picked.isEmpty()) { m_picked.clear(); update(); e->accept(); }
     else { QQuickPaintedItem::keyPressEvent(e); }
 }
 
@@ -482,6 +549,35 @@ bool BezierAutomationLane::setSCurve(int node, bool sCurve)
     segment.eased = sCurve;
     segment.curvature = 0;
     m_selectedNode = -1;
+    emit segmentsChanged();
+    update();
+    emit editCommitted(segments());
+    return true;
+}
+
+double BezierAutomationLane::pointValue(int node) const
+{
+    if (node < 0 || node > static_cast<int>(m_curve.segments.size()) || m_curve.segments.empty()) {
+        return -1.0;
+    }
+    return nodeValue(node);
+}
+
+bool BezierAutomationLane::setPointValue(int node, double value)
+{
+    const int last = static_cast<int>(m_curve.segments.size());
+    if (m_dragging || node < 0 || node > last || last == 0) {
+        return false;
+    }
+    value = std::clamp(value, 0.0, 1.0);
+    if (node < last) {
+        m_curve.segments[static_cast<size_t>(node)].startPoint.value = value;
+    }
+    if (node > 0) {
+        m_curve.segments[static_cast<size_t>(node - 1)].endPoint.value = value;
+    }
+    m_selectedNode = -1;
+    clearActivePoint();
     emit segmentsChanged();
     update();
     emit editCommitted(segments());

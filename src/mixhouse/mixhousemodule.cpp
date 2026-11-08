@@ -5,6 +5,7 @@
  * injectable service and exposes its track list to QML. Added alongside
  * Audacity's own modules -- none of theirs is modified.
  */
+#include "internal/mixhouselink.h"
 #include "mixhousemodule.h"
 
 #include <QQmlEngine>
@@ -140,6 +141,7 @@ void MixHouseModuleContext::registerExports()
     m_folderWatcher = std::make_shared<MixHouseFolderWatcher>(iocContext());
 
     m_actionsController = std::make_shared<MixHouseActionsController>(iocContext());
+    m_link = std::make_shared<MixHouseLink>(iocContext());
     m_uiActions = std::make_shared<MixHouseUiActions>();
 }
 
@@ -155,6 +157,7 @@ void MixHouseModuleContext::onInit(const muse::IApplication::RunMode& mode)
     m_rekordboxXml->init();
     m_rekordboxPhrases->init();
     m_folderWatcher->init();
+    m_link->init();
 
     m_actionsController->init();
     m_uiActions->init();

@@ -201,7 +201,10 @@ void MixHouseGridEditorModel::open(int trackId)
         m_grid.firstBeatSec = 0.0;
         m_grid.downbeatSec = 0.0;
     }
-    m_gridSource = t.downbeatDetector == QStringLiteral("rekordbox") ? tr("imported grid")
+    // GlideMix: a grid taken from another DJ app says which one.
+    static const QStringList kImported = { QStringLiteral("rekordbox"), QStringLiteral("Lexicon"), QStringLiteral("Engine DJ"),
+                                           QStringLiteral("Traktor"), QStringLiteral("VirtualDJ"), QStringLiteral("Serato") };
+    m_gridSource = kImported.contains(t.downbeatDetector) ? tr("Grid from %1").arg(t.downbeatDetector)
                    : t.downbeatDetector == QStringLiteral("manual") ? tr("Edited")
                    : t.beats.valid ? tr("Analysed") : tr("No grid yet");
     m_cue = m_grid.downbeatSec;

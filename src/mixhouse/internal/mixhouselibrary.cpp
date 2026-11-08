@@ -44,6 +44,8 @@
 #include "mixhouse/mixhousewaveform.h"
 #include "mixhouse/mixhousephrasedetector.h"
 #include "mixhouselibraryscanner.h"
+#include "mixhousedjapps.h"
+#include "mixhouse/mixhousefiletags.h"
 #include "mixhouseanalysiswriter.h"
 #include "mixhouseanalyzerworker.h"
 #include "mixhouselibraryschema.h"
@@ -135,6 +137,14 @@ constexpr const char* kCreateSmartPlaylistTableSql =
     " definition TEXT NOT NULL,"
     " position INTEGER NOT NULL DEFAULT 0)";
 
+//! GlideMix (Marc Mont): a file's other tags (MOOD, MUSICBRAINZ_TRACKID...).
+constexpr const char* kCreateCustomTagTableSql =
+    "CREATE TABLE IF NOT EXISTS mixhouse_custom_tags ("
+    " track_id INTEGER NOT NULL,"
+    " name TEXT NOT NULL,"
+    " value TEXT NOT NULL,"
+    " PRIMARY KEY (track_id, name))";
+
 //! Edit Tags field -> library column and file tag (TagLib property name).
 struct TagField {
     const char* key;
@@ -152,6 +162,7 @@ constexpr TagField kTagFields[] = {
     { "composer", "composer", "COMPOSER" },
     { "grouping", "grouping", "GROUPING" },
     { "comment", "comment", "COMMENT" },
+    { "key", "key", "INITIALKEY" },   // GlideMix: Edit Tags' Key (key_id follows, below)
 };
 
 QByteArray phrasesToJson(const std::vector<MixHousePhrase>& phrases)
@@ -524,6 +535,9 @@ void MixHouseLibrary::init()
     m_libraryChanged.onNotify(this, [this]() { m_detectedPhrases.clear(); });
     m_path = defaultDatabasePath();
     LOGI() << "GlideMix library will open on first use: " << m_path;
+
+    // GlideMix: read Engine DJ, Traktor, VirtualDJ and djay in the background.
+    startLoadingDjApps();
 
     // GlideMix: a batch cut short by a crash or a quit continues by itself.
     QTimer::singleShot(10000, [this, alive = m_alive]() {
@@ -1554,6 +1568,10 @@ bool MixHouseLibrary::ensureWritable()
     if (!smartTable.exec(QString::fromLatin1(kCreateSmartPlaylistTableSql))) {
         LOGW() << "could not create mixhouse_smart_playlists: " << smartTable.lastError().text();
     }
+    QSqlQuery customTagTable(m_writeDb);
+    if (!customTagTable.exec(QString::fromLatin1(kCreateCustomTagTableSql))) {
+        LOGW() << "could not create mixhouse_custom_tags: " << customTagTable.lastError().text();
+    }
 
     QSqlQuery indexQuery(m_writeDb);
     if (!indexQuery.exec(QStringLiteral(
@@ -1650,9 +1668,9 @@ au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFolder(
 
     QSqlQuery insLib(m_writeDb);
     insLib.prepare(QStringLiteral(
-        "INSERT INTO library (title, artist, album, genre, year, replaygain, replaygain_peak, filetype, location, header_parsed, "
+        "INSERT INTO library (title, artist, album, genre, year, comment, replaygain, replaygain_peak, filetype, location, header_parsed, "
         "mixxx_deleted, played, timesplayed, rating, bpm, duration, datetime_added) "
-        "VALUES (:title, :artist, :album, :genre, :year, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+        "VALUES (:title, :artist, :album, :genre, :year, :comment, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
 
     m_writeDb.transaction();
     while (it.hasNext()) {
@@ -1719,12 +1737,15 @@ au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFolder(
         const int locId = insLoc.lastInsertId().toInt();
 
         // Title from the filename, like Mixxx does before the tags are parsed.
+        QMap<QString, QString> extraTags;
         {
             // GlideMix: the file's tags (Artist, Title...), the file name only
             // when it has none -- the stream and the library showed file names.
             const MixHouseFileTags tags = readFileTags(path);
+            extraTags = tags.extra;
             insLib.bindValue(QStringLiteral(":title"), tags.title);
             insLib.bindValue(QStringLiteral(":artist"), tags.artist);
+            insLib.bindValue(QStringLiteral(":comment"), tags.comment);
             insLib.bindValue(QStringLiteral(":album"), tags.album);
             insLib.bindValue(QStringLiteral(":genre"), tags.genre);
             insLib.bindValue(QStringLiteral(":year"), tags.year);
@@ -1740,6 +1761,7 @@ au::mixhouse::IMixHouseLibrary::ScanResult MixHouseLibrary::addTracksFromFolder(
             LOGW() << "library insert failed for " << path << ": " << insLib.lastError().text();
             continue;
         }
+        storeCustomTags(insLib.lastInsertId().toInt(), extraTags);
         ++res.added;
     }
 
@@ -1804,15 +1826,18 @@ bool MixHouseLibrary::ensureTrackForFile(const QString& path, int& outLibraryId,
 
     QSqlQuery insLib(m_writeDb);
     insLib.prepare(QStringLiteral(
-        "INSERT INTO library (title, artist, album, genre, year, replaygain, replaygain_peak, filetype, location, header_parsed, "
+        "INSERT INTO library (title, artist, album, genre, year, comment, replaygain, replaygain_peak, filetype, location, header_parsed, "
         "mixxx_deleted, played, timesplayed, rating, bpm, duration, datetime_added) "
-        "VALUES (:title, :artist, :album, :genre, :year, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+        "VALUES (:title, :artist, :album, :genre, :year, :comment, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+    QMap<QString, QString> extraTags;
     {
             // GlideMix: the file's tags (Artist, Title...), the file name only
             // when it has none -- the stream and the library showed file names.
             const MixHouseFileTags tags = readFileTags(path);
+            extraTags = tags.extra;
             insLib.bindValue(QStringLiteral(":title"), tags.title);
             insLib.bindValue(QStringLiteral(":artist"), tags.artist);
+            insLib.bindValue(QStringLiteral(":comment"), tags.comment);
             insLib.bindValue(QStringLiteral(":album"), tags.album);
             insLib.bindValue(QStringLiteral(":genre"), tags.genre);
             insLib.bindValue(QStringLiteral(":year"), tags.year);
@@ -1831,6 +1856,7 @@ bool MixHouseLibrary::ensureTrackForFile(const QString& path, int& outLibraryId,
     }
     outLibraryId = insLib.lastInsertId().toInt();
     outWasNew = true;
+    storeCustomTags(outLibraryId, extraTags);
     return true;
 }
 
@@ -2194,6 +2220,45 @@ void MixHouseLibrary::tryDispatchNextTrack(AnalyzerWorkerHandle& handle)
                 }
             }
         }
+        // GlideMix: what the user's other DJ apps already know. A beat grid from
+        // Engine DJ, Traktor or VirtualDJ, else Serato's grid in the file; the key
+        // from those or djay; Mixed In Key's key and energy from the comment.
+        const MixHouseFileTags fileTags = readFileTags(lookup.filePath);
+        const MixHouseDjAppInfo app = lookupDjApps(lookup.filePath);
+        if (knownBpm <= 0.0) {
+            if (app.hasGrid && app.bpm > 0.0) {
+                knownBpm = app.bpm;
+                knownFirstBeat = app.firstBeatSec;
+                knownSource = app.source;
+            } else if (fileTags.seratoBpm > 0.0) {
+                knownBpm = fileTags.seratoBpm;
+                knownFirstBeat = fileTags.seratoFirstBeatSec;
+                knownSource = QStringLiteral("Serato");
+            }
+        }
+        if (knownKey == 0 && !fileTags.mikKey.isEmpty()) {
+            knownKey = djKeyIdFromText(fileTags.mikKey);
+        }
+        if (knownKey == 0 && app.keyId > 0) {
+            knownKey = app.keyId;
+        }
+        if (knownKey == 0 && !fileTags.keyTag.isEmpty()) {
+            knownKey = djKeyIdFromText(fileTags.keyTag);
+        }
+        if (fileTags.mikEnergy > 0) {
+            m_mikEnergy.insert(trackId, fileTags.mikEnergy);
+        }
+        // GlideMix: songs scanned before custom tags were kept get theirs now.
+        storeCustomTags(trackId, fileTags.extra);
+        // GlideMix: songs scanned before comments were read get theirs now.
+        if (!fileTags.comment.isEmpty()) {
+            QSqlQuery fill(m_writeDb);
+            fill.prepare(QStringLiteral("UPDATE library SET comment = :c WHERE id = :id AND (comment IS NULL OR comment = '')"));
+            fill.bindValue(QStringLiteral(":c"), fileTags.comment);
+            fill.bindValue(QStringLiteral(":id"), trackId);
+            fill.exec();
+        }
+
         handle.busy = true;
         m_analysisInFlight.insert(trackId);
         saveAnalysisGuard();
@@ -2329,6 +2394,11 @@ void MixHouseLibrary::onAnalyzerWorkerFinished(QThread* thread, int trackId, boo
     // (none yet) must not outlive it -- the library's waveform asks for the
     // song's cue points the moment this arrives.
     m_detectedPhrases.remove(trackId);
+    // GlideMix: Mixed In Key's energy (from the comment) wins over ours.
+    if (success && m_mikEnergy.contains(trackId)) {
+        setTrackEnergy(trackId, m_mikEnergy.value(trackId));
+    }
+    m_mikEnergy.remove(trackId);
     // Done (either way) and written: no longer a crash suspect.
     m_analysisInFlight.remove(trackId);
     m_analysisSuspects.remove(trackId);
@@ -3706,6 +3776,13 @@ bool MixHouseLibrary::setTrackTags(int trackId, const QVariantMap& fields, bool 
         LOGE() << "setTrackTags failed: " << upd.lastError().text();
         return false;
     }
+    if (fields.contains(QStringLiteral("key"))) {
+        QSqlQuery keyId(m_writeDb);
+        keyId.prepare(QStringLiteral("UPDATE library SET key_id = :k WHERE id = :id"));
+        keyId.bindValue(QStringLiteral(":k"), djKeyIdFromText(fields.value(QStringLiteral("key")).toString()));
+        keyId.bindValue(QStringLiteral(":id"), trackId);
+        keyId.exec();
+    }
 
     if (keepAsEdit && !location.isEmpty()) {
         QJsonObject edits;
@@ -3798,7 +3875,7 @@ int MixHouseLibrary::applyFileTags(const std::vector<std::pair<int, MixHouseFile
     }
     QSqlQuery old(m_writeDb);
     old.prepare(QStringLiteral(
-        "SELECT title, artist, album, genre, year, replaygain, replaygain_peak FROM library WHERE id = :id"));
+        "SELECT title, artist, album, genre, year, replaygain, replaygain_peak, comment, key_id FROM library WHERE id = :id"));
     int changed = 0;
     QSqlQuery upd(m_writeDb);
     upd.prepare(QStringLiteral(
@@ -3806,7 +3883,10 @@ int MixHouseLibrary::applyFileTags(const std::vector<std::pair<int, MixHouseFile
         "album = COALESCE(NULLIF(:album, ''), album), genre = COALESCE(NULLIF(:genre, ''), genre), "
         "year = COALESCE(NULLIF(:year, ''), year), "
         "replaygain = CASE WHEN :gainSet > 0 THEN :gain ELSE replaygain END, "
-        "replaygain_peak = CASE WHEN :peakSet >= 0 THEN :peak ELSE replaygain_peak END "
+        "replaygain_peak = CASE WHEN :peakSet >= 0 THEN :peak ELSE replaygain_peak END, "
+        "comment = COALESCE(NULLIF(:comment, ''), comment), "
+        "key_id = CASE WHEN :keyId > 0 THEN :keyId ELSE key_id END, "
+        "key = CASE WHEN :keyId > 0 THEN :keyText ELSE key END "
         "WHERE id = :id"));
     m_writeDb.transaction();
     for (const auto& [trackId, t] : tags) {
@@ -3814,16 +3894,23 @@ int MixHouseLibrary::applyFileTags(const std::vector<std::pair<int, MixHouseFile
         if (!old.exec() || !old.next()) {
             continue;
         }
+        storeCustomTags(trackId, t.extra);
         const auto differs = [&old](int column, const QString& value) {
             return !value.isEmpty() && value != old.value(column).toString();
         };
         const auto differsNumber = [&old](int column, double value) {
             return std::abs(value - old.value(column).toDouble()) > 1e-6;
         };
+        // GlideMix: the key from Mixed In Key's comment, else the key tag.
+        const int keyId = !t.mikKey.isEmpty() ? djKeyIdFromText(t.mikKey) : djKeyIdFromText(t.keyTag);
+        if (t.mikEnergy > 0) {
+            setTrackEnergy(trackId, t.mikEnergy);   // its own table; counts as a change below
+        }
         if (!(differs(0, t.fromTags ? t.title : QString()) || differs(1, t.artist) || differs(2, t.album)
               || differs(3, t.genre) || differs(4, t.year)
               || (t.replayGain > 0.0 && differsNumber(5, t.replayGain))
-              || (t.replayGainPeak >= 0.0 && differsNumber(6, t.replayGainPeak)))) {
+              || (t.replayGainPeak >= 0.0 && differsNumber(6, t.replayGainPeak))
+              || differs(7, t.comment) || (keyId > 0 && keyId != old.value(8).toInt()) || t.mikEnergy > 0)) {
             continue;
         }
         ++changed;
@@ -3836,6 +3923,9 @@ int MixHouseLibrary::applyFileTags(const std::vector<std::pair<int, MixHouseFile
         upd.bindValue(QStringLiteral(":gain"), t.replayGain);
         upd.bindValue(QStringLiteral(":peakSet"), t.replayGainPeak);
         upd.bindValue(QStringLiteral(":peak"), t.replayGainPeak);
+        upd.bindValue(QStringLiteral(":comment"), t.comment);
+        upd.bindValue(QStringLiteral(":keyId"), keyId);
+        upd.bindValue(QStringLiteral(":keyText"), keyId > 0 ? IMixHouseKeyMatch::traditional(keyId) : QString());
         upd.bindValue(QStringLiteral(":id"), trackId);
         if (!upd.exec()) {
             LOGE() << "applyFileTags failed: " << upd.lastError().text();
@@ -3848,6 +3938,72 @@ int MixHouseLibrary::applyFileTags(const std::vector<std::pair<int, MixHouseFile
         return -1;
     }
     return changed;
+}
+
+void MixHouseLibrary::storeCustomTags(int trackId, const QMap<QString, QString>& tags)
+{
+    if (trackId < 0 || !m_writeDb.isValid() || !m_writeDb.isOpen()) {
+        return;
+    }
+    // Nothing new (a song analysed again): no write, so no wait on a scan
+    // writing the same file.
+    QMap<QString, QString> stored;
+    QSqlQuery sel(m_writeDb);
+    sel.prepare(QStringLiteral("SELECT name, value FROM mixhouse_custom_tags WHERE track_id = :id"));
+    sel.bindValue(QStringLiteral(":id"), trackId);
+    if (sel.exec()) {
+        while (sel.next()) {
+            stored.insert(sel.value(0).toString(), sel.value(1).toString());
+        }
+    }
+    sel.finish();
+    if (stored == tags) {
+        return;
+    }
+    QSqlQuery del(m_writeDb);
+    del.prepare(QStringLiteral("DELETE FROM mixhouse_custom_tags WHERE track_id = :id"));
+    del.bindValue(QStringLiteral(":id"), trackId);
+    del.exec();
+    if (tags.isEmpty()) {
+        return;
+    }
+    QSqlQuery ins(m_writeDb);
+    ins.prepare(QStringLiteral("INSERT OR REPLACE INTO mixhouse_custom_tags (track_id, name, value) VALUES (:id, :name, :value)"));
+    for (auto it = tags.cbegin(); it != tags.cend(); ++it) {
+        ins.bindValue(QStringLiteral(":id"), trackId);
+        ins.bindValue(QStringLiteral(":name"), it.key());
+        ins.bindValue(QStringLiteral(":value"), it.value());
+        if (!ins.exec()) {
+            LOGW() << "custom tag insert failed: " << ins.lastError().text();
+            return;
+        }
+    }
+}
+
+QStringList MixHouseLibrary::customTagNames() const
+{
+    QStringList out;
+    QSqlQuery q(m_writeDb.isValid() && m_writeDb.isOpen() ? m_writeDb : m_db);
+    if (q.exec(QStringLiteral("SELECT name, COUNT(*) FROM mixhouse_custom_tags GROUP BY name ORDER BY name"))) {
+        while (q.next()) {
+            out << q.value(0).toString();
+        }
+    }
+    return out;
+}
+
+QHash<int, QString> MixHouseLibrary::customTagValues(const QString& name) const
+{
+    QHash<int, QString> out;
+    QSqlQuery q(m_writeDb.isValid() && m_writeDb.isOpen() ? m_writeDb : m_db);
+    q.prepare(QStringLiteral("SELECT track_id, value FROM mixhouse_custom_tags WHERE name = :name"));
+    q.bindValue(QStringLiteral(":name"), name);
+    if (q.exec()) {
+        while (q.next()) {
+            out.insert(q.value(0).toInt(), q.value(1).toString());
+        }
+    }
+    return out;
 }
 
 void MixHouseLibrary::requestRevealTrack(int trackId, RevealMode mode)

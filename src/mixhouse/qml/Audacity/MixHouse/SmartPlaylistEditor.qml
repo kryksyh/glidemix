@@ -46,6 +46,17 @@ Popup {
         open()
     }
 
+    //! GlideMix: a search from the search box, kept as a smart playlist.
+    function openForSearch(text) {
+        fields = tracksModel.smartFieldList()
+        var d = tracksModel.smartPlaylistDefinition(-1)
+        d.name = text
+        d.groups = [[{ field: "search", op: "is", value: text, value2: "" }]]
+        def = d
+        refreshCount()
+        open()
+    }
+
     function fieldType(fieldId) {
         for (var i = 0; i < fields.length; ++i) {
             if (fields[i].value === fieldId) {
@@ -241,7 +252,8 @@ Popup {
                                     Layout.fillWidth: true
                                     currentText: ruleRow.modelData.value || ""
                                     hint: ruleRow.type === "date" && (ruleRow.op === "after" || ruleRow.op === "before") ? "2026-10-01"
-                                          : ruleRow.type === "key" ? "8A" : ""
+                                          : ruleRow.type === "key" ? "8A"
+                                          : ruleRow.type === "search" ? "genre:house bpm:>125" : ""
                                     onTextEdited: function(t) {
                                         root.def.groups[groupItem.groupIndex][ruleRow.index].value = t
                                         countTimer.restart()

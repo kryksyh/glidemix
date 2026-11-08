@@ -1,6 +1,7 @@
 /*
  * MixHouse DJ 2
  */
+#include "mixhouselink.h"
 #include "mixhouseuiactions.h"
 
 #include "context/uicontext.h"
@@ -19,6 +20,7 @@ const muse::actions::ActionCode IMPORT_ITUNES_ACTION_CODE("mixhouse-import-itune
 const muse::actions::ActionCode SYNC_ACTION_CODE("mixhouse-sync");
 const muse::actions::ActionCode TEMPO_LANE_ACTION_CODE("mixhouse-tempo-lane");
 const muse::actions::ActionCode ENERGY_LANE_ACTION_CODE("mixhouse-energy-lane");
+const muse::actions::ActionCode LINK_ACTION_CODE("mixhouse-link");
 }
 
 const UiActionList MixHouseUiActions::m_actions = {
@@ -231,10 +233,23 @@ const UiActionList MixHouseUiActions::m_actions = {
              TranslatableString("action_description", "Show or hide the energy of the mix (1-10) over time: how the set builds"),
              Checkable::Yes
              ),
+    UiAction(LINK_ACTION_CODE,
+             au::context::UiCtxAny,
+             au::context::CTX_ANY,
+             //: Action title: the Ableton Link button (Ableton's guidelines: "Link")
+             TranslatableString("action", "Link"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description",
+                                "Ableton Link: other apps on your network (Resolume, Traktor, Ableton Live...) follow the mix's tempo and beat while it plays"),
+             Checkable::Yes
+             ),
 };
 
 void MixHouseUiActions::init()
 {
+    if (MixHouseLink* link = MixHouseLink::instance()) {
+        link->changed().onNotify(this, [this]() { m_actionCheckedChanged.send({ LINK_ACTION_CODE }); });
+    }
     if (libraryConfiguration()) {
         libraryConfiguration()->settingsChanged().onNotify(this, [this]() {
             m_actionCheckedChanged.send({ SYNC_ACTION_CODE, TEMPO_LANE_ACTION_CODE, ENERGY_LANE_ACTION_CODE, "mixhouse-keylock" });
@@ -317,6 +332,9 @@ bool MixHouseUiActions::actionChecked(const UiAction& act) const
     }
     if (act.code == ENERGY_LANE_ACTION_CODE) {
         return libraryConfiguration() && libraryConfiguration()->energyLaneVisible();
+    }
+    if (act.code == LINK_ACTION_CODE) {
+        return MixHouseLink::instance() && MixHouseLink::instance()->enabled();
     }
     return false;
 }

@@ -1,6 +1,7 @@
 /*
  * MixHouse DJ 2
  */
+#include <QElapsedTimer>
 #include "mixhouselibraryscanner.h"
 
 #include <QDateTime>
@@ -90,10 +91,19 @@ void MixHouseLibraryScanner::run()
         "VALUES (:location, :directory, :filename, :filesize, 0, 0)"));
     QSqlQuery insLib(db);
     insLib.prepare(QStringLiteral(
-        "INSERT INTO library (title, artist, album, genre, year, replaygain, replaygain_peak, filetype, location, header_parsed, "
+        "INSERT INTO library (title, artist, album, genre, year, comment, replaygain, replaygain_peak, filetype, location, header_parsed, "
         "mixxx_deleted, played, timesplayed, rating, bpm, duration, datetime_added) "
-        "VALUES (:title, :artist, :album, :genre, :year, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
+        "VALUES (:title, :artist, :album, :genre, :year, :comment, :replaygain, :replaygainPeak, :filetype, :location, :parsed, 0, 0, 0, 0, 0, :duration, CURRENT_TIMESTAMP)"));
 
+    QSqlQuery insTag(db);
+    insTag.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO mixhouse_custom_tags (track_id, name, value) VALUES (:id, :name, :value)"));
+
+    // GlideMix: short transactions. One over the whole walk (36,000 files
+    // here) kept the file locked, and every write on the main thread waited
+    // five seconds and failed while a scan ran.
+    QElapsedTimer sinceCommit;
+    sinceCommit.start();
     db.transaction();
     for (const QString& dir : std::as_const(m_directories)) {
         if (m_canceled.load()) {
@@ -112,6 +122,14 @@ void MixHouseLibraryScanner::run()
             ++scanned;
             if ((scanned % 100) == 0) {
                 emit scanProgress(scanned, added);
+            }
+            if (sinceCommit.elapsed() > 300) {
+                findLoc.finish();
+                if (!db.commit()) {
+                    db.rollback();
+                }
+                db.transaction();
+                sinceCommit.restart();
             }
 
             findLoc.bindValue(QStringLiteral(":loc"), path);
@@ -163,12 +181,15 @@ void MixHouseLibraryScanner::run()
             }
             const int locId = insLoc.lastInsertId().toInt();
 
+            QMap<QString, QString> extraTags;
             {
             // GlideMix: the file's tags (Artist, Title...), the file name only
             // when it has none -- the stream and the library showed file names.
             const MixHouseFileTags tags = readFileTags(path);
+            extraTags = tags.extra;
             insLib.bindValue(QStringLiteral(":title"), tags.title);
             insLib.bindValue(QStringLiteral(":artist"), tags.artist);
+            insLib.bindValue(QStringLiteral(":comment"), tags.comment);
             insLib.bindValue(QStringLiteral(":album"), tags.album);
             insLib.bindValue(QStringLiteral(":genre"), tags.genre);
             insLib.bindValue(QStringLiteral(":year"), tags.year);
@@ -191,6 +212,13 @@ void MixHouseLibraryScanner::run()
             }
             addedIds << insLib.lastInsertId().toInt();
             ++added;
+            // GlideMix (Marc Mont): the file's other tags, for custom tag columns.
+            for (auto t = extraTags.cbegin(); t != extraTags.cend(); ++t) {
+                insTag.bindValue(QStringLiteral(":id"), addedIds.back());
+                insTag.bindValue(QStringLiteral(":name"), t.key());
+                insTag.bindValue(QStringLiteral(":value"), t.value());
+                insTag.exec();
+            }
         }
     }
 

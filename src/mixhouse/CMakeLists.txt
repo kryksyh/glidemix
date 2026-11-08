@@ -97,6 +97,10 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibrary.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibrary.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibraryscanner.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousedjapps.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousedjapps.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselink.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselink.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouselibraryscanner.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseanalyzerworker.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseanalyzerworker.h
@@ -205,6 +209,13 @@ add_subdirectory(thirdparty/mp3guessenc)
 if (MIXHOUSE_HAVE_BEAT_THIS)
     add_subdirectory(thirdparty/beat_this_cpp)
 endif()
+
+# GlideMix: Ableton Link (thirdparty/link, GPL v2 or later). Its own
+# AbletonLinkConfig.cmake would set CMAKE_CXX_STANDARD for the whole project,
+# so only its target is configured here.
+include(${CMAKE_SOURCE_DIR}/thirdparty/link/cmake_include/ConfigureAbletonLink.cmake)
+ConfigureAbletonLink(${CMAKE_SOURCE_DIR}/thirdparty/link)
+list(APPEND MODULE_LINK Ableton::Link)
 
 setup_module()
 if (MIXHOUSE_HAVE_BEAT_THIS)

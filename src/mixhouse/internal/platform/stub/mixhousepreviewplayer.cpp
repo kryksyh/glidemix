@@ -24,4 +24,7 @@ double MixHousePreviewPlayer::position() { return 0.0; }
 void MixHousePreviewPlayer::setRate(double)
 {
 }
+void MixHousePreviewPlayer::setVolume(double)
+{
+}
 }

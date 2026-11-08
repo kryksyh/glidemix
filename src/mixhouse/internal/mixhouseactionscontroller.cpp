@@ -1,6 +1,7 @@
 /*
  * MixHouse DJ 2
  */
+#include "mixhouselink.h"
 #include "mixhousetracklist.h"
 #include "mixhouse/mixhousecoverart.h"
 #include "mixhouseactionscontroller.h"
@@ -138,6 +139,11 @@ void MixHouseActionsController::init()
     });
     dispatcher()->reg(this, "mixhouse-keylock", [this]() {
         libraryConfiguration()->setKeylockEnabled(!libraryConfiguration()->keylockEnabled());
+    });
+    dispatcher()->reg(this, "mixhouse-link", []() {
+        if (MixHouseLink* link = MixHouseLink::instance()) {
+            link->setEnabled(!link->enabled());
+        }
     });
     dispatcher()->reg(this, "mixhouse-sync", [this]() {
         libraryConfiguration()->setSyncEnabled(!libraryConfiguration()->syncEnabled());

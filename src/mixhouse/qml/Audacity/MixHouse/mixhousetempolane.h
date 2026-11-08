@@ -71,6 +71,9 @@ public:
 
     //! Removes point `index` (the last remaining point stays).
     Q_INVOKABLE bool deletePoint(int index);
+    //! GlideMix: a point's tempo, and typing one in (Set tempo…). -1 for no point.
+    Q_INVOKABLE double pointBpm(int index) const;
+    Q_INVOKABLE bool setPointBpm(int index, double bpm);
     Q_INVOKABLE void clearPointHighlight();
     //! The glide from point `index` to the next: S-curve, or straight.
     Q_INVOKABLE bool isSCurve(int index) const;

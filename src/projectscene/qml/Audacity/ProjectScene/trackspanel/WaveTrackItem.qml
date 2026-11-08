@@ -102,6 +102,56 @@ TrackItem {
                 }
             }
 
+
+            // GlideMix (Chris, MixMeister's per-track lines): the song's own
+            // Low / Mid / High line over the whole song, editable anywhere --
+            // a quick bass cut on a drop. Again on the lit one hides it.
+            RowLayout {
+                id: bandButtons
+                Layout.fillWidth: true
+                Layout.topMargin: 0
+                spacing: 6
+                // Responsive: the dots grow with the room under the fader (track
+                // height) and the header's width, from 12 to 26 px; a track too
+                // short for even the smallest hides them.
+                readonly property real room: root.height - 76
+                readonly property real dot: Math.max(14, Math.min(24, room - 2))
+                visible: !root.collapsed && room >= 14
+                property int shown: automationViewState.shownBandLine(root.trackViewState.trackId)
+                Connections {
+                    target: automationViewState
+                    function onBandLineChanged() {
+                        bandButtons.shown = automationViewState.shownBandLine(root.trackViewState.trackId)
+                    }
+                }
+                Repeater {
+                    model: [
+                        { text: qsTrc("projectscene", "LOW"), name: qsTrc("projectscene", "Low"), color: "#F0506E" },
+                        { text: qsTrc("projectscene", "MID"), name: qsTrc("projectscene", "Mid"), color: "#F5A04A" },
+                        { text: qsTrc("projectscene", "HIGH"), name: qsTrc("projectscene", "High"), color: "#EDD85A" },
+                        { text: qsTrc("projectscene", "COLOR"), name: qsTrc("projectscene", "Color"), color: "#A07CF5" }
+                    ]
+                    // Buttons in the pill's lane colours: faded until shown.
+                    FlatButton {
+                        id: bandButton
+                        required property var modelData
+                        required property int index
+                        readonly property bool shownHere: bandButtons.shown === index
+                        readonly property color laneColor: Qt.color(modelData.color)
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: bandButtons.dot
+                        Layout.maximumWidth: 64
+                        text: modelData.text
+                        textFont.pixelSize: Math.max(8, Math.round(bandButtons.dot * 0.45))
+                        textFont.bold: true
+                        normalColor: Qt.rgba(laneColor.r, laneColor.g, laneColor.b, shownHere ? 0.9 : 0.22)
+                        hoverHitColor: Qt.rgba(laneColor.r, laneColor.g, laneColor.b, shownHere ? 1.0 : 0.4)
+                        toolTipTitle: qsTrc("projectscene", "%1 line").arg(modelData.name)
+                        toolTipDescription: qsTrc("projectscene", "Shows it over the whole song: click the line to add points. Click again to hide it.")
+                        onClicked: automationViewState.toggleBandLine(root.trackViewState.trackId, index)
+                    }
+                }
+            }
         }
     }
 
@@ -182,6 +232,7 @@ TrackItem {
                     }
                 }
             }
+
 
             states: [
                 State {

@@ -58,7 +58,7 @@ DockPage {
                 height: 24
                 icon: IconCode.PLUS
                 transparent: true
-                toolTipTitle: qsTrc("appshell", "Open a closed tab")
+                // No tooltip: it stayed over the menu (the menu says what it does).
                 onClicked: {
                     const items = root.pageModel.closedBottomTabs()
                     plusMenu.toggleOpened(items.length === 0
