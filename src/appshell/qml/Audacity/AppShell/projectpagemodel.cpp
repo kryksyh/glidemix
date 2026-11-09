@@ -8,6 +8,8 @@
 #include "framework/global/async/async.h"
 #include "framework/dockwindow/idockwindow.h"
 
+#include <QTimer>
+
 #include "internal/applicationuiactions.h"
 #include "projectscene/internal/projectsceneuiactions.h"
 
@@ -39,6 +41,10 @@ void ProjectPageModel::init()
             updatePlaybackMeterVisibility();
         });
 
+        globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() {
+            wantLibraryTab();
+        });
+
         m_inited = true;
     }
 
@@ -61,6 +67,15 @@ void ProjectPageModel::init()
             }
         });
     }
+
+    wantLibraryTab();
+}
+
+void ProjectPageModel::wantLibraryTab()
+{
+    // A moment later: after the Project tab has been added (it takes the
+    // front when it joins) and the page has settled.
+    QTimer::singleShot(600, this, [this]() { emit libraryTabWanted(); });
 }
 
 void ProjectPageModel::updatePlaybackMeterVisibility()
@@ -126,6 +141,7 @@ QVariantList ProjectPageModel::closedBottomTabs() const
     const std::pair<QString, QString> tabs[] = {
         { MIXHOUSE_LIBRARY_PANEL_NAME, muse::qtrc("appshell", "Music library") },
         { MIXHOUSE_PROJECT_PANEL_NAME, muse::qtrc("appshell", "Project") },
+        { MIXHOUSE_RELATED_PANEL_NAME, muse::qtrc("appshell", "Related") },
     };
     for (const auto& [name, title] : tabs) {
         if (!window || !window->isDockOpen(name)) {

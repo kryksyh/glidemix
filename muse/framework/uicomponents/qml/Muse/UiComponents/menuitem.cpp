@@ -290,7 +290,10 @@ void MenuItem::setCommandInfo(const rcommand::CommandInfo& info)
     m_title = info.title;
     m_description = info.description;
     m_icon = info.decoration.iconCode;
-    m_iconColor = QString::fromStdString(info.decoration.iconColor.toString());
+    // GlideMix: only a real colour; a default (invalid) one read as black and
+    // drew black icons on dark menus (workspace menu, Chris 2026-11-09).
+    m_iconColor = info.decoration.iconColor.isValid()
+                  ? QString::fromStdString(info.decoration.iconColor.toString()) : QString();
     m_checkable = info.decoration.checkable == rcommand::Checkable::Yes;
 
     emit itemChanged();

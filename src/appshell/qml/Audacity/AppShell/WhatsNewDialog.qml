@@ -35,12 +35,13 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.32: a faster library**\n\n"
-                      + "- **Every song, at once:** the song list holds your whole collection, not 2000 songs at a time. Scrolling to the end, sorting and searching no longer stall, even with 40,000 songs. The same for rekordbox XML, Lexicon and your other DJ apps.\n"
-                      + "- **Select All means all:** Analyze and the other actions now reach every song in the list.\n"
-                      + "- **Analyze:** songs never analysed go first, and the Analyze count goes down as they finish.\n"
-                      + "- **Import from Rekordbox XML** shows a small window while it reads, and what it found.\n"
-                      + "- Quitting while GlideMix was still reading your DJ apps could crash it on the Mac. Fixed.\n"
+                text: "**GlideMix v1.1.33: Match, Related and Charcoal**\n\n"
+                      + "- **Match:** a new button in the library. The Key cell turns green for songs that mix with the song under the playhead.\n"
+                      + "- **Related:** a tab with the songs that go with the song under the playhead, every column there.\n"
+                      + "- **The gear next to Match** sets the rules for both: BPM, key, energy, year, history, artist, genre, label, rating stars, tags and more.\n"
+                      + "- **Charcoal:** a darker look. A dark Mac or PC gets it by itself; the old dark theme is now called Grey (Preferences > Appearance).\n"
+                      + "- **Sorting:** a third click on a column header goes back to the list's own order.\n"
+                      + "- **New projects open on the Music library tab.**\n"
             }
         }
 

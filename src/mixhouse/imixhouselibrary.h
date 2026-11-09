@@ -188,6 +188,9 @@ public:
     virtual int missingTrackCount() const = 0;
     /// GlideMix: songs with no analysis yet (the Analyze row), counted in SQL.
     virtual int unanalyzedTrackCount() const = 0;
+    /// GlideMix (Match/Related "History"): songs played within `range` places
+    /// before or after `trackId` in any play-history session.
+    virtual QList<int> historyNeighbours(int trackId, int range) const { (void)trackId; (void)range; return {}; }
     /// GlideMix (fast library): ids of songs changed through this library
     /// since the last call (recorded by triggers on the write connection),
     /// so the song list re-reads only those rows. Empties the record.

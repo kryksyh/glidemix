@@ -40,7 +40,10 @@ DockPage {
 
     property var topToolKeyNavSec
 
-    property ProjectPageModel pageModel: ProjectPageModel {}
+    property ProjectPageModel pageModel: ProjectPageModel {
+        //! GlideMix (Chris): a new or opened project shows the Music library tab.
+        onLibraryTabWanted: mixHouseLibraryPanel.raiseTab()
+    }
 
     //! GlideMix: the + beside the bottom tabs: a menu of the closed ones.
     Component {
@@ -734,6 +737,37 @@ DockPage {
 
             MixHouseProjectPanel {
                 navigationSection: mixHouseProjectPanel.navigationSection
+            }
+        },
+
+        // GlideMix: the Related tab -- the full song table showing the songs
+        // that go with the song under the playhead (Chris: a tab, not a side
+        // panel, so every column is there). Opened by the library's Related
+        // button or the + menu.
+        DockPanel {
+            id: mixHouseRelatedPanel
+
+            objectName: "mixHouseRelatedPanel"
+            title: qsTrc("appshell", "Related")
+
+            navigationSection: root.navigationPanelSec(mixHouseRelatedPanel.location)
+
+            dropDestinations: root.horizontalPanelDropDestinations
+
+            height: 260
+            minimumHeight: 120
+            resizable: true
+
+            location: Location.Bottom
+            groupName: root.bottomPanelsGroup
+
+            toolbarComponent: bottomTabsPlus
+
+            visible: false
+
+            MixHouseLibraryPanel {
+                relatedMode: true
+                navigationSection: mixHouseRelatedPanel.navigationSection
             }
         },
 

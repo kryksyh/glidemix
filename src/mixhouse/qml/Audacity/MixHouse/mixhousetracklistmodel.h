@@ -32,6 +32,8 @@
 #include "mixhouse/imixhouselibraryconfiguration.h"
 #include "mixhouse/imixhousetempomap.h"
 #include "mixhouse/imixhousetrackaligner.h"
+#include "mixhouse/imixhousekeymatch.h"
+#include "actions/iactionsdispatcher.h"
 #include "trackedit/iprojecthistory.h"
 #include "mixhouse/mixhousewaveform.h"
 #include "context/iglobalcontext.h"
@@ -115,6 +117,8 @@ class MixHouseTrackListModel : public QAbstractListModel, public muse::Injectabl
     muse::Inject<IMixHouseBeatGrids> beatGrids = { this };
     muse::Inject<IMixHouseTempoMap> tempoMap = { this };
     muse::Inject<IMixHouseTrackAligner> trackAligner = { this };
+    muse::Inject<IMixHouseKeyMatch> keyMatch = { this };
+    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher { this };
     // Registered via globalIoc() (see IMixHouseLibraryConfiguration's own
     // registration comment in mixhousemodule.cpp), so GlobalInject here,
     // not the context-scoped muse::Inject the three lines above use.
@@ -134,7 +138,8 @@ public:
         FileTypeRole, CommentRole, BitrateRole, ReplayGainRole,
         DateAddedRole, TimesPlayedRole, LastPlayedAtRole, BpmLockedRole,
         TrackIdRole, CoverArtTypeRole, SampleRateRole,
-        AnalysisProgressRole, AnalyzedRole, EnergyRole
+        AnalysisProgressRole, AnalyzedRole, EnergyRole,
+        KeyMatchRole   ///< GlideMix Match: the key mixes with the song under the playhead
     };
 
     /// PlaylistDAO::AutoDJSendLoc, named for QML as MixHouseTrackListModel.AutoDjTop etc.
@@ -667,6 +672,14 @@ public:
     Q_PROPERTY(bool analyzing READ analyzing NOTIFY analyzingChanged)
     //! GlideMix: how far the rekordbox XML has been read, 0-100 (-1 = not reading).
     Q_PROPERTY(int rekordboxLoadProgress READ rekordboxLoadProgress NOTIFY rekordboxLoadProgressChanged)
+    // GlideMix Match and Related: against the song under the playhead.
+    Q_PROPERTY(bool matchOn READ matchOn WRITE setMatchOn NOTIFY matchChanged)
+    Q_PROPERTY(int matchWidth READ matchWidth WRITE setMatchWidth NOTIFY matchChanged)
+    Q_PROPERTY(bool relatedOn READ relatedOn WRITE setRelatedOn NOTIFY relatedChanged)
+    Q_PROPERTY(bool relatedView READ relatedView WRITE setRelatedView NOTIFY relatedChanged)
+    Q_PROPERTY(QString referenceText READ referenceText NOTIFY referenceChanged)
+    Q_PROPERTY(QVariantList relatedSongs READ relatedSongs NOTIFY relatedChanged)
+    Q_PROPERTY(QVariantMap relatedRules READ relatedRules WRITE setRelatedRules NOTIFY relatedChanged)
     // GlideMix: the small Import from Rekordbox XML window (reading, then done).
     Q_PROPERTY(bool rekordboxImportShown READ rekordboxImportShown NOTIFY rekordboxImportChanged)
     Q_PROPERTY(bool rekordboxImportDone READ rekordboxImportDone NOTIFY rekordboxImportChanged)
@@ -745,6 +758,27 @@ public:
     int uiColumnCount() const { return m_uiColumnCount; }
     void setUiColumnCount(int n);
 
+    // GlideMix: Import from Rekordbox XML window, Match and Related.
+    Q_INVOKABLE void closeRekordboxImport();
+    bool matchOn() const { return m_matchOn; }
+    void setMatchOn(bool on);
+    int matchWidth() const { return m_matchWidth; }
+    void setMatchWidth(int width);
+    bool relatedOn() const { return m_relatedOn; }
+    void setRelatedOn(bool on);
+    QString referenceText() const;
+    QVariantList relatedSongs() const { return m_relatedSongs; }
+    QVariantMap relatedRules() const;
+    void setRelatedRules(const QVariantMap& rules);
+    Q_INVOKABLE void loadRelatedSong(int index);
+    //! GlideMix: this list is the Related tab (the songs that go with the
+    //! song under the playhead), not the library.
+    bool relatedView() const { return m_relatedView; }
+    void setRelatedView(bool on);
+    //! Opens the Related tab beside the library.
+    Q_INVOKABLE void openRelatedTab();
+    Q_INVOKABLE void dragRelatedSong(int index);
+
 signals:
     void sidebarCountsChanged();
     void analysisMessageChanged();
@@ -753,6 +787,9 @@ signals:
     void revealTrackRequested(int trackId, int mode);
     void rekordboxLoadProgressChanged();
     void rekordboxImportChanged();
+    void matchChanged();
+    void relatedChanged();
+    void referenceChanged();
     void uiColumnCountChanged();
     void analyzingChanged();
     void analyzeProgressChanged();
@@ -785,6 +822,8 @@ public:
     }
 
 private:
+    //! The order a view starts in (the third click on a column goes back to it).
+    std::pair<IMixHouseLibrary::SortKey, bool> viewDefaultSort() const;
     void ensurePreviewPlayer();
     void updatePreviewPosition();
 
@@ -918,7 +957,47 @@ private:
     bool rekordboxImportShown() const { return m_rekordboxImportShown; }
     bool rekordboxImportDone() const { return m_rekordboxImportDone; }
     QString rekordboxImportStatus() const { return m_rekordboxImportStatus; }
-    Q_INVOKABLE void closeRekordboxImport();
+
+    // ---- GlideMix Match and Related ----
+    bool m_matchOn = false;
+    int m_matchWidth = 2;
+    bool m_relatedOn = false;
+    bool m_relatedView = false;
+    bool m_relatedSortByColumn = false;
+    bool m_referenceSubscribed = false;
+    QTimer m_referenceTimer;
+    struct Reference {
+        int trackId = -1;
+        int keyId = 0;
+        double bpm = 0.0;
+        double energy = 0.0;
+        QString genre, artist, year, title, composer, fileType;
+        QStringList genres, artists;   // split for the same-genre / same-artist rules
+        int color = -1;
+        bool operator==(const Reference& o) const { return trackId == o.trackId && keyId == o.keyId && bpm == o.bpm; }
+    } m_reference;
+    std::vector<MixHouseTrack> m_relatedTracks;
+    QVariantList m_relatedSongs;
+    void subscribeReference();
+    struct MatchRules {
+        bool bpmOn = true, halfDouble = true, keyOn = true, energyOn = false, genreOn = false, artistOn = false;
+        bool composerOn = false, colorOn = false, yearOn = false, ratingOn = false, addedOn = false, commentOn = false;
+        bool labelOn = false, remixerOn = false, formatOn = false, historyOn = false, tagOn = false;
+        double bpmPercent = 5.0;
+        int keyWidth = 2, yearRange = 0, minRating = 1, historyRange = 3;
+        QString addedSince, commentText, tagName;
+    } m_rules;
+    // Data for the label, remixer, tag and history rules (read when needed).
+    QHash<int, QString> m_ruleLabels, m_ruleRemixers, m_ruleTagValues;
+    QString m_ruleTagValuesName;
+    QSet<int> m_ruleHistory;
+    void prepareRuleData();
+    bool m_ruleDataReady = false;   // no injected services in the constructor
+    void loadRules();
+    bool meetsRules(const MixHouseTrack& t) const;
+    void updateReference();
+    void updateRelated();
+    void startExternalDragTracks(const std::vector<MixHouseTrack>& tracks);
     bool m_rekordboxImportShown = false;
     bool m_rekordboxImportDone = false;
     QString m_rekordboxImportStatus;

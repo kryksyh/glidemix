@@ -35,6 +35,8 @@ static const DockName HISTORY_PANEL_NAME("historyPanel");
 static const DockName MIXHOUSE_LIBRARY_PANEL_NAME("mixHouseLibraryPanel");
 // GlideMix: the Project tab (MixMeister's playlist), beside the library.
 static const DockName MIXHOUSE_PROJECT_PANEL_NAME("mixHouseProjectPanel");
+// GlideMix: the Related tab (songs that go with the song under the playhead).
+static const DockName MIXHOUSE_RELATED_PANEL_NAME("mixHouseRelatedPanel");
 static const DockName PLAYBACK_METER_PANEL_NAME("playbackMeterPanel");
 
 // Toolbars:

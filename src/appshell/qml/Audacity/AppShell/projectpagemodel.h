@@ -52,7 +52,14 @@ public:
     Q_INVOKABLE QVariantList closedBottomTabs() const;
     Q_INVOKABLE void openDock(const QString& name);
 
+signals:
+    //! GlideMix (Chris): a new or opened project always shows the Music
+    //! library tab, not Project. ProjectPage raises the library tab on this.
+    void libraryTabWanted();
+
 private:
+    void wantLibraryTab();
+
     void toggleDock(const QString& name);
 
     void updatePlaybackMeterVisibility();

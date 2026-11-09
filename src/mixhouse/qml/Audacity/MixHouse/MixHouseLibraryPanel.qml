@@ -243,6 +243,11 @@ Item {
     //! Show in Library from another tab: this panel's tab has to come forward.
     signal raiseRequested()
 
+    //! GlideMix: this panel is the Related tab -- the songs that go with the
+    //! song under the playhead, in the full song table (Chris: "all infos are
+    //! needed about tracks").
+    property bool relatedMode: false
+
     // Show in Library: All Tracks, nothing filtering it, the track selected --
     // or, for mode 1 and 2, only its album's or artist's songs (in the search
     // box, so clearing it brings the rest back).
@@ -870,6 +875,11 @@ Item {
     Component.onCompleted: {
         restoreColumnLayout()
         tracksModel.uiColumnCount = root.columns.length
+        if (root.relatedMode) {
+            tracksModel.relatedView = true
+            tracksModel.load()
+            return
+        }
         tracksModel.load()
         // "Music library" Preferences page's own "Rescan directories on
         // start-up" -- see MixHouseTrackListModel::runStartupRescanIfNeeded's
@@ -983,6 +993,7 @@ Item {
         // ---- Lancelot wheel + source tree -----------------------------------
         ColumnLayout {
             id: sidebarColumn
+            visible: !root.relatedMode
             SplitView.preferredWidth: 200
             SplitView.minimumWidth: 190
             Layout.fillHeight: true
@@ -2701,6 +2712,49 @@ Item {
                     ToolTip.text: qsTrc("mixhouse", "Preview volume: %1%").arg(Math.round(value * 100))
                 }
 
+                // GlideMix Match and Related (Chris's placement): both compare
+                // against the song under the playhead.
+                FlatButton {
+                    id: matchButton
+                    Layout.leftMargin: 16
+                    text: tracksModel.matchOn && tracksModel.referenceText !== ""
+                          ? qsTrc("mixhouse", "Match: %1").arg(tracksModel.referenceText)
+                          : qsTrc("mixhouse", "Match")
+                    accentButton: tracksModel.matchOn
+                    toolTipTitle: qsTrc("mixhouse", "Match")
+                    toolTipDescription: qsTrc("mixhouse", "Lights the keys of songs that mix with the song under the playhead.")
+                    onClicked: tracksModel.matchOn = !tracksModel.matchOn
+                }
+                // The rules for Match and Related (one set for both).
+                FlatButton {
+                    id: matchSettingsButton
+                    Layout.leftMargin: -4
+                    icon: IconCode.SETTINGS_COG
+                    toolTipTitle: qsTrc("mixhouse", "Match and Related settings")
+                    toolTipDescription: qsTrc("mixhouse", "Which songs match the song under the playhead.")
+                    onClicked: matchSettings.openWith(tracksModel.relatedRules, tracksModel.customTagNames())
+                    RelatedSettingsPopup {
+                        id: matchSettings
+                        onApplied: function(rules) { tracksModel.relatedRules = rules }
+                    }
+                }
+                FlatButton {
+                    Layout.leftMargin: 8
+                    visible: !root.relatedMode
+                    text: qsTrc("mixhouse", "Related")
+                    toolTipTitle: qsTrc("mixhouse", "Related")
+                    toolTipDescription: qsTrc("mixhouse", "Opens the Related tab: the songs that go with the song under the playhead.")
+                    onClicked: tracksModel.openRelatedTab()
+                }
+                StyledTextLabel {
+                    Layout.leftMargin: 8
+                    visible: root.relatedMode
+                    font: ui.theme.bodyBoldFont
+                    text: tracksModel.referenceText !== ""
+                          ? qsTrc("mixhouse", "Related to %1").arg(tracksModel.referenceText)
+                          : qsTrc("mixhouse", "Put the playhead on a song in your mix")
+                }
+
                 StyledTextLabel {
                     Layout.fillWidth: true
                     horizontalAlignment: Qt.AlignLeft
@@ -3201,7 +3255,7 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(parent ? parent.width - 40 : 360, 420)
                 spacing: 12
-                visible: tracksModel.trackCount === 0 && trackTableView.rows === 0
+                visible: !root.relatedMode && tracksModel.trackCount === 0 && trackTableView.rows === 0
                 z: 5
 
                 StyledTextLabel {
@@ -3293,6 +3347,12 @@ Item {
             // columnWidthProvider is the SAME root.columnWidthFor() the header syncs
             // to, so a cell can never land under the wrong header the way the old
             // duplicated positioning math did.
+            // GlideMix: the song list, with the Related panel beside it.
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 6
+
             TableView {
                 id: trackTableView
 
@@ -3967,6 +4027,30 @@ Item {
                         }
                     }
 
+                    // GlideMix Match: the Key cell turns green when the key mixes
+                    // with the song under the playhead -- a bright green, the key
+                    // in dark text, no colour badge on it (Chris).
+                    Rectangle {
+                        id: keyMatchCell
+                        anchors.fill: parent
+                        anchors.topMargin: 1
+                        anchors.bottomMargin: 1
+                        visible: cell.col && cell.col.key === "musicalKey" && cell.model && cell.model.keyMatch === true
+                                 && !(cell.row === root.editingRow && cell.col && cell.col.key === root.editingColumnKey)
+                        color: "#22E05A"
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 13
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: keyMatchCell.visible ? root.cellText(cell.model, "musicalKey") : ""
+                            color: "#0B1A0F"
+                            font.family: root.libraryFont.family
+                            font.pixelSize: root.libraryFont.pixelSize > 0 ? root.libraryFont.pixelSize : ui.theme.bodyFont.pixelSize
+                            font.bold: true
+                        }
+                    }
+
                     // GlideMix: the key as a coloured badge with dark text, like
                     // Lexicon (Preferences > Music library > Show keys as badges).
                     Rectangle {
@@ -3975,7 +4059,7 @@ Item {
                                                           ? root.cellText(cell.model, "musicalKey") : ""
                         readonly property color keyColor: cell.model ? (keyWheel.colorForKeyId(cell.model.keyId) || "transparent")
                                                                       : "transparent"
-                        visible: tracksModel.keyBadges && keyText !== "" && keyText !== "—"
+                        visible: tracksModel.keyBadges && keyText !== "" && keyText !== "—" && !keyMatchCell.visible
                                  && keyColor !== Qt.rgba(0, 0, 0, 0)
                                  && !(cell.row === root.editingRow && cell.col && cell.col.key === root.editingColumnKey)
                         anchors.left: parent.left
@@ -4034,7 +4118,7 @@ Item {
                         visible: (!cell.col || (cell.col.key !== "color" && cell.col.key !== "overview"
                                                && cell.col.key !== "coverArt" && cell.col.key !== "analysisProgress"))
                                  && !(cell.row === root.editingRow && cell.col && cell.col.key === root.editingColumnKey)
-                                 && !keyBadge.visible && !energyBlocks.visible
+                                 && !keyBadge.visible && !energyBlocks.visible && !keyMatchCell.visible
                         anchors.fill: parent
                         // a cell's text starts where its header's label
                         // starts -- just past the six-dot grip (the header
@@ -4144,6 +4228,8 @@ Item {
                         }
                     }
                 }
+            }
+
             }
 
             // The real track menu, ported item-for-item against mixxx's own

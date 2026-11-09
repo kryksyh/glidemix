@@ -23,7 +23,7 @@ tar -xf "$TMP/muse.tar" -C "$TMP/x"
 # Audacity's build guide and CI scripts, internal review notes and work logs.
 ( cd "$TMP/x/$NAME" && rm -rf CL[A]UDE.md WINDOWS_PORT.md BUILDING.md ci_build.bat ci_build.cmake .github buildscripts/ci muse/.github muse/buildscripts/ci \
     docs/mixhouse-plugin-automation-review.md DEVLOG-*.md \
-    docs/HANDOFF.md docs/tools-*.md docs/mixmeister-*.md docs/glidemixer-*.md docs/linux-build.md docs/library-speed-plan.md )
+    docs/HANDOFF.md docs/tools-*.md docs/mixmeister-*.md docs/glidemixer-*.md docs/linux-build.md docs/library-speed-plan.md docs/match-related-plan.md )
 cat > "$TMP/x/$NAME/BUILDING-GLIDEMIX.txt" <<TXT
 GlideMix $VERSION - source code
 

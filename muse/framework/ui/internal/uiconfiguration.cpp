@@ -480,7 +480,8 @@ void UiConfiguration::doSetIsDarkMode(bool dark)
     if (isHighContrast()) {
         doSetCurrentTheme(dark ? HIGH_CONTRAST_BLACK_THEME_CODE : HIGH_CONTRAST_WHITE_THEME_CODE);
     } else {
-        doSetCurrentTheme(dark ? DARK_THEME_CODE : LIGHT_THEME_CODE);
+        // GlideMix (Chris): a dark Mac/PC means Charcoal; Grey is a choice.
+        doSetCurrentTheme(dark ? CHARCOAL_THEME_CODE : LIGHT_THEME_CODE);
     }
 }
 
@@ -492,7 +493,7 @@ bool UiConfiguration::isHighContrast() const
 void UiConfiguration::setIsHighContrast(bool highContrast)
 {
     if (isDarkMode()) {
-        doSetCurrentTheme(highContrast ? HIGH_CONTRAST_BLACK_THEME_CODE : DARK_THEME_CODE);
+        doSetCurrentTheme(highContrast ? HIGH_CONTRAST_BLACK_THEME_CODE : CHARCOAL_THEME_CODE);
     } else {
         doSetCurrentTheme(highContrast ? HIGH_CONTRAST_WHITE_THEME_CODE : LIGHT_THEME_CODE);
     }

@@ -32,6 +32,7 @@ qt_add_qml_module(mixhouse_qml
         mixhousestatusmodel.h
     QML_FILES
         MixHouseLibraryPanel.qml
+        RelatedSettingsPopup.qml
         MixHouseProjectPanel.qml
         MixHouseOverviewPaint.js
         MixHouseGridEditorPanel.qml

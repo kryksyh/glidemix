@@ -67,6 +67,7 @@ public:
     MixHouseNamedList crates() const override;
     int missingTrackCount() const override;
     int unanalyzedTrackCount() const override;
+    QList<int> historyNeighbours(int trackId, int range) const override;
     QList<int> takeChangedTrackIds() override;
     void installChangeTriggers();
     int hiddenTrackCount() const override;

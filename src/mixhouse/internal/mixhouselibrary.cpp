@@ -1365,6 +1365,29 @@ int MixHouseLibrary::missingTrackCount() const
     return q.value(0).toInt();
 }
 
+QList<int> MixHouseLibrary::historyNeighbours(int trackId, int range) const
+{
+    QList<int> ids;
+    if (!ensureOpen() || trackId < 0 || range <= 0) {
+        return ids;
+    }
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT DISTINCT b.track_id FROM PlaylistTracks a "
+        "JOIN Playlists p ON p.id = a.playlist_id AND p.hidden = 2 "
+        "JOIN PlaylistTracks b ON b.playlist_id = a.playlist_id "
+        " AND b.position BETWEEN a.position - :r AND a.position + :r AND b.track_id != a.track_id "
+        "WHERE a.track_id = :id"));
+    q.bindValue(QStringLiteral(":r"), range);
+    q.bindValue(QStringLiteral(":id"), trackId);
+    if (q.exec()) {
+        while (q.next()) {
+            ids << q.value(0).toInt();
+        }
+    }
+    return ids;
+}
+
 int MixHouseLibrary::unanalyzedTrackCount() const
 {
     if (!ensureOpen()) {

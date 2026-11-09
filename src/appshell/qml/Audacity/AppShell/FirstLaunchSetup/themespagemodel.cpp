@@ -71,7 +71,8 @@ QVariantList ThemesPageModel::generalThemes() const
     QVariantList result;
 
     for (const ThemeInfo& theme: allThemes()) {
-        if (theme.codeKey == LIGHT_THEME_CODE || theme.codeKey == DARK_THEME_CODE) {
+        if (theme.codeKey == LIGHT_THEME_CODE || theme.codeKey == DARK_THEME_CODE
+            || theme.codeKey == CHARCOAL_THEME_CODE) {
             result << ThemeConverter::toMap(theme);
         }
     }
@@ -236,7 +237,9 @@ QString ThemesPageModel::formatThemeConfigurationDescription() const
     if (currentThemeCode() == "light") {
         themeName = muse::qtrc("appshell/gettingstarted", "Light");
     } else if (currentThemeCode() == "dark") {
-        themeName = muse::qtrc("appshell/gettingstarted", "Dark");
+        themeName = muse::qtrc("appshell/gettingstarted", "Grey");
+    } else if (currentThemeCode() == "charcoal") {
+        themeName = muse::qtrc("appshell/gettingstarted", "Charcoal");
     } else {
         themeName = muse::qtrc("appshell/gettingstarted", "System");
     }

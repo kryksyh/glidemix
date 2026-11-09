@@ -75,14 +75,17 @@ static QString titleForTheme(const ThemeInfo& theme)
         //: The name of the light ui theme
         return muse::qtrc("ui", "Light");
     } else if (theme.codeKey == DARK_THEME_CODE) {
-        //: The name of the dark ui theme
-        return muse::qtrc("ui", "Dark");
+        //: GlideMix: the old dark ui theme, kept as a choice (Chris: "Grey")
+        return muse::qtrc("ui", "Grey");
     } else if (theme.codeKey == HIGH_CONTRAST_WHITE_THEME_CODE) {
         //: The name of the high contrast light ui theme
         return muse::qtrc("ui", "White");
     } else if (theme.codeKey == HIGH_CONTRAST_BLACK_THEME_CODE) {
         //: The name of the high contrast dark ui theme
         return muse::qtrc("ui", "Black");
+    } else if (theme.codeKey == CHARCOAL_THEME_CODE) {
+        //: GlideMix: the name of the charcoal (darker) ui theme
+        return muse::qtrc("ui", "Charcoal");
     }
 
     return QString::fromStdString(theme.title);

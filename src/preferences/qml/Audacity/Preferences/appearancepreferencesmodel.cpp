@@ -87,7 +87,8 @@ QVariantList AppearancePreferencesModel::generalThemes() const
     QVariantList result;
 
     for (const ThemeInfo& theme: allThemes()) {
-        if (theme.codeKey == LIGHT_THEME_CODE || theme.codeKey == DARK_THEME_CODE) {
+        if (theme.codeKey == LIGHT_THEME_CODE || theme.codeKey == DARK_THEME_CODE
+            || theme.codeKey == CHARCOAL_THEME_CODE) {
             result << ThemeConverter::toMap(theme);
         }
     }

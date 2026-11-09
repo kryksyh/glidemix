@@ -16,6 +16,8 @@
 #include "global/settings.h"
 
 #include <limits>
+#include "mixhouse/mixhousematch.h"
+#include "mixhouse/imixhouseexternallibrary.h"
 #include <QObject>
 #include <QProcess>
 #include <QFile>
@@ -47,6 +49,7 @@
 #include "mixhouse/mixhousephrasecues.h"
 #include <QStorageInfo>
 #include <QSettings>
+#include <QDate>
 #include <QTimer>
 #include <functional>
 #include <QDirIterator>
@@ -63,6 +66,11 @@
 
 using namespace au::mixhouse;
 
+namespace {
+//! GlideMix: the library and the Related tab share the Match/Related rules.
+std::vector<au::mixhouse::MixHouseTrackListModel*> s_liveModels;
+}
+
 MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
     : QAbstractListModel(parent), muse::Injectable(muse::iocCtxForQmlObject(this))
 {
@@ -72,6 +80,12 @@ MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
     // directly); it now just delegates to MixHouseLibrary's own real
     // background worker pool (startBackgroundAnalysis), which owns its own
     // threads -- nothing left for this constructor to wire.
+    s_liveModels.push_back(this);
+    loadRules();
+    // GlideMix Match and Related: on/off and widths are remembered.
+    m_matchOn = QSettings().value(QStringLiteral("GlideMix/matchOn"), false).toBool();
+    m_matchWidth = std::clamp(QSettings().value(QStringLiteral("GlideMix/matchKeyWidth"), 2).toInt(), 0, 3);
+    m_relatedOn = QSettings().value(QStringLiteral("GlideMix/relatedOn"), false).toBool();
     m_unanalyzedCountTimer.setSingleShot(true);
     m_unanalyzedCountTimer.setInterval(1000);
     QObject::connect(&m_unanalyzedCountTimer, &QTimer::timeout, this, [this]() {
@@ -98,6 +112,7 @@ MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
 
 MixHouseTrackListModel::~MixHouseTrackListModel()
 {
+    s_liveModels.erase(std::remove(s_liveModels.begin(), s_liveModels.end(), this), s_liveModels.end());
     if (m_previewPlayer) {
         m_previewPlayer->stop();
     }
@@ -325,6 +340,14 @@ void MixHouseTrackListModel::load()
     // fully constructed and parented), resolving library() is the same safe
     // operation every other method here already does. Guarded to subscribe
     // only once no matter how many times load() itself gets called.
+    if (!m_ruleDataReady) {
+        m_ruleDataReady = true;
+        prepareRuleData();
+    }
+    if ((m_matchOn || m_relatedOn) && !m_referenceSubscribed) {
+        subscribeReference();   // injected services are ready here, not in the constructor
+        m_referenceTimer.start();
+    }
     if (!m_subscribedToExternal && rekordboxXml()) {
         m_subscribedToExternal = true;
         // GlideMix: the DJ apps load in the background; show them once read.
@@ -355,7 +378,9 @@ void MixHouseTrackListModel::load()
             projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent) { updateProjectFiles(); });
         }
         if (globalContext()) {
-            globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() { updateProjectFiles(); });
+            globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() {
+                updateProjectFiles();
+            });
         }
         updateProjectFiles();   // a project may be open already
         // A rekordbox XML read finishes in the background: refresh the
@@ -655,7 +680,15 @@ void MixHouseTrackListModel::load()
             m_pageLimit = kPageSize;
         }
         m_query.limit = m_pageLimit;
-        if (m_externalSource == u"folder") {
+        if (m_relatedView) {
+            fresh = MixHouseTrackList(m_relatedTracks.begin(), m_relatedTracks.end());
+            if (m_relatedSortByColumn) {
+                IMixHouseLibrary::TrackQuery q = m_query;
+                q.limit = 0;
+                sortAndLimitTracks(fresh, q, false);
+            }
+            m_pageLimit = std::numeric_limits<int>::max();
+        } else if (m_externalSource == u"folder") {
             fresh = browseFolderTracks();
         } else if (m_externalSource == u"smart") {
             fresh = smartPlaylistTracks(m_externalPlaylist);
@@ -733,14 +766,60 @@ void MixHouseTrackListModel::loadMore()
 
 void MixHouseTrackListModel::sortBy(int sortKey)
 {
+    // GlideMix (Chris): three clicks -- ascending, descending, then back to
+    // the view's own order (the library's default, a playlist's or folder's
+    // order, Related's closest-first).
     const auto key = static_cast<IMixHouseLibrary::SortKey>(sortKey);
-    if (m_query.sort == key) {
+    const auto [defKey, defAscending] = viewDefaultSort();
+    const bool atDefault = m_relatedView ? !m_relatedSortByColumn
+                                         : (m_query.sort == defKey && m_query.ascending == defAscending);
+    if (m_query.sort == key && !atDefault && !m_query.ascending) {
+        // Third click: the view's own order.
+        m_query.sort = defKey;
+        m_query.ascending = defAscending;
+        m_relatedSortByColumn = false;
+        load();
+        return;
+    }
+    if (m_query.sort == key && !(m_relatedView && atDefault)) {
         m_query.ascending = !m_query.ascending;   // same column: flip
     } else {
         m_query.sort = key;
         m_query.ascending = true;                 // new column: start ascending
     }
+    m_relatedSortByColumn = m_relatedView;
     load();
+}
+
+namespace {
+IMixHouseLibrary::SortKey sortKeyForSmartField(const QString& field);
+}
+
+std::pair<IMixHouseLibrary::SortKey, bool> MixHouseTrackListModel::viewDefaultSort() const
+{
+    using K = IMixHouseLibrary::SortKey;
+    if (m_relatedView) {
+        return { K::Position, true };   // not a column: closest songs first
+    }
+    if (m_externalSource == u"smart") {
+        for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+            if (p.id == m_externalPlaylist) {
+                return { sortKeyForSmartField(p.sort), p.ascending };
+            }
+        }
+    }
+    // A folder, a playlist (ours or another app's): the order it comes in.
+    if (m_externalSource == u"folder" || m_query.playlistId >= 0
+        || (!m_externalSource.isEmpty() && m_externalPlaylist >= 0)) {
+        return { K::Position, true };
+    }
+    if (m_query.missingOnly || m_query.hiddenOnly) {
+        return { K::Artist, true };
+    }
+    if (m_query.playedOnly) {
+        return { K::LastPlayedAt, false };
+    }
+    return { K::DateAdded, false };
 }
 
 void MixHouseTrackListModel::setSort(int sortKey, bool ascending)
@@ -751,6 +830,7 @@ void MixHouseTrackListModel::setSort(int sortKey, bool ascending)
     }
     m_query.sort = key;
     m_query.ascending = ascending;
+    m_relatedSortByColumn = m_relatedView;
     load();
 }
 
@@ -2809,6 +2889,18 @@ static bool leftMouseButtonHeld()
 
 void MixHouseTrackListModel::startExternalDrag(const QVariantList& rows)
 {
+    std::vector<MixHouseTrack> tracks;
+    for (const QVariant& v : rows) {
+        const int row = v.toInt();
+        if (row >= 0 && row < static_cast<int>(m_tracks.size())) {
+            tracks.push_back(m_tracks[static_cast<size_t>(row)]);
+        }
+    }
+    startExternalDragTracks(tracks);
+}
+
+void MixHouseTrackListModel::startExternalDragTracks(const std::vector<MixHouseTrack>& tracks)
+{
     // Real mixxx: DragAndDropHelper::dragTrackLocations() (src/util/dnd.cpp)
     // builds this same QList<QUrl> from getSelectedRows(), one
     // QUrl::fromLocalFile() per real track_locations.location -- then hands
@@ -2821,14 +2913,9 @@ void MixHouseTrackListModel::startExternalDrag(const QVariantList& rows)
     QList<QUrl> urls;
     QStringList titles;
     QStringList missing;
-    urls.reserve(rows.size());
-    titles.reserve(rows.size());
-    for (const QVariant& v : rows) {
-        const int row = v.toInt();
-        if (row < 0 || row >= static_cast<int>(m_tracks.size())) {
-            continue;
-        }
-        const MixHouseTrack& t = m_tracks[static_cast<size_t>(row)];
+    urls.reserve(static_cast<qsizetype>(tracks.size()));
+    titles.reserve(static_cast<qsizetype>(tracks.size()));
+    for (const MixHouseTrack& t : tracks) {
         // Never drag out a row with no real file (a Missing Tracks entry,
         // or -- in principle -- a stale index from a reload mid-drag).
         if (t.filePath.isEmpty()) {
@@ -4886,6 +4973,9 @@ QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
     case GroupingRole:    return t.grouping;
     case TrackNumberRole: return t.trackNumber;
     case InProjectRole:   return m_projectFiles.contains(t.filePath);
+    case KeyMatchRole:
+        // The same rules as Related (the settings behind the gears).
+        return m_matchOn && m_reference.trackId >= 0 && t.id != m_reference.trackId && meetsRules(t);
     case FileTypeRole:    return t.fileType;
     case CommentRole:     return t.comment;
     case BitrateRole:     return t.bitrate;
@@ -4914,7 +5004,7 @@ QHash<int, QByteArray> MixHouseTrackListModel::roleNames() const
         { FirstBeatSecRole, "firstBeatSec" }, { BeatLengthSecRole, "beatLengthSec" },
         { ConstantTempoRole, "constantTempo" },
         { AlbumArtistRole, "albumArtist" }, { ComposerRole, "composer" },
-        { GroupingRole, "grouping" }, { TrackNumberRole, "trackNumber" }, { InProjectRole, "inProject" },
+        { GroupingRole, "grouping" }, { TrackNumberRole, "trackNumber" }, { InProjectRole, "inProject" }, { KeyMatchRole, "keyMatch" },
         { FileTypeRole, "fileType" }, { CommentRole, "comment" },
         { BitrateRole, "bitrate" }, { ReplayGainRole, "replaygain" },
         { DateAddedRole, "dateAdded" }, { TimesPlayedRole, "timesPlayed" },
@@ -4937,6 +5027,9 @@ int MixHouseTrackListModel::matchingCount() const
 {
     // A smart playlist, Duplicates, a folder or another app's list: the
     // collection query would count the whole collection.
+    if (m_relatedView) {
+        return static_cast<int>(m_tracks.size());   // the Related tab: its own songs
+    }
     if (!m_externalSource.isEmpty()) {
         const int shown = static_cast<int>(m_tracks.size());
         if (m_externalSource == u"smart" && shown >= m_pageLimit && m_query.filter.isEmpty()
@@ -5194,4 +5287,467 @@ MixHouseTrackList MixHouseTrackListModel::indexedTracks()
     LOGI() << "GlideMix fast library: view of " << out.size() << " songs in " << took.elapsed()
            << " ms (order from SQL " << sqlMs << " ms)";
     return out;
+}
+
+// ---- GlideMix Match and Related ---------------------------------------------
+// The reference is the song under the playhead; in a transition the incoming
+// one (the clip that started later). Match lights the Key cells of songs
+// whose key mixes with it; Related lists the collection songs that go with it.
+
+void MixHouseTrackListModel::subscribeReference()
+{
+    if (m_referenceSubscribed || !globalContext()) {
+        return;
+    }
+    m_referenceSubscribed = true;
+    m_referenceTimer.setSingleShot(true);
+    m_referenceTimer.setInterval(200);   // a few updates a second while playing
+    QObject::connect(&m_referenceTimer, &QTimer::timeout, this, [this]() { updateReference(); });
+    if (const auto state = globalContext()->playbackState()) {
+        state->playbackPositionChanged().onReceive(this, [this](muse::secs_t) {
+            if ((m_matchOn || m_relatedOn) && !m_referenceTimer.isActive()) {
+                m_referenceTimer.start();
+            }
+        });
+    }
+    globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() {
+        if (m_matchOn || m_relatedOn) {
+            m_referenceTimer.start();
+        }
+    });
+    if (projectHistory()) {
+        projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent) {
+            if (m_matchOn || m_relatedOn) {
+                m_referenceTimer.start();
+            }
+        });
+    }
+}
+
+void MixHouseTrackListModel::setMatchOn(bool on)
+{
+    if (m_matchOn == on) {
+        return;
+    }
+    m_matchOn = on;
+    QSettings().setValue(m_relatedView ? QStringLiteral("GlideMix/relatedTabMatchOn") : QStringLiteral("GlideMix/matchOn"), on);
+    subscribeReference();
+    updateReference();
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, std::max(0, m_uiColumnCount - 1)), { KeyMatchRole });
+    }
+    emit matchChanged();
+}
+
+void MixHouseTrackListModel::setMatchWidth(int width)
+{
+    width = std::clamp(width, 0, 3);
+    if (m_matchWidth == width) {
+        return;
+    }
+    m_matchWidth = width;
+    QSettings().setValue(QStringLiteral("GlideMix/matchKeyWidth"), width);
+    if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, std::max(0, m_uiColumnCount - 1)), { KeyMatchRole });
+    }
+    emit matchChanged();
+}
+
+void MixHouseTrackListModel::setRelatedOn(bool on)
+{
+    if (m_relatedOn == on) {
+        return;
+    }
+    m_relatedOn = on;
+    QSettings().setValue(QStringLiteral("GlideMix/relatedOn"), on);
+    subscribeReference();
+    updateReference();
+    updateRelated();
+    emit relatedChanged();
+}
+
+QString MixHouseTrackListModel::referenceText() const
+{
+    if (m_reference.trackId < 0 && m_reference.keyId <= 0) {
+        return QString();
+    }
+    QStringList parts;
+    if (m_reference.keyId > 0) {
+        parts << IMixHouseKeyMatch::keyText(m_reference.keyId, libraryConfiguration()->keyNotation());
+    }
+    if (m_reference.bpm > 0.0) {
+        parts << QString::number(m_reference.bpm, 'f', m_reference.bpm == std::round(m_reference.bpm) ? 0 : 1);
+    }
+    return parts.join(QStringLiteral(" · "));
+}
+
+namespace {
+QStringList relatedTokens(const QString& text)
+{
+    QString t = text.toLower();
+    for (const char* sep : { " feat. ", " ft. ", " featuring ", " & ", " x ", " vs ", " vs. ", ";", "/" }) {
+        t.replace(QLatin1String(sep), QStringLiteral(","));
+    }
+    QStringList out;
+    for (const QString& part : t.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        const QString p = part.trimmed();
+        if (!p.isEmpty()) {
+            out << p;
+        }
+    }
+    return out;
+}
+
+bool sharesToken(const QStringList& a, const QStringList& b)
+{
+    for (const QString& x : a) {
+        if (b.contains(x)) {
+            return true;
+        }
+    }
+    return false;
+}
+}
+
+void MixHouseTrackListModel::updateReference()
+{
+    Reference ref;
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    const auto state = globalContext() ? globalContext()->playbackState() : nullptr;
+    if (project && state && beatGrids()) {
+        const double pos = state->playbackPosition().to_double();
+        const trackedit::Clip* best = nullptr;
+        trackedit::Clip bestClip;
+        for (const trackedit::TrackId trackId : project->trackIdList()) {
+            for (const trackedit::Clip& clip : project->clipList(trackId)) {
+                if (clip.startTime <= pos && pos < clip.endTime && (!best || clip.startTime > bestClip.startTime)) {
+                    bestClip = clip;
+                    best = &bestClip;
+                }
+            }
+        }
+        IMixHouseBeatGrids::ClipFile file;
+        if (best && beatGrids()->clipFile(bestClip.key, file)) {
+            ensureIndex();
+            const MixHouseTrack* song = nullptr;
+            for (const auto& [id, t] : m_index) {
+                if (t.filePath == file.path) {
+                    song = &t;
+                    break;
+                }
+            }
+            MixHouseTrack fallback;
+            if (!song) {
+                IMixHouseLibrary::TrackQuery q;
+                q.location = file.path;
+                const MixHouseTrackList found = library()->tracks(q);
+                if (!found.empty()) {
+                    fallback = found.front();
+                    song = &fallback;
+                }
+            }
+            if (song) {
+                ref.trackId = song->id;
+                ref.keyId = song->keyId;
+                ref.bpm = song->bpm;
+                ref.energy = song->energy;
+                ref.genre = song->genre;
+                ref.artist = song->artist;
+                ref.year = song->year;
+                ref.title = song->title;
+                ref.composer = song->composer;
+                ref.fileType = song->fileType;
+                ref.color = song->color;
+                ref.genres = relatedTokens(song->genre);
+                ref.artists = relatedTokens(song->artist);
+            }
+            // A transposed clip sounds in another key: match that one.
+            if (keyMatch()) {
+                const int sounding = keyMatch()->keyInfo(bestClip.key).effectiveKeyId;
+                if (sounding > 0) {
+                    ref.keyId = sounding;
+                }
+            }
+        }
+    }
+    if (ref == m_reference) {
+        return;
+    }
+    LOGI() << "GlideMix match: reference song " << ref.trackId << " key " << ref.keyId << " bpm " << ref.bpm;
+    m_reference = ref;
+    prepareRuleData();
+    emit referenceChanged();
+    if (m_matchOn && rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, std::max(0, m_uiColumnCount - 1)), { KeyMatchRole });
+    }
+    if (m_relatedOn) {
+        updateRelated();
+        emit relatedChanged();
+        if (m_relatedView) {
+            load();
+        }
+    }
+}
+
+QVariantMap MixHouseTrackListModel::relatedRules() const
+{
+    QVariantMap rules = QSettings().value(QStringLiteral("GlideMix/relatedRules")).toMap();
+    auto def = [&rules](const char* key, const QVariant& value) {
+        if (!rules.contains(QLatin1String(key))) {
+            rules.insert(QLatin1String(key), value);
+        }
+    };
+    def("bpmOn", true);
+    def("bpmPercent", 5);
+    def("halfDouble", true);
+    def("keyOn", true);
+    def("keyWidth", 2);
+    def("energyOn", false);
+    def("genreOn", false);
+    def("artistOn", false);
+    def("yearOn", false);
+    def("yearRange", 0);
+    def("ratingOn", false);
+    def("minRating", 1);
+    def("addedOn", false);
+    def("addedDays", 30);
+    def("composerOn", false);
+    def("remixerOn", false);
+    def("labelOn", false);
+    def("formatOn", false);
+    def("historyOn", false);
+    def("historyRange", 3);
+    def("tagOn", false);
+    def("tagName", QString());
+    def("colorOn", false);
+    def("commentOn", false);
+    def("commentText", QString());
+    return rules;
+}
+
+void MixHouseTrackListModel::setRelatedRules(const QVariantMap& rules)
+{
+    QSettings().setValue(QStringLiteral("GlideMix/relatedRules"), rules);
+    for (MixHouseTrackListModel* model : s_liveModels) {
+        model->loadRules();
+        model->updateRelated();
+        emit model->relatedChanged();
+        if (model->m_matchOn && model->rowCount() > 0) {
+            emit model->dataChanged(model->index(0, 0),
+                                    model->index(model->rowCount() - 1, std::max(0, model->m_uiColumnCount - 1)), { KeyMatchRole });
+        }
+        if (model->m_relatedView) {
+            model->load();
+        }
+    }
+}
+
+void MixHouseTrackListModel::setRelatedView(bool on)
+{
+    if (m_relatedView == on) {
+        return;
+    }
+    m_relatedView = on;
+    // The tab has its own Match switch (the library keeps its own).
+    m_matchOn = QSettings().value(on ? QStringLiteral("GlideMix/relatedTabMatchOn") : QStringLiteral("GlideMix/matchOn"),
+                                  false).toBool();
+    m_relatedOn = on;
+    emit relatedChanged();
+    emit matchChanged();
+}
+
+void MixHouseTrackListModel::openRelatedTab()
+{
+    if (dispatcher()) {
+        dispatcher()->dispatch("dock-set-open", muse::actions::ActionData::make_arg2<QString, bool>(
+                                   QStringLiteral("mixHouseRelatedPanel"), true));
+    }
+}
+
+// GlideMix: one rule set for Match (the lit keys) and Related (the list),
+// set in the settings window behind the gears (Chris, 2026-11-09).
+void MixHouseTrackListModel::loadRules()
+{
+    const QVariantMap r = relatedRules();
+    MatchRules& m = m_rules;
+    m.bpmOn = r.value(QStringLiteral("bpmOn")).toBool();
+    m.bpmPercent = r.value(QStringLiteral("bpmPercent")).toDouble();
+    m.halfDouble = r.value(QStringLiteral("halfDouble")).toBool();
+    m.keyOn = r.value(QStringLiteral("keyOn")).toBool();
+    m.keyWidth = std::clamp(r.value(QStringLiteral("keyWidth")).toInt(), 0, 3);
+    m.energyOn = r.value(QStringLiteral("energyOn")).toBool();
+    m.genreOn = r.value(QStringLiteral("genreOn")).toBool();
+    m.artistOn = r.value(QStringLiteral("artistOn")).toBool();
+    m.composerOn = r.value(QStringLiteral("composerOn")).toBool();
+    m.colorOn = r.value(QStringLiteral("colorOn")).toBool();
+    m.yearOn = r.value(QStringLiteral("yearOn")).toBool();
+    m.yearRange = r.value(QStringLiteral("yearRange")).toInt();
+    m.ratingOn = r.value(QStringLiteral("ratingOn")).toBool();
+    m.minRating = r.value(QStringLiteral("minRating")).toInt();
+    m.addedOn = r.value(QStringLiteral("addedOn")).toBool();
+    m.addedSince = QDate::currentDate().addDays(-r.value(QStringLiteral("addedDays")).toInt()).toString(Qt::ISODate);
+    m.commentOn = r.value(QStringLiteral("commentOn")).toBool();
+    m.commentText = r.value(QStringLiteral("commentText")).toString();
+    m.labelOn = r.value(QStringLiteral("labelOn")).toBool();
+    m.remixerOn = r.value(QStringLiteral("remixerOn")).toBool();
+    m.formatOn = r.value(QStringLiteral("formatOn")).toBool();
+    m.historyOn = r.value(QStringLiteral("historyOn")).toBool();
+    m.historyRange = std::max(1, r.value(QStringLiteral("historyRange")).toInt());
+    m.tagOn = r.value(QStringLiteral("tagOn")).toBool();
+    m.tagName = r.value(QStringLiteral("tagName")).toString();
+    prepareRuleData();
+}
+
+void MixHouseTrackListModel::prepareRuleData()
+{
+    if (!m_ruleDataReady || !library()) {
+        return;
+    }
+    if (m_rules.labelOn && m_ruleLabels.isEmpty()) {
+        m_ruleLabels = library()->customTagValues(QStringLiteral("LABEL"));
+    }
+    if (m_rules.remixerOn && m_ruleRemixers.isEmpty()) {
+        m_ruleRemixers = library()->customTagValues(QStringLiteral("REMIXER"));
+    }
+    if (m_rules.tagOn && !m_rules.tagName.isEmpty() && m_ruleTagValuesName != m_rules.tagName) {
+        m_ruleTagValues = library()->customTagValues(m_rules.tagName);
+        m_ruleTagValuesName = m_rules.tagName;
+    }
+    m_ruleHistory.clear();
+    if (m_rules.historyOn && m_reference.trackId >= 0) {
+        // Not "near": a macro in the Windows headers.
+        const QList<int> played = library()->historyNeighbours(m_reference.trackId, m_rules.historyRange);
+        m_ruleHistory = QSet<int>(played.begin(), played.end());
+    }
+}
+
+bool MixHouseTrackListModel::meetsRules(const MixHouseTrack& t) const
+{
+    const MatchRules& m = m_rules;
+    const Reference& ref = m_reference;
+    if (m.bpmOn && !match::bpmWithin(ref.bpm, t.bpm, m.bpmPercent, m.halfDouble)) {
+        return false;
+    }
+    if (m.keyOn && !match::keysMix(ref.keyId, t.keyId, static_cast<match::KeyWidth>(m.keyWidth))) {
+        return false;
+    }
+    if (m.energyOn && (ref.energy <= 0.0 || t.energy <= 0.0 || std::round(t.energy) < std::round(ref.energy)
+                       || std::round(t.energy) > std::round(ref.energy) + 1)) {
+        return false;
+    }
+    if (m.genreOn && (ref.genres.isEmpty() || !sharesToken(ref.genres, relatedTokens(t.genre)))) {
+        return false;
+    }
+    if (m.artistOn) {
+        const bool hit = !ref.artists.isEmpty()
+                         && (sharesToken(ref.artists, relatedTokens(t.artist))
+                             || std::any_of(ref.artists.begin(), ref.artists.end(), [&t](const QString& a) {
+                                    return a.size() > 2 && t.title.contains(a, Qt::CaseInsensitive);
+                                }));
+        if (!hit) {
+            return false;
+        }
+    }
+    if (m.composerOn && (ref.composer.isEmpty() || t.composer.compare(ref.composer, Qt::CaseInsensitive) != 0)) {
+        return false;
+    }
+    if (m.colorOn && (ref.color < 0 || t.color != ref.color)) {
+        return false;
+    }
+    if (m.yearOn) {
+        const int y = t.year.left(4).toInt();
+        const int refYear = ref.year.left(4).toInt();
+        if (refYear <= 0 || y <= 0 || std::abs(y - refYear) > m.yearRange) {
+            return false;
+        }
+    }
+    if (m.ratingOn && t.rating < m.minRating) {
+        return false;
+    }
+    if (m.addedOn && t.dateAdded.left(10) < m.addedSince) {
+        return false;
+    }
+    if (m.commentOn && !m.commentText.isEmpty() && !t.comment.contains(m.commentText, Qt::CaseInsensitive)) {
+        return false;
+    }
+    auto sameTag = [&](const QHash<int, QString>& values) {
+        const QStringList mine = relatedTokens(values.value(ref.trackId));
+        return !mine.isEmpty() && sharesToken(mine, relatedTokens(values.value(t.id)));
+    };
+    if (m.labelOn && !sameTag(m_ruleLabels)) {
+        return false;
+    }
+    if (m.remixerOn && !sameTag(m_ruleRemixers)) {
+        return false;
+    }
+    if (m.tagOn && !m.tagName.isEmpty() && !sameTag(m_ruleTagValues)) {
+        return false;
+    }
+    if (m.formatOn && t.fileType.compare(ref.fileType, Qt::CaseInsensitive) != 0) {
+        return false;
+    }
+    if (m.historyOn && !m_ruleHistory.contains(t.id)) {
+        return false;
+    }
+    return true;
+}
+
+void MixHouseTrackListModel::updateRelated()
+{
+    m_relatedTracks.clear();
+    m_relatedSongs.clear();
+    if (!m_relatedOn || m_reference.trackId < 0) {
+        return;
+    }
+    QElapsedTimer took;
+    took.start();
+    ensureIndex();
+    for (const auto& [id, t] : m_index) {
+        if (id != m_reference.trackId && meetsRules(t)) {
+            m_relatedTracks.push_back(t);
+        }
+    }
+    // Closest first: the same key, then the nearest BPM.
+    const int refKey = m_reference.keyId;
+    const double refBpm = m_reference.bpm;
+    std::stable_sort(m_relatedTracks.begin(), m_relatedTracks.end(), [&](const MixHouseTrack& a, const MixHouseTrack& b) {
+        const bool sa = a.keyId == refKey;
+        const bool sb = b.keyId == refKey;
+        if (sa != sb) {
+            return sa;
+        }
+        return match::bpmDistance(refBpm, a.bpm) < match::bpmDistance(refBpm, b.bpm);
+    });
+    constexpr size_t kMaxShown = 500;
+    if (!m_relatedView && m_relatedTracks.size() > kMaxShown) {
+        m_relatedTracks.resize(kMaxShown);
+    }
+    const MixHouseKeyNotation notation = libraryConfiguration()->keyNotation();
+    for (const MixHouseTrack& t : m_relatedTracks) {
+        QVariantMap row;
+        row.insert(QStringLiteral("trackId"), t.id);
+        row.insert(QStringLiteral("title"), t.title);
+        row.insert(QStringLiteral("artist"), t.artist);
+        row.insert(QStringLiteral("bpm"), t.bpm);
+        row.insert(QStringLiteral("keyId"), t.keyId);
+        row.insert(QStringLiteral("key"), t.keyId > 0 ? IMixHouseKeyMatch::keyText(t.keyId, notation) : t.key);
+        row.insert(QStringLiteral("energy"), t.energy);
+        row.insert(QStringLiteral("genre"), t.genre);
+        m_relatedSongs.append(row);
+    }
+    LOGI() << "GlideMix related: " << m_relatedTracks.size() << " songs in " << took.elapsed() << " ms";
+}
+
+void MixHouseTrackListModel::loadRelatedSong(int index)
+{
+    if (index >= 0 && index < static_cast<int>(m_relatedTracks.size())) {
+        loadTrack(m_relatedTracks[static_cast<size_t>(index)]);
+    }
+}
+
+void MixHouseTrackListModel::dragRelatedSong(int index)
+{
+    if (index >= 0 && index < static_cast<int>(m_relatedTracks.size())) {
+        startExternalDragTracks({ m_relatedTracks[static_cast<size_t>(index)] });
+    }
 }
