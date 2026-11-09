@@ -35,13 +35,14 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.1.33: Match, Related and Charcoal**\n\n"
-                      + "- **Match:** a new button in the library. The Key cell turns green for songs that mix with the song under the playhead.\n"
-                      + "- **Related:** a tab with the songs that go with the song under the playhead, every column there.\n"
-                      + "- **The gear next to Match** sets the rules for both: BPM, key, energy, year, history, artist, genre, label, rating stars, tags and more.\n"
-                      + "- **Charcoal:** a darker look. A dark Mac or PC gets it by itself; the old dark theme is now called Grey (Preferences > Appearance).\n"
-                      + "- **Sorting:** a third click on a column header goes back to the list's own order.\n"
-                      + "- **New projects open on the Music library tab.**\n"
+                text: "**GlideMix v1.2.0: a new look**\n\n"
+                      + "- **Modern look:** rounded buttons, menus and panels; buttons are pills, purple only when on.\n"
+                      + "- **Display at the top:** time, key, energy, song 2 of 4, processor and disk use, and a play light.\n"
+                      + "- **Toolbar in groups**, each in its own capsule.\n"
+                      + "- **New knobs and faders:** a thin coloured arc on each knob (hover to see the value), see-through glass caps on the faders.\n"
+                      + "- **See-through menus** with the window behind them softly blurred (Mac, Windows 11).\n"
+                      + "- **Library buttons on top** in one row with the Key Wheel; the search sits below.\n"
+                      + "- **Light theme in GlideMix purple.**\n"
             }
         }
 

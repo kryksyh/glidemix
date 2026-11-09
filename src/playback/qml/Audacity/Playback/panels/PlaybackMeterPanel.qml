@@ -116,7 +116,7 @@ Item {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.bottomMargin: index === 1 ? 8 : 4
 
-                radius: 3
+                radius: height / 2
                 color: selected ? modelData.color : "transparent"
                 border.width: 1
                 border.color: selected ? modelData.color : ui.theme.strokeColor

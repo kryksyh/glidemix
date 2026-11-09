@@ -69,6 +69,14 @@ Container {
 
     signal standardButtonClicked(int buttonId)
 
+    //! GlideMix modern look: dialog buttons are capsule pills.
+    QtObject {
+        id: pillMaker
+        function makePill(b) {
+            b.backgroundRadius = Qt.binding(function() { return b.height / 2 })
+        }
+    }
+
     function accentButton() {
         for (var i = 0; i < root.count; i++) {
             var btn = root.itemAt(i) as FlatButton
@@ -167,6 +175,7 @@ Container {
 
                 buttonInfo.button.navigation.panel = root.navigationPanel
                 buttonInfo.button.navigation.column = i
+                pillMaker.makePill(buttonInfo.button)
 
                 //! NOTE See description about AccessibleItem { id: accessibleInfo }
                 buttonInfo.button.accessible.ignored = root.isAccessibilityDisabledWhenInit

@@ -182,17 +182,23 @@ Slider {
         Rectangle {
             id: handleRect
             anchors.fill: parent
+            // GlideMix modern look: a glass knob -- see-through, a rim in the
+            // meter's colour and a sheen on top; stays clear while held.
             radius: width / 2
-            color: "transparent"
-            border.color: root.handleColor
-            border.width: 2
+            color: ui.theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.4)
+            border.color: Qt.rgba(root.handleColor.r, root.handleColor.g, root.handleColor.b, 0.85)
+            border.width: 1.5
 
             Rectangle {
-                anchors.fill: parent
-                anchors.margins: 1
-                radius: width / 2
-                color: ui.theme.backgroundPrimaryColor
-                opacity: 0.7
+                x: 2
+                y: 2
+                width: parent.width - 4
+                height: parent.height / 2 - 2
+                radius: height / 2
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.4) }
+                    GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.03) }
+                }
             }
         }
     }

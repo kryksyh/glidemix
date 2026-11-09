@@ -387,6 +387,7 @@ StyledDialogView {
             x: ch.axis - width / 2
             y: 366
             defaultValue: 1
+            accent: ch.accent
             value: ch.mixer.valueAt(0, ch.side)
             onGrabbed: function(down) {
                 if (down) {

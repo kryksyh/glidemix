@@ -36,7 +36,10 @@ Rectangle {
     // resize separator in the app (this is the one shared component all of
     // them render through), not a MixHouse-only copy.
     readonly property bool hovered: mouseArea.containsMouse || mouseArea.pressed
-    color: hovered ? ui.theme.accentColor : ui.theme.strokeColor
+    // GlideMix modern look: at rest it is part of the gap between the
+    // rounded panel cards (DockFrame.qml), so no line shows.
+    color: hovered ? ui.theme.accentColor
+                   : (ui.theme.isDark ? ui.theme.backgroundQuarternaryColor : ui.theme.backgroundSecondaryColor)
     Behavior on color { ColorAnimation { duration: 80 } }
 
     readonly property QtObject separatorCpp: parent

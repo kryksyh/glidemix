@@ -21,12 +21,15 @@
  */
 
 #include "popupview.h"
+#include "log.h"
 #include "modularity/ioc.h"
 
 #if defined(Q_OS_MAC)
 #include "internal/platform/macos/macospopupviewclosecontroller.h"
+#include "internal/platform/macos/macosbackdropblur.h"
 #elif defined(Q_OS_WIN)
 #include "internal/platform/win/winpopupviewclosecontroller.h"
+#include "internal/platform/win/winbackdropblur.h"
 #endif
 
 using namespace muse::uicomponents;
@@ -80,6 +83,53 @@ void PopupView::initView()
 
     m_view->setFlags(resolveWindowFlags());
     m_view->setColor(Qt::transparent);
+}
+
+void PopupView::afterShow()
+{
+    WindowView::afterShow();
+
+#if defined(Q_OS_MAC) || defined(Q_OS_WIN)
+    // The popup's background (PopupContent.qml), found once; follow its size
+    // and the open animation's scale.
+    if (!m_blurItem && m_contentItem) {
+        m_blurItem = m_contentItem->findChild<QQuickItem*>("popupContentBackground");
+        if (m_blurItem) {
+            for (QQuickItem* item = m_blurItem; item && item != m_contentItem; item = item->parentItem()) {
+                connect(item, &QQuickItem::widthChanged, this, &PopupView::updateBackdropBlur);
+                connect(item, &QQuickItem::heightChanged, this, &PopupView::updateBackdropBlur);
+                connect(item, &QQuickItem::xChanged, this, &PopupView::updateBackdropBlur);
+                connect(item, &QQuickItem::yChanged, this, &PopupView::updateBackdropBlur);
+                connect(item, &QQuickItem::scaleChanged, this, &PopupView::updateBackdropBlur);
+            }
+        }
+    }
+    updateBackdropBlur();
+#endif
+}
+
+void PopupView::updateBackdropBlur()
+{
+    if (!m_view || !m_blurItem || !m_view->isVisible()) {
+        return;
+    }
+    const QRectF rect = m_blurItem->mapRectToScene(QRectF(0, 0, m_blurItem->width(), m_blurItem->height()));
+    const qreal radius = m_blurItem->property("radius").toReal();
+    const bool dark = m_blurItem->property("color").value<QColor>().lightnessF() < 0.5;
+    bool on = false;
+#if defined(Q_OS_MAC)
+    muse::uicomponents::macosSetBackdropBlur(m_view, rect, radius, dark);
+    on = true;
+#elif defined(Q_OS_WIN)
+    // The window is clipped to the popup's body, which would cut off an arrow:
+    // only arrowless popups (menus, dropdowns) get the blur on Windows.
+    if (!showArrow()) {
+        on = muse::uicomponents::winSetBackdropBlur(m_view, rect, radius, dark);
+    }
+#endif
+    if (m_contentItem && m_contentItem->property("backdropBlur").toBool() != on) {
+        m_contentItem->setProperty("backdropBlur", on);
+    }
 }
 
 void PopupView::initCloseController()

@@ -55,6 +55,8 @@ Item {
         bottomPadding: isMultiline ? 8 : 0
 
         useSpacersAsSeparators: true
+        // GlideMix modern look: each group of buttons in its own capsule
+        capsuleGroups: !root.clocksOnly
         // The clocks row has no width limit: it only holds three fixed-size items
         maximumWidth: root.clocksOnly ? -1 : root.maximumWidth - prv.customizeButtonSpaceWidth
 
@@ -104,7 +106,7 @@ Item {
                 width: 28
                 height: width
 
-                backgroundRadius: 2
+                backgroundRadius: 7
 
                 iconFont: ui.theme.iconsFont
                 iconColor: Boolean(itemData) ? itemData.iconColor : ui.theme.fontPrimaryColor
@@ -120,7 +122,7 @@ Item {
                 width: 28
                 height: width
 
-                backgroundRadius: 2
+                backgroundRadius: 7
 
                 iconFont: ui.theme.iconsFont
             }
@@ -137,7 +139,7 @@ Item {
                 width: Boolean(itemData) ? Math.max(288, Math.min(itemData.meterSize, view.maximumWidth)) : 288
                 height: 28
 
-                backgroundRadius: 2
+                backgroundRadius: 7
 
                 volumeLevel: Boolean(itemData) ? itemData.level : 0
                 leftCurrentVolumePressure: Boolean(itemData) ? itemData.leftChannelPressure : -145
@@ -267,7 +269,7 @@ Item {
                 width: 28
                 height: width
 
-                backgroundRadius: 2
+                backgroundRadius: 7
 
                 meterStyle: Boolean(itemData) ? itemData.meterStyle : PlaybackMeterStyle.Default
 
@@ -327,7 +329,7 @@ Item {
                 width: 28
                 height: width
 
-                backgroundRadius: 2
+                backgroundRadius: 7
 
                 accentButton: Boolean(itemData) && itemData.isOn
                 enabled: Boolean(itemData) ? itemData.enabled : false
@@ -399,7 +401,21 @@ Item {
                 // SYNC / TEMPO fit 60; KEYLOCK needs a little more.
                 width: Boolean(itemData) && itemData.title.length > 5 ? 78 : 60
 
-                backgroundRadius: 2
+                // GlideMix modern look: a capsule, filled only when on,
+                // a thin outline when off (like the library pills).
+                id: textToggle
+                backgroundRadius: height / 2
+                transparent: !accentButton
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: !textToggle.accentButton
+                    color: "transparent"
+                    radius: height / 2
+                    border.width: 1
+                    border.color: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                                          ui.theme.fontPrimaryColor.b, ui.theme.isDark ? 0.22 : 0.30)
+                }
 
                 text: Boolean(itemData) ? itemData.title.toUpperCase() : ""
                 textFont: ui.theme.bodyBoldFont
@@ -420,7 +436,7 @@ Item {
                 height: 28
                 width: 28
 
-                backgroundRadius: 2
+                backgroundRadius: 7
                 text: ""
                 icon: IconCode.NONE
 

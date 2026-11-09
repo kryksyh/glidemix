@@ -209,11 +209,14 @@ if (OS_IS_MAC)
         internal/platform/macos/macoswindowlevelcontroller.h
         internal/platform/macos/macospopupviewclosecontroller.mm
         internal/platform/macos/macospopupviewclosecontroller.h
+        internal/platform/macos/macosbackdropblur.mm
+        internal/platform/macos/macosbackdropblur.h
         )
 
     set_source_files_properties(
         internal/platform/macos/macoswindowlevelcontroller.mm
         internal/platform/macos/macospopupviewclosecontroller.mm
+        internal/platform/macos/macosbackdropblur.mm
         PROPERTIES
         SKIP_UNITY_BUILD_INCLUSION ON
         SKIP_PRECOMPILE_HEADERS ON
@@ -224,7 +227,10 @@ if (OS_IS_WIN)
     target_sources(muse_uicomponents_qml PRIVATE
         internal/platform/win/winpopupviewclosecontroller.cpp
         internal/platform/win/winpopupviewclosecontroller.h
+        internal/platform/win/winbackdropblur.cpp
+        internal/platform/win/winbackdropblur.h
     )
+    target_link_libraries(muse_uicomponents_qml PRIVATE dwmapi)
 endif(OS_IS_WIN)
 
 if (${Qt6_VERSION} VERSION_GREATER_EQUAL 6.9)

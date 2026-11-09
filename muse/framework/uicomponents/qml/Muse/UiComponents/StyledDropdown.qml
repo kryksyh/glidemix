@@ -149,8 +149,19 @@ Item {
             border.width: ui.theme.borderWidth
             border.color: ui.theme.strokeColor
             color: ui.theme.buttonColor
-            radius: 3
+            radius: 6
             opacity: 0.7
+
+            //! GlideMix: a faint lighter top edge, a glass feel without blur
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                visible: parent.color.a > 0.01
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, ui.theme.isDark ? 0.10 : 0.30) }
+                    GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0) }
+                }
+            }
 
             NavigationFocusBorder { navigationCtrl: navCtrl }
         }

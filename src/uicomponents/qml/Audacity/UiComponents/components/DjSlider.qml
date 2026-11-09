@@ -1,10 +1,10 @@
 /*
  * GlideMix
  *
- * A StyledSlider in the DJ-fader look (mock A, chosen by Chris 2026-10-28):
- * a dark slot with the value in the accent colour, ticks along it, and a
- * ridged silver cap with a dark centre line. (A dark cap, like the transition
- * window's VOL fader, vanished against the dark track headers.) Behaviour
+ * A StyledSlider in the DJ-fader look, modern version (2026-11-09, after
+ * mock A of 2026-10-28): a thin rounded slot with the value in the accent
+ * colour, faint ticks, and a light rounded cap with a dark centre line. (A
+ * dark cap vanished against the dark track headers.) Behaviour
  * (drag, wheel, keys, accessibility) is StyledSlider's.
  */
 import QtQuick
@@ -22,8 +22,10 @@ StyledSlider {
     // middle of a bipolar control).
     property real fillOrigin: from
 
-    readonly property real capWidth: 12
-    readonly property real capHeight: Math.max(12, Math.min(26, availableHeight))
+    readonly property real capWidth: 24
+    readonly property color tickColor: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                                               ui.theme.fontPrimaryColor.b, 0.25)
+    readonly property real capHeight: Math.max(12, Math.min(16, availableHeight))
 
     implicitHeight: 22
 
@@ -52,28 +54,27 @@ StyledSlider {
                     y: 0
                     width: 1
                     height: index % 5 === 0 ? 4 : 2
-                    color: "#6e727c"
+                    color: root.tickColor
                 }
                 Rectangle {
                     x: tx - 0.5
                     y: parent.parent.height - height
                     width: 1
                     height: index % 5 === 0 ? 4 : 2
-                    color: "#6e727c"
+                    color: root.tickColor
                 }
             }
         }
 
-        // The slot.
+        // The slot: thin and rounded.
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             x: root.capWidth / 2 - 2
             width: parent.travel + 4
-            height: 5
-            radius: 1
-            color: "#0e0f12"
-            border.color: "#1f2126"
-            border.width: 1
+            height: 4
+            radius: 2
+            color: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                           ui.theme.fontPrimaryColor.b, 0.15)
         }
         // The value in it.
         Rectangle {
@@ -81,50 +82,40 @@ StyledSlider {
             visible: root.fillBackground
             x: Math.min(parent.originX, parent.valueX)
             width: Math.abs(parent.valueX - parent.originX)
-            height: 3
-            color: root.enabled ? ui.theme.accentColor : "#5a5d66"
+            height: 4
+            radius: 2
+            color: root.enabled ? ui.theme.accentColor : Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                                                                ui.theme.fontPrimaryColor.b, 0.3)
         }
     }
 
+    // GlideMix modern look: a glass capsule -- see-through, so the value
+    // colour shows through it, with a light rim and a sheen on top.
     handle: Rectangle {
         x: root.leftPadding + root.visualPosition * (root.availableWidth - width)
         y: root.topPadding + (root.availableHeight - height) / 2
         width: root.capWidth
         height: root.capHeight
-        radius: 2
-        color: root.pressed ? "#d4d6db" : (root.hovered ? "#c8cad0" : "#b4b7be")
-        border.color: "#111214"
+        radius: height / 2
+        // Stays clear glass while held (Chris): only the rim brightens.
+        color: ui.theme.isDark
+               ? Qt.rgba(1, 1, 1, (root.hovered || root.pressed) ? 0.20 : 0.16)
+               : Qt.rgba(1, 1, 1, (root.hovered || root.pressed) ? 0.6 : 0.5)
+        border.color: ui.theme.isDark ? Qt.rgba(1, 1, 1, root.pressed ? 0.8 : 0.55)
+                                      : Qt.rgba(0, 0, 0, root.pressed ? 0.6 : 0.45)
         border.width: 1
 
-        // Lit from above: the top half a shade lighter.
+        // the sheen on the top half
         Rectangle {
             x: 1
             y: 1
             width: parent.width - 2
             height: parent.height / 2 - 1
-            radius: 1
-            color: "#ffffff"
-            opacity: 0.18
-        }
-
-        // Ridges, then the centre line.
-        Column {
-            anchors.centerIn: parent
-            spacing: Math.max(2, (parent.height - 10) / 6)
-            Repeater {
-                model: 4
-                delegate: Rectangle {
-                    width: root.capWidth - 4
-                    height: 1
-                    color: "#7d8089"
-                }
+            radius: height / 2
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.45) }
+                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.05) }
             }
-        }
-        Rectangle {
-            anchors.centerIn: parent
-            width: root.capWidth - 2
-            height: 2
-            color: "#16171a"
         }
     }
 }

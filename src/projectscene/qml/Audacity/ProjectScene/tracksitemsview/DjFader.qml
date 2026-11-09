@@ -1,8 +1,8 @@
 /*
  * GlideMix
  *
- * A DJ-mixer fader in GlideMix's own look: a dark slot with ticks and a ridged
- * cap with a white centre line. Vertical for the channel faders, horizontal for
+ * A DJ-mixer fader in GlideMix's modern look: a thin slot with the value in
+ * the channel's colour and a glass capsule cap (see-through, light rim). Vertical for the channel faders, horizontal for
  * the crossfader. Drag or click to move, double-click to reset, arrow keys step.
  */
 import QtQuick
@@ -14,6 +14,8 @@ Item {
     property real defaultValue: 0.5
     property bool horizontal: false
     property string label: ""
+    // The value's colour in the slot.
+    property color accent: "#926BFF"
 
     signal moved(real v)
     signal grabbed(bool down)
@@ -60,6 +62,7 @@ Item {
     onShownChanged: canvas.requestPaint()
     onWidthChanged: canvas.requestPaint()
     onHeightChanged: canvas.requestPaint()
+    onAccentChanged: canvas.requestPaint()
 
     Canvas {
         id: canvas
@@ -78,6 +81,8 @@ Item {
         }
 
         onPaint: {
+            // GlideMix modern look: a thin rounded slot, the value in the
+            // accent colour, and a light rounded cap with a dark centre line.
             var g = getContext("2d")
             var w = width, h = height, horiz = root.horizontal, v = root.shown
             g.reset()
@@ -85,72 +90,75 @@ Item {
             var pad = root.pad, travel = L - pad * 2
             var mid = T / 2
 
-            // ticks
-            g.fillStyle = "#6c6f73"
+            // ticks, faint
+            g.fillStyle = "rgba(255,255,255,0.18)"
             for (var i = 0; i <= 10; i++) {
-                var p = pad + travel * i / 10, len = i % 5 === 0 ? 7 : 4
+                var p = pad + travel * i / 10, len = i % 5 === 0 ? 6 : 3
                 if (horiz) {
-                    g.fillRect(p - 0.5, mid - 11 - len, 1, len)
-                    g.fillRect(p - 0.5, mid + 11, 1, len)
+                    g.fillRect(p - 0.5, mid - 10 - len, 1, len)
+                    g.fillRect(p - 0.5, mid + 10, 1, len)
                 } else {
-                    g.fillRect(mid - 11 - len, p - 0.5, len, 1)
-                    g.fillRect(mid + 11, p - 0.5, len, 1)
+                    g.fillRect(mid - 10 - len, p - 0.5, len, 1)
+                    g.fillRect(mid + 10, p - 0.5, len, 1)
                 }
             }
 
-            // slot plate
-            var sx = horiz ? pad - 6 : mid - 4, sy = horiz ? mid - 4 : pad - 6
-            var sw = horiz ? travel + 12 : 8, sh = horiz ? 8 : travel + 12
-            var gr = horiz ? g.createLinearGradient(0, sy, 0, sy + sh) : g.createLinearGradient(sx, 0, sx + sw, 0)
-            gr.addColorStop(0, "#050506")
-            gr.addColorStop(0.5, "#141518")
-            gr.addColorStop(1, "#2a2c30")
-            g.fillStyle = gr
-            roundRect(g, sx, sy, sw, sh, 3)
+            // slot
+            var sw = 4
+            g.fillStyle = "#2a2c31"
+            if (horiz) {
+                roundRect(g, pad - 2, mid - sw / 2, travel + 4, sw, sw / 2)
+            } else {
+                roundRect(g, mid - sw / 2, pad - 2, sw, travel + 4, sw / 2)
+            }
             g.fill()
 
-            // cap
+            // the value: from the bottom on a channel fader, from the centre
+            // on the crossfader
             var pos = pad + travel * (horiz ? v : 1 - v)
-            var capL = horiz ? 16 : 22, capT = horiz ? 30 : 34
+            var from = horiz ? pad + travel * 0.5 : pad + travel
+            var lo = Math.min(from, pos), len2 = Math.abs(pos - from)
+            if (len2 > 0.5) {
+                g.fillStyle = root.accent
+                if (horiz) {
+                    roundRect(g, lo, mid - sw / 2, len2, sw, sw / 2)
+                } else {
+                    roundRect(g, mid - sw / 2, lo, sw, len2, sw / 2)
+                }
+                g.fill()
+            }
+
+            // cap: a glass capsule -- see-through, a light rim, a sheen
+            var capL = horiz ? 16 : 14, capT = horiz ? 30 : 34
             var cx = horiz ? pos - capL / 2 : mid - capT / 2, cy = horiz ? mid - capT / 2 : pos - capL / 2
             var cw = horiz ? capL : capT, ch = horiz ? capT : capL
+            var cr = Math.min(cw, ch) / 2
             g.save()
-            g.shadowColor = "rgba(0,0,0,0.8)"
-            g.shadowBlur = 8
-            g.shadowOffsetY = 4
-            g.fillStyle = "#101113"
-            roundRect(g, cx, cy, cw, ch, 3)
+            g.shadowColor = "rgba(0,0,0,0.35)"
+            g.shadowBlur = 6
+            g.shadowOffsetY = 2
+            g.fillStyle = "rgba(255,255,255,0.16)"
+            roundRect(g, cx, cy, cw, ch, cr)
             g.fill()
             g.restore()
-            gr = g.createLinearGradient(cx, cy, cx, cy + ch)
-            gr.addColorStop(0, "#4a4d52")
-            gr.addColorStop(0.18, "#26282b")
-            gr.addColorStop(0.82, "#17181a")
-            gr.addColorStop(1, "#0a0a0b")
+            var gr = horiz ? g.createLinearGradient(cx, cy, cx + cw, cy) : g.createLinearGradient(cx, cy, cx, cy + ch)
+            gr.addColorStop(0, "rgba(255,255,255,0.40)")
+            gr.addColorStop(0.5, "rgba(255,255,255,0.04)")
+            gr.addColorStop(1, "rgba(255,255,255,0)")
             g.fillStyle = gr
-            roundRect(g, cx, cy, cw, ch, 3)
+            roundRect(g, cx, cy, cw, ch, cr)
             g.fill()
-
-            // ridges across the grip
-            g.strokeStyle = "rgba(255,255,255,0.09)"
             g.lineWidth = 1
-            for (var k = 1; k < 6; k++) {
-                var o = (horiz ? cw : ch) * k / 6
-                g.beginPath()
-                if (horiz) {
-                    g.moveTo(cx + o, cy + 3); g.lineTo(cx + o, cy + ch - 3)
-                } else {
-                    g.moveTo(cx + 3, cy + o); g.lineTo(cx + cw - 3, cy + o)
-                }
-                g.stroke()
-            }
+            g.strokeStyle = "rgba(255,255,255,0.6)"
+            roundRect(g, cx + 0.5, cy + 0.5, cw - 1, ch - 1, cr - 0.5)
+            g.stroke()
 
             // centre line
-            g.fillStyle = "#f4f2ec"
+            g.fillStyle = "rgba(255,255,255,0.9)"
             if (horiz) {
-                g.fillRect(cx + cw / 2 - 1, cy + 2, 2, ch - 4)
+                g.fillRect(cx + cw / 2 - 0.75, cy + 6, 1.5, ch - 12)
             } else {
-                g.fillRect(cx + 2, cy + ch / 2 - 1, cw - 4, 2)
+                g.fillRect(cx + 6, cy + ch / 2 - 0.75, cw - 12, 1.5)
             }
         }
     }
@@ -168,16 +176,18 @@ Item {
         anchors.top: canvas.bottom
         anchors.topMargin: 1
         anchors.horizontalCenter: canvas.horizontalCenter
-        text: root.label
+        text: (root.held || faderMouse.containsMouse) && root.enabled ? Math.round(root.shown * 100) + "%" : root.label
         visible: root.label !== ""
-        color: "#9a9890"
+        color: (root.held || faderMouse.containsMouse) && root.enabled ? "#ECECEF" : "#9a9890"
         font.pixelSize: 10
         font.letterSpacing: 1.4
         font.bold: true
     }
 
     MouseArea {
+        id: faderMouse
         anchors.fill: canvas
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         preventStealing: true
         function valueAt(mouse) {

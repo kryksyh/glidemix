@@ -68,7 +68,8 @@ DropdownView {
     x: 0
     y: 0
 
-    padding: 8
+    // GlideMix: on Windows the window is exactly the list (system backdrop)
+    padding: Qt.platform.os === "windows" ? 0 : 8
     margins: 0
 
     showArrow: false

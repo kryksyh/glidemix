@@ -35,6 +35,25 @@ import Audacity.UiComponents
 Item {
     id: root
 
+    // GlideMix modern look: a capsule button for the toolbar. Purple fill
+    // only when on; a thin outline when off (the fill comes back on hover).
+    component Pill: FlatButton {
+        id: pill
+        property bool on: false
+        accentButton: on
+        transparent: !on
+        backgroundRadius: height / 2
+        Rectangle {
+            anchors.fill: parent
+            visible: !pill.on
+            color: "transparent"
+            radius: height / 2
+            border.width: 1
+            border.color: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                                  ui.theme.fontPrimaryColor.b, ui.theme.isDark ? 0.22 : 0.30)
+        }
+    }
+
     // GlideMix: files and folders dragged in from Finder, dropped anywhere on
     // the library that is not a sidebar list -- added to the library, and to
     // the playlist or crate being shown. Underneath everything, so the
@@ -1001,7 +1020,8 @@ Item {
 
             // Collapsible header, as in the fork: says what is filtered even when
             // collapsed, so a hidden filter never makes the library look broken.
-            FlatButton {
+            // GlideMix modern look: a pill like the buttons beside it.
+            Pill {
                 id: keyWheelButton
                 Layout.fillWidth: true
 
@@ -2350,6 +2370,196 @@ Item {
             Layout.fillHeight: true
             spacing: 6
 
+            // GlideMix (Chris, 2026-11-09): the buttons sit on top, level with the
+            // Key Wheel button, so they read as one row; the search sits under them.
+            // ---- Analysis stats bar -- real mixxx's own DlgAnalysis
+            // (library/analysis/dlganalysis.cpp/.ui): New/All scope,
+            // Select All, and a real (not just a single blocking dialog)
+            // stoppable batch run with live progress, previously entirely
+            // absent here -- the brief pointed directly at real mixxx's own
+            // screenshots of this exact bar and the empty strip above this
+            // panel's own header where it belongs. See
+            // MixHouseTrackListModel::startBatchAnalysis's own comment for
+            // the two deliberate simplifications from the literal upstream
+            // design (a timer-driven queue instead of a worker-thread pool;
+            // operates on the visible Tracks table's own selection instead
+            // of a separate hidden analysis-only list).
+            RowLayout {
+                id: analysisRow
+                Layout.fillWidth: true
+                spacing: 8
+
+                // Real mixxx: radioButtonRecentlyAdded/radioButtonAllSongs,
+                // a QButtonGroup (dlganalysis.cpp) -- reimplemented here as
+                // two accent-highlighted FlatButtons (a plain QtQuick
+                // RadioButton's own bullet-and-ring look doesn't match this
+                // panel's flat Audacity styling anywhere else) rather than
+                // real mixxx's own native radio widgets.
+                // GlideMix: All by default. With New, a library already analysed
+                // gave Select All nothing to select, and it looked broken.
+                property bool analysisScopeIsNew: false
+
+                Pill {
+                    text: qsTrc("mixhouse", "New")
+                    on: analysisRow.analysisScopeIsNew
+                    enabled: !tracksModel.analyzing
+                    onClicked: analysisRow.analysisScopeIsNew = true
+                }
+                Pill {
+                    text: qsTrc("mixhouse", "All")
+                    on: !analysisRow.analysisScopeIsNew
+                    enabled: !tracksModel.analyzing
+                    onClicked: analysisRow.analysisScopeIsNew = false
+                }
+
+                Pill {
+                    text: qsTrc("mixhouse", "Select All")
+                    enabled: !tracksModel.analyzing
+                    onClicked: {
+                        var rows = tracksModel.rowsForAnalysisScope(analysisRow.analysisScopeIsNew)
+                        if (rows.length === 0 && analysisRow.analysisScopeIsNew) {
+                            // No new tracks: select them all instead of nothing.
+                            analysisRow.analysisScopeIsNew = false
+                            rows = tracksModel.rowsForAnalysisScope(false)
+                        }
+                        root.selectedRows = rows
+                        root.currentRow = rows.length > 0 ? rows[0] : -1
+                        // GlideMix: "All" means every song in the view, not the 2000 rows
+                        // loaded so far (Chris: "it takes only 2000"). Analyze resolves the
+                        // whole view from this flag.
+                        root.allMatchingSelected = !analysisRow.analysisScopeIsNew && rows.length > 0
+                    }
+                }
+
+                // GlideMix: Duplicates -- select every copy but the best of
+                // each song, ready for Remove from Library / Delete from Disk.
+                Pill {
+                    visible: tracksModel.duplicatesView
+                    text: qsTrc("mixhouse", "Select extra copies")
+                    toolTipTitle: qsTrc("mixhouse", "Select every copy except the best one of each song")
+                    toolTipDescription: qsTrc("mixhouse", "The best copy is listed first: lossless before MP3, then the higher bitrate. Then right-click > Remove from Library or Delete from Disk.")
+                    enabled: tracksModel.duplicateGroups > 0
+                    onClicked: {
+                        var rows = tracksModel.duplicateExtraRows()
+                        root.selectedRows = rows
+                        root.currentRow = rows.length > 0 ? rows[0] : -1
+                    }
+                }
+
+                StyledTextLabel {
+                    visible: tracksModel.duplicatesView
+                    text: tracksModel.duplicateGroups > 0
+                          ? (tracksModel.duplicateGroups === 1 ? qsTrc("mixhouse", "1 song is in your collection more than once")
+                             : qsTrc("mixhouse", "%1 songs are in your collection more than once").arg(tracksModel.duplicateGroups))
+                          : qsTrc("mixhouse", "No duplicates found")
+                }
+
+                Pill {
+                    // Real mixxx: pushButtonAnalyze, toggling text/role
+                    // between "Analyze" and "Stop Analysis"
+                    // (dlganalysis.cpp's slotAnalysisActive) -- enabled only
+                    // with a selection or while already running, same as
+                    // pushButtonAnalyze->setEnabled(tracksSelected ||
+                    // m_bAnalysisActive) there.
+                    text: tracksModel.analyzing ? qsTrc("mixhouse", "Stop Analysis") : qsTrc("mixhouse", "Analyze")
+                    on: tracksModel.analyzing
+                    enabled: tracksModel.analyzing || root.selectedRows.length > 0
+                    onClicked: {
+                        if (tracksModel.analyzing) {
+                            tracksModel.stopBatchAnalysis()
+                        } else {
+                            tracksModel.startBatchAnalysis(root.selectedRows, root.allMatchingSelected)
+                            // GlideMix: drop the selection once analysis starts,
+                            // so a later drag can't carry every track onto
+                            // the timeline by mistake.
+                            root.clearRowSelection()
+                        }
+                    }
+                }
+
+                // GlideMix (Marc Mont, Chris): the library preview's own volume --
+                // it was often louder than the mix playing under it.
+                StyledTextLabel {
+                    Layout.leftMargin: 8
+                    text: qsTrc("mixhouse", "Preview volume")
+                    opacity: 0.7
+                }
+                DjSlider {
+                    id: previewVolumeSlider
+                    Layout.preferredWidth: 130
+                    from: 0
+                    to: 1
+                    // StyledSlider steps in whole units: on 0..1 that left only
+                    // 0 and 1, so the middle snapped to silence.
+                    stepSize: 0.01
+                    value: tracksModel.previewVolume
+                    onMoved: tracksModel.previewVolume = value
+                    ToolTip.visible: hovered || pressed
+                    ToolTip.text: qsTrc("mixhouse", "Preview volume: %1%").arg(Math.round(value * 100))
+                }
+
+                // GlideMix Match and Related (Chris's placement): both compare
+                // against the song under the playhead.
+                Pill {
+                    id: matchButton
+                    Layout.leftMargin: 16
+                    text: tracksModel.matchOn && tracksModel.referenceText !== ""
+                          ? qsTrc("mixhouse", "Match: %1").arg(tracksModel.referenceText)
+                          : qsTrc("mixhouse", "Match")
+                    on: tracksModel.matchOn
+                    toolTipTitle: qsTrc("mixhouse", "Match")
+                    toolTipDescription: qsTrc("mixhouse", "Lights the keys of songs that mix with the song under the playhead.")
+                    onClicked: tracksModel.matchOn = !tracksModel.matchOn
+                }
+                // The rules for Match and Related (one set for both).
+                Pill {
+                    id: matchSettingsButton
+                    Layout.leftMargin: -4
+                    icon: IconCode.SETTINGS_COG
+                    toolTipTitle: qsTrc("mixhouse", "Match and Related settings")
+                    toolTipDescription: qsTrc("mixhouse", "Which songs match the song under the playhead.")
+                    onClicked: matchSettings.openWith(tracksModel.relatedRules, tracksModel.customTagNames())
+                    RelatedSettingsPopup {
+                        id: matchSettings
+                        onApplied: function(rules) { tracksModel.relatedRules = rules }
+                    }
+                }
+                Pill {
+                    Layout.leftMargin: 8
+                    visible: !root.relatedMode
+                    text: qsTrc("mixhouse", "Related")
+                    toolTipTitle: qsTrc("mixhouse", "Related")
+                    toolTipDescription: qsTrc("mixhouse", "Opens the Related tab: the songs that go with the song under the playhead.")
+                    onClicked: tracksModel.openRelatedTab()
+                }
+                StyledTextLabel {
+                    Layout.leftMargin: 8
+                    visible: root.relatedMode
+                    font: ui.theme.bodyBoldFont
+                    text: tracksModel.referenceText !== ""
+                          ? qsTrc("mixhouse", "Related to %1").arg(tracksModel.referenceText)
+                          : qsTrc("mixhouse", "Put the playhead on a song in your mix")
+                }
+
+                StyledTextLabel {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Qt.AlignLeft
+                    visible: tracksModel.analyzing || tracksModel.analysisMessage.length > 0
+                    // Real mixxx: DlgAnalysis::onTrackAnalysisSchedulerProgress's
+                    // own "Analyzing %1% %2/%3" wording -- see
+                    // MixHouseTrackListModel::startBatchAnalysis's own
+                    // comment for why the percentage here is coarser
+                    // (whole-track, not real mixxx's own sub-track decode
+                    // progress).
+                    text: !tracksModel.analyzing ? tracksModel.analysisMessage
+                          : tracksModel.analyzeTotal > 0
+                          ? qsTrc("mixhouse", "Analyzing %1% %2/%3")
+                                .arg(Math.round(100 * tracksModel.analyzeProcessed / tracksModel.analyzeTotal))
+                                .arg(tracksModel.analyzeProcessed).arg(tracksModel.analyzeTotal)
+                          : ""
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
@@ -2583,194 +2793,6 @@ Item {
                     onMoved: tracksModel.setLibraryRowHeight(Math.round(value))
                     ToolTip.visible: hovered
                     ToolTip.text: qsTrc("mixhouse", "Row height")
-                }
-            }
-
-            // ---- Analysis stats bar -- real mixxx's own DlgAnalysis
-            // (library/analysis/dlganalysis.cpp/.ui): New/All scope,
-            // Select All, and a real (not just a single blocking dialog)
-            // stoppable batch run with live progress, previously entirely
-            // absent here -- the brief pointed directly at real mixxx's own
-            // screenshots of this exact bar and the empty strip above this
-            // panel's own header where it belongs. See
-            // MixHouseTrackListModel::startBatchAnalysis's own comment for
-            // the two deliberate simplifications from the literal upstream
-            // design (a timer-driven queue instead of a worker-thread pool;
-            // operates on the visible Tracks table's own selection instead
-            // of a separate hidden analysis-only list).
-            RowLayout {
-                id: analysisRow
-                Layout.fillWidth: true
-                spacing: 8
-
-                // Real mixxx: radioButtonRecentlyAdded/radioButtonAllSongs,
-                // a QButtonGroup (dlganalysis.cpp) -- reimplemented here as
-                // two accent-highlighted FlatButtons (a plain QtQuick
-                // RadioButton's own bullet-and-ring look doesn't match this
-                // panel's flat Audacity styling anywhere else) rather than
-                // real mixxx's own native radio widgets.
-                // GlideMix: All by default. With New, a library already analysed
-                // gave Select All nothing to select, and it looked broken.
-                property bool analysisScopeIsNew: false
-
-                FlatButton {
-                    text: qsTrc("mixhouse", "New")
-                    accentButton: analysisRow.analysisScopeIsNew
-                    enabled: !tracksModel.analyzing
-                    onClicked: analysisRow.analysisScopeIsNew = true
-                }
-                FlatButton {
-                    text: qsTrc("mixhouse", "All")
-                    accentButton: !analysisRow.analysisScopeIsNew
-                    enabled: !tracksModel.analyzing
-                    onClicked: analysisRow.analysisScopeIsNew = false
-                }
-
-                FlatButton {
-                    text: qsTrc("mixhouse", "Select All")
-                    enabled: !tracksModel.analyzing
-                    onClicked: {
-                        var rows = tracksModel.rowsForAnalysisScope(analysisRow.analysisScopeIsNew)
-                        if (rows.length === 0 && analysisRow.analysisScopeIsNew) {
-                            // No new tracks: select them all instead of nothing.
-                            analysisRow.analysisScopeIsNew = false
-                            rows = tracksModel.rowsForAnalysisScope(false)
-                        }
-                        root.selectedRows = rows
-                        root.currentRow = rows.length > 0 ? rows[0] : -1
-                        // GlideMix: "All" means every song in the view, not the 2000 rows
-                        // loaded so far (Chris: "it takes only 2000"). Analyze resolves the
-                        // whole view from this flag.
-                        root.allMatchingSelected = !analysisRow.analysisScopeIsNew && rows.length > 0
-                    }
-                }
-
-                // GlideMix: Duplicates -- select every copy but the best of
-                // each song, ready for Remove from Library / Delete from Disk.
-                FlatButton {
-                    visible: tracksModel.duplicatesView
-                    text: qsTrc("mixhouse", "Select extra copies")
-                    toolTipTitle: qsTrc("mixhouse", "Select every copy except the best one of each song")
-                    toolTipDescription: qsTrc("mixhouse", "The best copy is listed first: lossless before MP3, then the higher bitrate. Then right-click > Remove from Library or Delete from Disk.")
-                    enabled: tracksModel.duplicateGroups > 0
-                    onClicked: {
-                        var rows = tracksModel.duplicateExtraRows()
-                        root.selectedRows = rows
-                        root.currentRow = rows.length > 0 ? rows[0] : -1
-                    }
-                }
-
-                StyledTextLabel {
-                    visible: tracksModel.duplicatesView
-                    text: tracksModel.duplicateGroups > 0
-                          ? (tracksModel.duplicateGroups === 1 ? qsTrc("mixhouse", "1 song is in your collection more than once")
-                             : qsTrc("mixhouse", "%1 songs are in your collection more than once").arg(tracksModel.duplicateGroups))
-                          : qsTrc("mixhouse", "No duplicates found")
-                }
-
-                FlatButton {
-                    // Real mixxx: pushButtonAnalyze, toggling text/role
-                    // between "Analyze" and "Stop Analysis"
-                    // (dlganalysis.cpp's slotAnalysisActive) -- enabled only
-                    // with a selection or while already running, same as
-                    // pushButtonAnalyze->setEnabled(tracksSelected ||
-                    // m_bAnalysisActive) there.
-                    text: tracksModel.analyzing ? qsTrc("mixhouse", "Stop Analysis") : qsTrc("mixhouse", "Analyze")
-                    accentButton: tracksModel.analyzing
-                    enabled: tracksModel.analyzing || root.selectedRows.length > 0
-                    onClicked: {
-                        if (tracksModel.analyzing) {
-                            tracksModel.stopBatchAnalysis()
-                        } else {
-                            tracksModel.startBatchAnalysis(root.selectedRows, root.allMatchingSelected)
-                            // GlideMix: drop the selection once analysis starts,
-                            // so a later drag can't carry every track onto
-                            // the timeline by mistake.
-                            root.clearRowSelection()
-                        }
-                    }
-                }
-
-                // GlideMix (Marc Mont, Chris): the library preview's own volume --
-                // it was often louder than the mix playing under it.
-                StyledTextLabel {
-                    Layout.leftMargin: 8
-                    text: qsTrc("mixhouse", "Preview volume")
-                    opacity: 0.7
-                }
-                DjSlider {
-                    id: previewVolumeSlider
-                    Layout.preferredWidth: 130
-                    from: 0
-                    to: 1
-                    // StyledSlider steps in whole units: on 0..1 that left only
-                    // 0 and 1, so the middle snapped to silence.
-                    stepSize: 0.01
-                    value: tracksModel.previewVolume
-                    onMoved: tracksModel.previewVolume = value
-                    ToolTip.visible: hovered || pressed
-                    ToolTip.text: qsTrc("mixhouse", "Preview volume: %1%").arg(Math.round(value * 100))
-                }
-
-                // GlideMix Match and Related (Chris's placement): both compare
-                // against the song under the playhead.
-                FlatButton {
-                    id: matchButton
-                    Layout.leftMargin: 16
-                    text: tracksModel.matchOn && tracksModel.referenceText !== ""
-                          ? qsTrc("mixhouse", "Match: %1").arg(tracksModel.referenceText)
-                          : qsTrc("mixhouse", "Match")
-                    accentButton: tracksModel.matchOn
-                    toolTipTitle: qsTrc("mixhouse", "Match")
-                    toolTipDescription: qsTrc("mixhouse", "Lights the keys of songs that mix with the song under the playhead.")
-                    onClicked: tracksModel.matchOn = !tracksModel.matchOn
-                }
-                // The rules for Match and Related (one set for both).
-                FlatButton {
-                    id: matchSettingsButton
-                    Layout.leftMargin: -4
-                    icon: IconCode.SETTINGS_COG
-                    toolTipTitle: qsTrc("mixhouse", "Match and Related settings")
-                    toolTipDescription: qsTrc("mixhouse", "Which songs match the song under the playhead.")
-                    onClicked: matchSettings.openWith(tracksModel.relatedRules, tracksModel.customTagNames())
-                    RelatedSettingsPopup {
-                        id: matchSettings
-                        onApplied: function(rules) { tracksModel.relatedRules = rules }
-                    }
-                }
-                FlatButton {
-                    Layout.leftMargin: 8
-                    visible: !root.relatedMode
-                    text: qsTrc("mixhouse", "Related")
-                    toolTipTitle: qsTrc("mixhouse", "Related")
-                    toolTipDescription: qsTrc("mixhouse", "Opens the Related tab: the songs that go with the song under the playhead.")
-                    onClicked: tracksModel.openRelatedTab()
-                }
-                StyledTextLabel {
-                    Layout.leftMargin: 8
-                    visible: root.relatedMode
-                    font: ui.theme.bodyBoldFont
-                    text: tracksModel.referenceText !== ""
-                          ? qsTrc("mixhouse", "Related to %1").arg(tracksModel.referenceText)
-                          : qsTrc("mixhouse", "Put the playhead on a song in your mix")
-                }
-
-                StyledTextLabel {
-                    Layout.fillWidth: true
-                    horizontalAlignment: Qt.AlignLeft
-                    visible: tracksModel.analyzing || tracksModel.analysisMessage.length > 0
-                    // Real mixxx: DlgAnalysis::onTrackAnalysisSchedulerProgress's
-                    // own "Analyzing %1% %2/%3" wording -- see
-                    // MixHouseTrackListModel::startBatchAnalysis's own
-                    // comment for why the percentage here is coarser
-                    // (whole-track, not real mixxx's own sub-track decode
-                    // progress).
-                    text: !tracksModel.analyzing ? tracksModel.analysisMessage
-                          : tracksModel.analyzeTotal > 0
-                          ? qsTrc("mixhouse", "Analyzing %1% %2/%3")
-                                .arg(Math.round(100 * tracksModel.analyzeProcessed / tracksModel.analyzeTotal))
-                                .arg(tracksModel.analyzeProcessed).arg(tracksModel.analyzeTotal)
-                          : ""
                 }
             }
 

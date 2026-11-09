@@ -34,6 +34,7 @@ Rectangle {
     property QtObject frameCpp
     readonly property QtObject titleBarCpp: Boolean(frameCpp) ? frameCpp.actualTitleBar : null
     readonly property int nonContentsHeight: titleBar.height + tabBar.height + stackLayout.anchors.topMargin
+                                             + root.cardGap
     property int titleBarNavigationPanelOrder: 1
     //! ---
 
@@ -42,7 +43,23 @@ Rectangle {
     readonly property bool hasTabBar: frameModel.titleBarAllowed && (prv.tabsModel.numTabs > 1 || frameModel.isHorizontalPanel)
 
     anchors.fill: parent
-    color: ui.theme.backgroundPrimaryColor
+
+    //! GlideMix modern look: every panel is a rounded card with a small dark
+    //! gap around it. The corners are four small pieces in the gap colour,
+    //! not a mask over the whole panel, so nothing extra is drawn per frame.
+    readonly property int cardGap: frameModel.isPanel ? 4 : 0
+    readonly property int cardRadius: 8
+    readonly property color gapColor: ui.theme.isDark ? ui.theme.backgroundQuarternaryColor : ui.theme.backgroundSecondaryColor
+    color: frameModel.isPanel ? gapColor : ui.theme.backgroundPrimaryColor
+
+    Rectangle {
+        id: card
+        anchors.fill: parent
+        anchors.margins: root.cardGap
+        radius: root.cardRadius
+        color: ui.theme.backgroundPrimaryColor
+        visible: frameModel.isPanel
+    }
 
     onFrameCppChanged: {
         if (Boolean(frameCpp)) {
@@ -85,7 +102,9 @@ Rectangle {
         id: titleBar
 
         anchors.top: parent.top
-        width: parent.width
+        anchors.topMargin: root.cardGap
+        x: root.cardGap
+        width: parent.width - 2 * root.cardGap
         height: visible ? implicitHeight : 0
 
         visible: root.hasTitleBar
@@ -120,7 +139,9 @@ Rectangle {
         id: tabBar
 
         anchors.top: parent.top
-        width: parent.width
+        anchors.topMargin: root.cardGap
+        x: root.cardGap
+        width: parent.width - 2 * root.cardGap
         height: visible ? 35 : 0
 
         visible: root.hasTabBar
@@ -176,10 +197,12 @@ Rectangle {
 
         anchors.top: tabBar.visible ? tabBar.bottom
                                     : titleBar.visible ? titleBar.bottom : parent.top
-        anchors.topMargin: tabBar.visible ? 12 : 0
+        anchors.topMargin: tabBar.visible ? 12 : (titleBar.visible ? 0 : root.cardGap)
         anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.cardGap
 
-        width: parent.width
+        x: root.cardGap
+        width: parent.width - 2 * root.cardGap
 
         currentIndex: {
             var currentDockUniqueName = frameModel.currentDockUniqueName
@@ -212,6 +235,41 @@ Rectangle {
 
             color: ui.theme.accentColor
             opacity: 0.3
+        }
+    }
+
+    //! GlideMix: the card's rounded corners, drawn over the panel's content.
+    Repeater {
+        model: 4
+        delegate: Canvas {
+            id: corner
+            required property int index
+            readonly property bool atRight: index === 1 || index === 3
+            readonly property bool atBottom: index >= 2
+            width: root.cardRadius
+            height: root.cardRadius
+            x: atRight ? root.width - root.cardGap - width : root.cardGap
+            y: atBottom ? root.height - root.cardGap - height : root.cardGap
+            z: 1000
+            antialiasing: true
+            visible: frameModel.isPanel
+
+            readonly property color gapFill: root.gapColor
+            onGapFillChanged: requestPaint()
+
+            onPaint: {
+                var g = getContext("2d")
+                var r = width
+                g.reset()
+                g.fillStyle = gapFill
+                // the square, minus a circle centred on the card's inner corner
+                g.fillRect(0, 0, r, r)
+                g.globalCompositeOperation = "destination-out"
+                g.beginPath()
+                g.arc(atRight ? 0 : r, atBottom ? 0 : r, r, 0, 2 * Math.PI, false)
+                g.closePath()
+                g.fill()
+            }
         }
     }
 }

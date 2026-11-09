@@ -212,7 +212,7 @@ DockPage {
 
             // GlideMix: the clocks (timecode, BPM, time signature) sit
             // centered under Audio setup and Music library.
-            thickness: 76
+            thickness: 84
 
             Column {
                 spacing: 4
@@ -226,13 +226,46 @@ DockPage {
                     navigationPanel.order: 2
                 }
 
-                PlaybackToolBar {
+                // GlideMix modern look: one capsule display -- the clocks,
+                // then key, energy, song n/N, CPU and the play light.
+                Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
+                    width: displayRow.width + 16
+                    height: 40
+                    radius: 12
+                    color: ui.theme.backgroundQuarternaryColor
+                    border.width: 1
+                    border.color: ui.theme.strokeColor
 
-                    clocksOnly: true
+                    // a faint lighter top edge (no blur)
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: parent.radius - 1
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.05) }
+                            GradientStop { position: 0.4; color: Qt.rgba(1, 1, 1, 0) }
+                        }
+                    }
 
-                    navigationPanel.section: root.topToolKeyNavSec
-                    navigationPanel.order: 3
+                    Row {
+                        id: displayRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        PlaybackToolBar {
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            clocksOnly: true
+
+                            navigationPanel.section: root.topToolKeyNavSec
+                            navigationPanel.order: 3
+                        }
+
+                        MixHouseNowPlaying {
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
                 }
             }
         },

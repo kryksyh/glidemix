@@ -1,10 +1,10 @@
 /*
  * GlideMix
  *
- * A DJ-mixer knob in GlideMix's own look: a knurled rubber skirt and a white
- * pointer that turn, under a satin cap whose sheen and highlight stay put.
- * `big` adds the metal centre and starts the value ring at the left end (TRIM,
- * LEVEL); otherwise the ring grows from the top (EQ, COLOR).
+ * A DJ-mixer knob in GlideMix's modern look: a flat disc with a white
+ * pointer, and a thin arc in the channel's colour for the value. `big` starts
+ * the arc at the left end (TRIM, LEVEL); otherwise it grows from the top
+ * (EQ, COLOR). While turned or hovered the label shows the value.
  *
  * Drag up or down to turn, double-click to reset, arrow keys step.
  */
@@ -38,6 +38,20 @@ Item {
     property bool held: false
     property real local: 0
     readonly property real shown: held ? local : value
+
+    // The value under the label while turning: centred knobs (EQ at 0.5,
+    // COLOR) from -100 to +100, the rest 0-100 %. Set to say it in units.
+    property var formatValue: null
+    function valueText() {
+        if (formatValue) {
+            return formatValue(shown)
+        }
+        if (defaultValue === 0.5) {
+            var c = Math.round((shown - 0.5) * 200)
+            return (c > 0 ? "+" : "") + c
+        }
+        return Math.round(shown * 100) + "%"
+    }
 
     function begin() {
         releaseTimer.stop()
@@ -75,109 +89,67 @@ Item {
         antialiasing: true
 
         onPaint: {
+            // GlideMix modern look: a flat disc, a thin coloured arc for the
+            // value and a white pointer (was a knurled rubber knob).
             var g = getContext("2d")
             var s = root.size, r = s / 2, cx = r, cy = r
             g.reset()
 
-            // value ring on the faceplate
-            var ringR = r - 2
-            g.lineWidth = 2
-            g.lineCap = "round"
-            g.strokeStyle = "#2e3135"
-            g.beginPath()
-            g.arc(cx, cy, ringR, (root.minAngle - 90) * Math.PI / 180, (root.maxAngle - 90) * Math.PI / 180, false)
-            g.stroke()
+            var ringW = Math.max(2, s * 0.06)
+            var ringR = r - ringW / 2 - 0.5
             var a = root.minAngle + root.shown * (root.maxAngle - root.minAngle)
             var zero = root.big ? root.minAngle : 0
-            if (Math.abs(a - zero) > 0.5) {
+            var rad = function(d) { return (d - 90) * Math.PI / 180 }
+
+            // the track the arc runs in
+            g.lineCap = "round"
+            g.lineWidth = ringW
+            g.strokeStyle = "#2a2c31"
+            g.beginPath()
+            g.arc(cx, cy, ringR, rad(root.minAngle), rad(root.maxAngle), false)
+            g.stroke()
+            // the value
+            if (Math.abs(a - zero) > 0.5 && root.accent.a > 0) {
                 g.strokeStyle = root.accent
                 g.beginPath()
-                g.arc(cx, cy, ringR, (Math.min(zero, a) - 90) * Math.PI / 180, (Math.max(zero, a) - 90) * Math.PI / 180, false)
+                g.arc(cx, cy, ringR, rad(Math.min(zero, a)), rad(Math.max(zero, a)), false)
                 g.stroke()
             }
 
-            // drop shadow
-            var kr = r * 0.74
+            // the disc, with a soft shadow and a faint lighter top edge
+            var kr = r - ringW - Math.max(2, s * 0.07)
             g.save()
-            g.shadowColor = "rgba(0,0,0,0.75)"
-            g.shadowBlur = s * 0.12
-            g.shadowOffsetY = s * 0.06
-            g.fillStyle = "#0c0d0e"
+            g.shadowColor = "rgba(0,0,0,0.45)"
+            g.shadowBlur = s * 0.08
+            g.shadowOffsetY = s * 0.03
+            g.fillStyle = "#232528"
             g.beginPath()
             g.arc(cx, cy, kr, 0, 2 * Math.PI, false)
             g.fill()
             g.restore()
-
-            // knurled rubber skirt: the ridges turn, the light (upper left) does not
-            var rot = a * Math.PI / 180
-            var ridges = 36
-            for (var i = 0; i < ridges; i++) {
-                var t = rot + i * 2 * Math.PI / ridges
-                var lit = 0.5 + 0.5 * Math.cos(t + 2.2)
-                g.fillStyle = Qt.rgba((18 + lit * 34) / 255, (19 + lit * 35) / 255, (21 + lit * 36) / 255, 1)
-                g.beginPath()
-                g.moveTo(cx, cy)
-                g.arc(cx, cy, kr, t, t + Math.PI / ridges, false)
-                g.closePath()
-                g.fill()
-            }
-
-            // cap: satin black with a fixed sheen
-            var cr = kr * 0.78
-            var grad = g.createLinearGradient(cx - cr, cy - cr, cx + cr, cy + cr)
-            grad.addColorStop(0, "#3d4044")
-            grad.addColorStop(0.45, "#1b1c1f")
-            grad.addColorStop(1, "#08090a")
+            var grad = g.createLinearGradient(0, cy - kr, 0, cy + kr)
+            grad.addColorStop(0, "rgba(255,255,255,0.10)")
+            grad.addColorStop(0.5, "rgba(255,255,255,0)")
             g.fillStyle = grad
             g.beginPath()
-            g.arc(cx, cy, cr, 0, 2 * Math.PI, false)
+            g.arc(cx, cy, kr, 0, 2 * Math.PI, false)
             g.fill()
-
-            // bevel
             g.lineWidth = 1
-            g.strokeStyle = "rgba(255,255,255,0.12)"
+            g.strokeStyle = "rgba(255,255,255,0.08)"
             g.beginPath()
-            g.arc(cx, cy, cr - 0.5, Math.PI * 0.95, Math.PI * 1.7, false)
-            g.stroke()
-            g.strokeStyle = "rgba(0,0,0,0.6)"
-            g.beginPath()
-            g.arc(cx, cy, cr - 0.5, Math.PI * -0.05, Math.PI * 0.7, false)
+            g.arc(cx, cy, kr - 0.5, 0, 2 * Math.PI, false)
             g.stroke()
 
-            // metal centre disc on big knobs (brushed: alternating light/dark sweep)
-            if (root.big) {
-                var mr = cr * 0.42
-                var cg = g.createConicalGradient(cx, cy, 0.6)
-                cg.addColorStop(0, "#d9dcdf")
-                cg.addColorStop(0.25, "#8d9196")
-                cg.addColorStop(0.5, "#d9dcdf")
-                cg.addColorStop(0.75, "#8d9196")
-                cg.addColorStop(1, "#d9dcdf")
-                g.fillStyle = cg
-                g.beginPath()
-                g.arc(cx, cy, mr, 0, 2 * Math.PI, false)
-                g.fill()
-            }
-
-            // soft specular highlight, fixed
-            grad = g.createRadialGradient(cx - cr * 0.45, cy - cr * 0.55, 0, cx - cr * 0.45, cy - cr * 0.55, cr * 0.9)
-            grad.addColorStop(0, "rgba(255,255,255,0.16)")
-            grad.addColorStop(1, "rgba(255,255,255,0)")
-            g.fillStyle = grad
-            g.beginPath()
-            g.arc(cx, cy, cr, 0, 2 * Math.PI, false)
-            g.fill()
-
-            // pointer line
+            // pointer
             g.save()
             g.translate(cx, cy)
-            g.rotate(rot)
-            g.strokeStyle = "#f4f2ec"
-            g.lineWidth = Math.max(1.6, s * 0.045)
+            g.rotate(a * Math.PI / 180)
+            g.strokeStyle = "#ECECEF"
+            g.lineWidth = Math.max(1.6, s * 0.05)
             g.lineCap = "round"
             g.beginPath()
-            g.moveTo(0, -cr * (root.big ? 0.5 : 0.25))
-            g.lineTo(0, -kr * 0.96)
+            g.moveTo(0, -kr * (root.big ? 0.3 : 0.2))
+            g.lineTo(0, -kr * 0.85)
             g.stroke()
             g.restore()
         }
@@ -196,16 +168,18 @@ Item {
         anchors.top: canvas.bottom
         anchors.topMargin: 1
         anchors.horizontalCenter: canvas.horizontalCenter
-        text: root.label
+        text: (root.held || knobMouse.containsMouse) && root.enabled ? root.valueText() : root.label
         visible: root.label !== ""
-        color: "#9a9890"
+        color: (root.held || knobMouse.containsMouse) && root.enabled ? "#ECECEF" : "#9a9890"
         font.pixelSize: 10
         font.letterSpacing: 1.4
         font.bold: true
     }
 
     MouseArea {
+        id: knobMouse
         anchors.fill: canvas
+        hoverEnabled: true
         cursorShape: Qt.SizeVerCursor
         preventStealing: true
         property real y0: 0

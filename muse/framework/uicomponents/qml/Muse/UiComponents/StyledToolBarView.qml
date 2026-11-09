@@ -45,6 +45,62 @@ Item {
     property bool useSpacersAsSeparators: false
     property int spacerWidth: 12
 
+    //! GlideMix modern look: a faint rounded capsule behind each group of
+    //! items between separators (static rectangles, redrawn only on layout).
+    property bool capsuleGroups: false
+    property var groupRects: []
+
+    function updateGroupRects() {
+        if (!root.capsuleGroups) {
+            return
+        }
+        var rects = []
+        var cur = null
+        var kids = content.children
+        for (var i = 0; i < kids.length; ++i) {
+            var c = kids[i]
+            if (!c || c.item === undefined || !c.visible || c.width <= 0) {
+                continue
+            }
+            var isSep = Boolean(c.item) && c.item.type === ToolBarItemType.SEPARATOR
+            if (isSep || (cur && Math.abs(c.y - cur.y) > 1)) {
+                if (cur) { rects.push(cur) }
+                cur = null
+                if (isSep) { continue }
+            }
+            if (!cur) {
+                cur = { x: c.x, y: c.y, r: c.x + c.width }
+            } else {
+                cur.r = c.x + c.width
+            }
+        }
+        if (cur) { rects.push(cur) }
+        root.groupRects = rects
+    }
+
+    Timer {
+        id: groupTimer
+        interval: 0
+        onTriggered: root.updateGroupRects()
+    }
+
+    Repeater {
+        model: root.capsuleGroups ? root.groupRects : []
+        delegate: Rectangle {
+            required property var modelData
+            readonly property int pad: 4
+            x: content.x + modelData.x - pad
+            y: content.y + modelData.y + (root.rowHeight - height) / 2
+            width: modelData.r - modelData.x + 2 * pad
+            height: Math.min(root.rowHeight, 34)
+            radius: height / 2
+            color: ui.theme.isDark ? Qt.rgba(1, 1, 1, 0.035) : Qt.rgba(0, 0, 0, 0.035)
+            border.width: 1
+            border.color: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                                  ui.theme.fontPrimaryColor.b, 0.10)
+        }
+    }
+
     property int maximumWidth: -1
     property bool isMultiline: height > rowHeight
 
@@ -94,6 +150,10 @@ Item {
             return root.maximumWidth !== -1 ? Math.min(result, root.maximumWidth) : result
         }
         height: childrenRect.height
+
+        onWidthChanged: groupTimer.restart()
+        onHeightChanged: groupTimer.restart()
+        onPositioningComplete: groupTimer.restart()
 
         clip: true
         spacing: 4

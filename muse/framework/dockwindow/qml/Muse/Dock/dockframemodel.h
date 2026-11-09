@@ -47,6 +47,9 @@ class DockFrameModel : public QObject, public muse::Contextable
     Q_PROPERTY(QQmlComponent * titleBar READ titleBar NOTIFY titleBarChanged)
     Q_PROPERTY(bool titleBarAllowed READ titleBarAllowed NOTIFY titleBarAllowedChanged)
     Q_PROPERTY(bool isHorizontalPanel READ isHorizontalPanel NOTIFY isHorizontalPanelChanged)
+    //! GlideMix: true for panels (drawn as rounded cards), false for toolbars,
+    //! the status bar and docking holders (flat).
+    Q_PROPERTY(bool isPanel READ isPanel NOTIFY isPanelChanged)
     Q_PROPERTY(QObject * navigationSection READ navigationSection NOTIFY navigationSectionChanged)
     Q_PROPERTY(QString currentDockUniqueName READ currentDockUniqueName NOTIFY currentDockChanged)
 
@@ -66,6 +69,7 @@ public:
     QQmlComponent* titleBar() const;
     bool titleBarAllowed() const;
     bool isHorizontalPanel() const;
+    bool isPanel() const { return m_isPanel; }
     QObject* navigationSection() const;
     QString currentDockUniqueName() const;
 
@@ -82,6 +86,7 @@ signals:
     void titleBarChanged();
     void titleBarAllowedChanged(bool visible);
     void isHorizontalPanelChanged();
+    void isPanelChanged();
     void navigationSectionChanged();
     void currentDockChanged();
     void highlightingVisibleChanged();
@@ -112,6 +117,7 @@ private:
     QQmlComponent* m_titleBar = nullptr;
     bool m_titleBarAllowed = false;
     bool m_isHorizontalPanel = false;
+    bool m_isPanel = false;
     QObject* m_navigationSection = nullptr;
 
     DockTabsModel* m_tabsModel = nullptr;

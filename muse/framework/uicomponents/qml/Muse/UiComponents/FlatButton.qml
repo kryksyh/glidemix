@@ -85,7 +85,7 @@ FocusScope {
     property real margins: isNarrow ? 12 : 16
     property real minWidth: isNarrow ? 24 : 132
 
-    property real backgroundRadius: 3
+    property real backgroundRadius: 6
 
     property bool drawFocusBorderInsideRect: false
 
@@ -185,6 +185,17 @@ FocusScope {
             radius: root.backgroundRadius
             border.width: ui.theme.borderWidth
             border.color: ui.theme.strokeColor
+
+            //! GlideMix: a faint lighter top edge, a glass feel without blur
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                visible: parent.color.a > 0.01
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, ui.theme.isDark ? 0.10 : 0.30) }
+                    GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0) }
+                }
+            }
 
             NavigationFocusBorder {
                 navigationCtrl: navCtrl

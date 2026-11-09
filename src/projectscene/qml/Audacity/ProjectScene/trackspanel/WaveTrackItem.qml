@@ -141,6 +141,8 @@ TrackItem {
                         Layout.fillWidth: true
                         Layout.preferredHeight: bandButtons.dot
                         Layout.maximumWidth: 64
+                        // GlideMix modern look: capsule pills.
+                        backgroundRadius: height / 2
                         text: modelData.text
                         textFont.pixelSize: Math.max(8, Math.round(bandButtons.dot * 0.45))
                         textFont.bold: true

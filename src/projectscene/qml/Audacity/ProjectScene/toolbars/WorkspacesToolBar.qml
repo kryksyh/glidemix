@@ -21,7 +21,8 @@ StyledToolBarView {
     navigationPanel.accessible.name: qsTrc("projectscene", "Workspace selection")
 
     spacing: 0
-    rowHeight: 28
+    // GlideMix: room for the "Workspace" label above the picker.
+    rowHeight: root.isCompactMode ? 28 : 46
 
     WorkspacesToolBarModel {
         id: workspacesModel
@@ -51,25 +52,39 @@ StyledToolBarView {
             Component {
                 id: dropdownComp
 
-                DropdownWithTitle {
+                // GlideMix modern look: the label sits above the picker, so
+                // the picker fits inside its rounded card.
+                Column {
                     property var itemData: loader.itemData
+                    spacing: 2
 
-                    width: 228
-                    height: root.rowHeight
+                    StyledTextLabel {
+                        x: 2
+                        text: qsTrc("projectscene", "Workspace")
+                        font.pixelSize: 10
+                        opacity: 0.7
+                    }
 
-                    title: qsTrc("projectscene", "Workspace")
-                    model: Boolean(itemData) ? itemData.menuItems : null
-                    current: Boolean(itemData) ? itemData.title : ""
+                    DropdownWithTitle {
+                        property var itemData: loader.itemData
 
-                    allowOptionToggle: false
+                        width: 170
+                        height: 28
 
-                    navigation.panel: root.navigationPanel
-                    navigation.order: 1
+                        title: ""
+                        model: Boolean(itemData) ? itemData.menuItems : null
+                        current: Boolean(itemData) ? itemData.title : ""
 
-                    drawFocusBorderInsideRect: true
+                        allowOptionToggle: false
 
-                    onHandleMenuItem: function (itemId) {
-                        Qt.callLater(root.model.handleWorkspacesMenuItem, itemId)
+                        navigation.panel: root.navigationPanel
+                        navigation.order: 1
+
+                        drawFocusBorderInsideRect: true
+
+                        onHandleMenuItem: function (itemId) {
+                            Qt.callLater(root.model.handleWorkspacesMenuItem, itemId)
+                        }
                     }
                 }
             }

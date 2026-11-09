@@ -48,6 +48,8 @@ FocusScope {
 
     property bool isOpened: false
     property bool useDropShadow: true
+    //! GlideMix: set by PopupView when the system blurs behind the popup
+    property bool backdropBlur: false
 
     property bool animationEnabled: false
 
@@ -99,7 +101,9 @@ FocusScope {
 
         StyledRectangularShadow {
             anchors.fill: contentBackground
-            visible: root.useDropShadow
+            // with the system blur the system draws the shadow (macOS) or the
+            // window is clipped to the body (Windows); it would show through
+            visible: root.useDropShadow && !root.backdropBlur
 
             blur: root.padding
             radius: contentBackground.radius
@@ -107,10 +111,17 @@ FocusScope {
 
         Rectangle {
             id: contentBackground
+            objectName: "popupContentBackground"
             anchors.fill: parent
 
-            color: ui.theme.popupBackgroundColor
-            radius: 4
+            // GlideMix: where the system blurs what is behind the popup
+            // (PopupView::updateBackdropBlur: macOS, Windows 11 menus), the
+            // fill is a little see-through.
+            color: root.backdropBlur
+                   ? Qt.rgba(ui.theme.popupBackgroundColor.r, ui.theme.popupBackgroundColor.g,
+                             ui.theme.popupBackgroundColor.b, 0.55)
+                   : ui.theme.popupBackgroundColor
+            radius: 8
 
             Item {
                 id: contentBody
@@ -137,6 +148,17 @@ FocusScope {
             radius: contentBackground.radius
             border.width: 1
             border.color: ui.theme.strokeColor
+        }
+
+        //! GlideMix: a faint lighter top edge on popups and menus (no blur)
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: contentBackground.radius - 1
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, ui.theme.isDark ? 0.06 : 0.0) }
+                GradientStop { position: 0.12; color: Qt.rgba(1, 1, 1, 0) }
+            }
         }
 
         Canvas {

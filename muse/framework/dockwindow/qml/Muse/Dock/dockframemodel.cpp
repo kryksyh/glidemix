@@ -154,6 +154,12 @@ void DockFrameModel::listenChangesInFrame()
                                  && (properties.location == Location::Top || properties.location == Location::Bottom);
         setIsHorizontalPanel(isHorizontalPanel);
 
+        const bool isPanel = properties.type == DockType::Panel;
+        if (isPanel != m_isPanel) {
+            m_isPanel = isPanel;
+            emit isPanelChanged();
+        }
+
         updateTitleBar();
 
         bool titleBarAllowed = (properties.type == DockType::Panel) && (properties.floatable || properties.closable);

@@ -37,7 +37,13 @@ MenuView::MenuView(QQuickItem* parent)
     setObjectName("MenuView");
 
     setShowArrow(false);
+#ifdef Q_OS_WIN
+    // GlideMix: the window is exactly the menu, so Windows 11 can put its
+    // acrylic backdrop and rounded corners on it (winbackdropblur.cpp).
+    setPadding(0);
+#else
     setPadding(8);
+#endif
 }
 
 bool MenuView::isSearchable() const

@@ -21,6 +21,8 @@
  */
 #pragma once
 
+#include <QPointer>
+
 #include <qqmlintegration.h>
 
 #include "windowview.h"
@@ -142,6 +144,7 @@ protected:
 
     bool canOpen() const override;
     void beforeOpen() override;
+    void afterShow() override;
     void onHidden() override;
 
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -157,6 +160,10 @@ private:
     ClosePolicies m_closePolicies = { ClosePolicy::CloseOnPressOutsideParent };
 
     QQuickItem* m_anchorItem = nullptr;
+
+    //! GlideMix: the system blur behind the popup (macOS)
+    void updateBackdropBlur();
+    QPointer<QQuickItem> m_blurItem;
     PlacementPolicies m_placementPolicies = { PlacementPolicy::Default };
     PopupPosition::Type m_popupPosition = { PopupPosition::Bottom };
 
