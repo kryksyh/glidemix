@@ -87,6 +87,8 @@ class MixHouseTrackListModel : public QAbstractListModel, public muse::Injectabl
     /// MixHouseKeyNotation, for the key wheel's labels.
     Q_PROPERTY(int keyNotation READ keyNotation NOTIFY keyNotationChanged)
     Q_PROPERTY(bool keyBadges READ keyBadges NOTIFY keyBadgesChanged)
+    //! GlideMix: 0 plain text, 1 coloured text, 2 badges.
+    Q_PROPERTY(int keyStyle READ keyStyle NOTIFY keyBadgesChanged)
     // DlgPrefWaveform's "Overview Waveforms" group -- see
     // IMixHouseLibraryConfiguration::waveformOverviewType/
     // showWaveformMinuteMarkers's own comments. Same guarded-subscribe/
@@ -341,6 +343,7 @@ public:
     int bpmPrecision() const;
     int keyNotation() const;
     bool keyBadges() const;
+    int keyStyle() const;
     int waveformOverviewType() const;
     int hdWaveRevision() const { return m_hdWaveRevision; }
     bool showWaveformMinuteMarkers() const;

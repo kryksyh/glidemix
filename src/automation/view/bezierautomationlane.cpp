@@ -13,6 +13,16 @@
 
 using namespace au::automation;
 
+namespace {
+// Every lane alive, so the transition pill's lane can ask whether a press
+// lands on a clip's point (anyLaneNodeAtScene).
+QSet<BezierAutomationLane*>& allLanes()
+{
+    static QSet<BezierAutomationLane*> lanes;
+    return lanes;
+}
+}
+
 BezierAutomationLane::BezierAutomationLane(QQuickItem* parent) : QQuickPaintedItem(parent)
 {
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);   // right: a point's menu
@@ -24,6 +34,30 @@ BezierAutomationLane::BezierAutomationLane(QQuickItem* parent) : QQuickPaintedIt
     setKeepTouchGrab(true);
     setAntialiasing(true);
     connect(this, &BezierAutomationLane::lineColorChanged, this, [this] { update(); });
+    allLanes().insert(this);
+}
+
+BezierAutomationLane::~BezierAutomationLane()
+{
+    allLanes().remove(this);
+}
+
+bool BezierAutomationLane::anyLaneNodeAtScene(double sceneX, double sceneY) const
+{
+    const QPointF scenePoint(sceneX, sceneY);
+    for (BezierAutomationLane* lane : allLanes()) {
+        if (lane == this || !lane->isVisible() || !lane->isEnabled() || lane->window() != window()) {
+            continue;
+        }
+        const QPointF p = lane->mapFromScene(scenePoint);
+        if (!lane->contains(p)) {
+            continue;
+        }
+        if (lane->hitNode(p) >= 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QVariantList BezierAutomationLane::segments() const

@@ -624,19 +624,28 @@ PreferencesPage {
                 navigation.row: 7
             }
 
-            CheckBox {
-                width: parent.width
+            // GlideMix (Chris): the Key column as plain text, coloured
+            // text or coloured badges.
+            ComboBoxWithTitle {
+                title: qsTrc("preferences", "Key column:")
 
-                text: qsTrc("preferences", "Show keys as coloured badges")
-                checked: mixHouseLibraryModel.keyBadges
+                columnWidth: 208
+                currentIndex: mixHouseLibraryModel.keyStyle
+                model: [
+                    { text: qsTrc("preferences", "Plain text"), value: 0 },
+                    { text: qsTrc("preferences", "Coloured text"), value: 1 },
+                    { text: qsTrc("preferences", "Coloured badges"), value: 2 }
+                ]
+                textRole: "text"
+                valueRole: "value"
+
+                onValueEdited: function(newIndex, newValue) {
+                    mixHouseLibraryModel.keyStyle = newValue
+                }
 
                 navigation.name: "LibraryKeyBadges"
                 navigation.panel: section2.navigation
                 navigation.row: 8
-
-                onClicked: {
-                    mixHouseLibraryModel.keyBadges = !checked
-                }
             }
 
             CheckBox {

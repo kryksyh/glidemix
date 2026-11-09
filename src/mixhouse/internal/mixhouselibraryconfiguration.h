@@ -76,6 +76,8 @@ public:
     void setKeyNotation(MixHouseKeyNotation notation) override;
     bool keyBadges() const override;
     void setKeyBadges(bool badges) override;
+    int keyStyle() const override;
+    void setKeyStyle(int style) override;
     MixHouseStemsDevice stemsDevice() const override;
     void setStemsDevice(MixHouseStemsDevice device) override;
     bool stemsHighQuality() const override;

@@ -4,6 +4,7 @@
 #include "playbacktoolbarcustomisemodel.h"
 
 #include <QList>
+#include <algorithm>
 
 #include "internal/projectsceneuiactions.h"
 
@@ -47,6 +48,12 @@ void PlaybackToolBarCustomiseModel::load()
             continue;
         }
         lastWasSeparator = false;
+
+        // GlideMix's own items (Flexible Space, the Icon/Text marker) are no
+        // actions; looking one up as an action can throw on its text.
+        if (configItem.intent.rfind("glidemix-", 0) == 0) {
+            continue;
+        }
 
         UiAction action = actionsRegister()->action(configItem.intent);
         if (action.code.empty()) {
@@ -264,4 +271,128 @@ void PlaybackToolBarCustomiseModel::saveActions()
     }
 
     uiState()->setToolConfig(TOOLBAR_NAME, config);
+}
+
+QVariantList PlaybackToolBarCustomiseModel::entriesOf(const ToolConfig& config) const
+{
+    QVariantList out;
+    for (const auto& item : config.items) {
+        if (item.isSeparator()) {
+            out << QVariantMap{ { "id", QString() }, { "title", muse::qtrc("projectscene", "Space") }, { "icon", 0 },
+                                { "shown", true }, { "separator", true } };
+            continue;
+        }
+        if (item.intent == "glidemix-flexible-space") {
+            out << QVariantMap{ { "id", QStringLiteral("glidemix-flexible-space") },
+                                { "title", muse::qtrc("projectscene", "Flexible Space") }, { "icon", 0 },
+                                { "shown", true }, { "separator", false }, { "flex", true } };
+            continue;
+        }
+        if (item.intent.rfind("glidemix-", 0) == 0) {
+            continue;   // the Icon/Text choice or another non-action
+        }
+        const UiAction action = actionsRegister()->action(item.intent);
+        if (action.code.empty()) {
+            continue;
+        }
+        out << QVariantMap{ { "id", QString::fromStdString(action.code) },
+                            { "title", action.title.qTranslatedWithoutMnemonic() },
+                            // 0: no icon (the item shows its name, as a pill).
+                            { "icon", action.iconCode == IconCode::Code::NONE ? 0 : static_cast<int>(action.iconCode) },
+                            { "shown", item.show }, { "separator", false } };
+    }
+    return out;
+}
+
+QVariantList PlaybackToolBarCustomiseModel::entries() const
+{
+    const ToolConfig config = uiState()->toolConfig(TOOLBAR_NAME, ProjectSceneUiActions::defaultPlaybackToolBarConfig());
+    QVariantList list = entriesOf(config);
+
+    // Not arranged by hand yet: the toolbar puts Snap after KEYLOCK and the
+    // performance Stop after PERFORM (PlaybackToolBarModel::updateActions).
+    // Start the sheet from that same order, so the first change moves nothing.
+    bool customised = false;
+    for (const auto& item : config.items) {
+        if (item.intent.rfind("glidemix-toolbar-style-", 0) == 0) {
+            customised = true;
+        }
+    }
+    if (!customised) {
+        auto indexOf = [&list](const QString& id) {
+            for (int i = 0; i < list.size(); ++i) {
+                if (list[i].toMap().value("id").toString() == id) {
+                    return i;
+                }
+            }
+            return -1;
+        };
+        auto moveAfter = [&](const QString& id, const QString& anchor) {
+            const int from = indexOf(id);
+            if (from < 0 || indexOf(anchor) < 0) {
+                return;
+            }
+            const QVariant moved = list.takeAt(from);
+            list.insert(indexOf(anchor) + 1, moved);
+        };
+        moveAfter(QStringLiteral("snap"), QStringLiteral("mixhouse-keylock"));
+        moveAfter(QStringLiteral("mixhouse-reset-performance"), QStringLiteral("mixhouse-perform"));
+    }
+    return list;
+}
+
+QVariantList PlaybackToolBarCustomiseModel::defaultEntries() const
+{
+    return entriesOf(ProjectSceneUiActions::defaultPlaybackToolBarConfig());
+}
+
+void PlaybackToolBarCustomiseModel::applyEntries(const QVariantList& entries)
+{
+    ToolConfig config;
+    for (const QVariant& v : entries) {
+        const QVariantMap m = v.toMap();
+        const bool always = m.value("separator").toBool() || m.value("flex").toBool();
+        ToolConfig::Item item;
+        item.intent = m.value("separator").toBool() ? std::string() : m.value("id").toString().toStdString();
+        item.show = always || m.value("shown").toBool();
+        if (m.value("flex").toBool() && !m.value("shown").toBool()) {
+            continue;   // a Flexible Space taken off is gone
+        }
+        config.items.append(item);
+    }
+    // The marker also says "arranged by hand": the toolbar moves nothing for it.
+    config.items.append(ToolConfig::Item("glidemix-toolbar-style-" + std::to_string(displayStyle()), false));
+    uiState()->setToolConfig(TOOLBAR_NAME, config);
+    load();
+}
+
+void PlaybackToolBarCustomiseModel::restoreDefault()
+{
+    uiState()->setToolConfig(TOOLBAR_NAME, ProjectSceneUiActions::defaultPlaybackToolBarConfig());
+    load();
+}
+
+int PlaybackToolBarCustomiseModel::displayStyle() const
+{
+    const ToolConfig config = uiState()->toolConfig(TOOLBAR_NAME, ProjectSceneUiActions::defaultPlaybackToolBarConfig());
+    for (const auto& item : config.items) {
+        const QString intent = QString::fromStdString(item.intent);
+        if (intent.startsWith(QStringLiteral("glidemix-toolbar-style-"))) {
+            return std::clamp(intent.mid(23).toInt(), 0, 2);
+        }
+    }
+    return 2;
+}
+
+void PlaybackToolBarCustomiseModel::setDisplayStyle(int style)
+{
+    ToolConfig config = uiState()->toolConfig(TOOLBAR_NAME, ProjectSceneUiActions::defaultPlaybackToolBarConfig());
+    for (int i = config.items.size() - 1; i >= 0; --i) {
+        if (QString::fromStdString(config.items[i].intent).startsWith(QStringLiteral("glidemix-toolbar-style-"))) {
+            config.items.removeAt(i);
+        }
+    }
+    config.items.append(ToolConfig::Item("glidemix-toolbar-style-" + std::to_string(std::clamp(style, 0, 2)), false));
+    uiState()->setToolConfig(TOOLBAR_NAME, config);
+    load();
 }

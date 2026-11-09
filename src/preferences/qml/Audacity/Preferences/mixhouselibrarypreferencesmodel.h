@@ -40,6 +40,7 @@ class MixHouseLibraryPreferencesModel : public QObject
     Q_PROPERTY(int bpmPrecision READ bpmPrecision WRITE setBpmPrecision NOTIFY bpmPrecisionChanged)
     Q_PROPERTY(int keyNotation READ keyNotation WRITE setKeyNotation NOTIFY keyNotationChanged)
     Q_PROPERTY(bool keyBadges READ keyBadges WRITE setKeyBadges NOTIFY keyNotationChanged)
+    Q_PROPERTY(int keyStyle READ keyStyle WRITE setKeyStyle NOTIFY keyNotationChanged)
     Q_PROPERTY(
         int trackDoubleClickAction READ trackDoubleClickAction WRITE setTrackDoubleClickAction NOTIFY trackDoubleClickActionChanged)
     Q_PROPERTY(bool greyOutPlayedTracks READ greyOutPlayedTracks WRITE setGreyOutPlayedTracks NOTIFY greyOutPlayedTracksChanged)
@@ -87,6 +88,8 @@ public:
     void setKeyNotation(int notation);
     bool keyBadges() const;
     void setKeyBadges(bool badges);
+    int keyStyle() const;
+    void setKeyStyle(int style);
     void setLibraryRowHeight(int px);
 
     int trackDoubleClickAction() const;

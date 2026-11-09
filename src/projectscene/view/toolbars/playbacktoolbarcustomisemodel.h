@@ -51,6 +51,18 @@ public:
     Q_INVOKABLE void load();
     Q_INVOKABLE void addSeparatorLine();
 
+    //! GlideMix: the Safari-style Customize Toolbar sheet works on plain
+    //! lists: [{ id, title, icon, shown, separator }] in toolbar order
+    //! (hidden items keep their place). applyEntries saves at once, so the
+    //! toolbar changes while the sheet is open.
+    Q_INVOKABLE QVariantList entries() const;
+    Q_INVOKABLE QVariantList defaultEntries() const;
+    Q_INVOKABLE void applyEntries(const QVariantList& entries);
+    Q_INVOKABLE void restoreDefault();
+    //! 0 icon and text, 1 icon only, 2 text only.
+    Q_INVOKABLE int displayStyle() const;
+    Q_INVOKABLE void setDisplayStyle(int style);
+
 signals:
     void isAddSeparatorAvailableChanged(bool isAddSeparatorAvailable);
 
@@ -75,6 +87,7 @@ private:
     QColor iconColor(const muse::ui::UiAction& action) const;
 
     void saveActions();
+    QVariantList entriesOf(const muse::ui::ToolConfig& config) const;
 
     bool m_isAddSeparatorAvailable = false;
 };

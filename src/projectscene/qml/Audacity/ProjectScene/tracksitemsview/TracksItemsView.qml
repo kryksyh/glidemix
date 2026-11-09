@@ -11,6 +11,7 @@ import Audacity.Playback
 import Audacity.Spectrogram
 import Audacity.Record
 import Audacity.MixHouse
+import Audacity.Automation
 
 Rectangle {
     id: root
@@ -1577,6 +1578,16 @@ Rectangle {
             property var shownLanes: ({})
         }
 
+        // GlideMix: asks the clips' automation lanes whether a press is on
+        // one of their points (the transition lanes let those through).
+        BezierAutomationLane {
+            id: lanePointProbe
+            visible: false
+            enabled: false
+            width: 0
+            height: 0
+        }
+
         Repeater {
             model: transitionZonesModel
 
@@ -1734,14 +1745,35 @@ Rectangle {
                             return line.samples
                         }
                         var s = line.samples
-                        var result = [[s[0][0], s[0][1]]]
-                        for (var i = 0; i < line.points.length; ++i) {
-                            result.push(line.points[i])
+                        var pts = line.points
+                        var first = s[0][1], last = s[s.length - 1][1]
+                        // A point pinned to an edge is that edge's value.
+                        if (pts.length && Math.abs(pts[0][0] - s[0][0]) < edgeSnap) first = pts[0][1]
+                        if (pts.length && Math.abs(s[s.length - 1][0] - pts[pts.length - 1][0]) < edgeSnap) last = pts[pts.length - 1][1]
+                        var result = [[s[0][0], first]]
+                        for (var i = 0; i < pts.length; ++i) {
+                            result.push(pts[i])
                         }
-                        result.push([s[s.length - 1][0], s[s.length - 1][1]])
+                        result.push([s[s.length - 1][0], last])
                         return result
                     }
                     property string editedSide: ""
+                    // GlideMix: a point this close to the zone's edge (seconds)
+                    // is the edge's own point; the end dot moves it.
+                    readonly property real edgeSnap: 0.01
+                    readonly property real edgeGap: 0.002
+
+                    // The end dot under (x, y): { side, start (bool) }, or null.
+                    function endDotAt(x, y) {
+                        var side = sideAt(y)
+                        if (!side || !lineData) return null
+                        var poly = polyline(lineData[side])
+                        if (!poly || poly.length < 2) return null
+                        var a = poly[0], b = poly[poly.length - 1]
+                        if (Math.abs(px(a[0]) + 6 - x) <= 12 && Math.abs(py(side, a[1]) - y) <= 12) return { side: side, start: true }
+                        if (Math.abs(px(b[0]) - 6 - x) <= 12 && Math.abs(py(side, b[1]) - y) <= 12) return { side: side, start: false }
+                        return null
+                    }
 
                     function drawLane(ctx, line, side, colour, centred) {
                         var top = sideTop(side)
@@ -1787,12 +1819,18 @@ Rectangle {
                         // GlideMix (Chris): a dot at each end of the line inside the
                         // overlap, so even a flat line shows where to grab it; a
                         // drag there adds a point (the line under it).
-                        var ends = [[poly[0], 6], [poly[poly.length - 1], -6]]
+                        var ends = []
+                        var lp = line.points, ls = line.samples
+                        if (!(lp.length && Math.abs(lp[0][0] - ls[0][0]) < edgeSnap)) ends.push([poly[0], 6])
+                        if (!(lp.length && Math.abs(ls[ls.length - 1][0] - lp[lp.length - 1][0]) < edgeSnap)) ends.push([poly[poly.length - 1], -6])
+                        // Rings, not filled: a clip's own dot at the same place
+                        // (the volume line's first or last point) shows through.
                         for (var e = 0; e < ends.length; ++e) {
                             ctx.beginPath()
-                            ctx.arc(px(ends[e][0][0]) + ends[e][1], py(side, ends[e][0][1]), 6, 0, 2 * Math.PI)
-                            ctx.fillStyle = colour
-                            ctx.fill()
+                            ctx.arc(px(ends[e][0][0]) + ends[e][1], py(side, ends[e][0][1]), 5, 0, 2 * Math.PI)
+                            ctx.lineWidth = 2
+                            ctx.strokeStyle = colour
+                            ctx.stroke()
                         }
 
                         for (var k = 0; k < line.points.length; ++k) {
@@ -1878,6 +1916,16 @@ Rectangle {
                                 return
                             }
                             var hit = laneCanvas.pointAt(mouse.x, mouse.y)
+                            // GlideMix: a clip's own point under the press (its
+                            // volume dot at the edge, say) is grabbed, not hidden
+                            // by this lane's line or end dot.
+                            if (!hit) {
+                                var sp = laneMouse.mapToItem(null, mouse.x, mouse.y)
+                                if (lanePointProbe.anyLaneNodeAtScene(sp.x, sp.y)) {
+                                    mouse.accepted = false
+                                    return
+                                }
+                            }
                             if (hit && mouse.button === Qt.RightButton) {
                                 laneCanvas.lineData[hit.side].points.splice(hit.index, 1)
                                 laneCanvas.editedSide = hit.side
@@ -1885,8 +1933,34 @@ Rectangle {
                                 return
                             }
                             if (hit) {
+                                // The edge's own point stays on the edge.
+                                var hp = laneCanvas.lineData[hit.side].points
+                                var hs = laneCanvas.lineData[hit.side].samples
+                                var ht = hp[hit.index][0]
+                                if ((hit.index === 0 && Math.abs(ht - hs[0][0]) < laneCanvas.edgeSnap)
+                                        || (hit.index === hp.length - 1 && Math.abs(hs[hs.length - 1][0] - ht) < laneCanvas.edgeSnap)) {
+                                    hit.pin = ht
+                                }
                                 laneCanvas.drag = hit
                                 laneCanvas.editedSide = hit.side
+                                return
+                            }
+                            // GlideMix (Chris): the end dot at the clip's edge moves
+                            // the line's edge value: one point pinned to the edge,
+                            // up and down only -- not a new point each time.
+                            var end = mouse.button === Qt.LeftButton ? laneCanvas.endDotAt(mouse.x, mouse.y) : null
+                            if (end) {
+                                var ep = laneCanvas.lineData[end.side].points
+                                var es = laneCanvas.lineData[end.side].samples
+                                var edgeT = end.start ? es[0][0] + laneCanvas.edgeGap : es[es.length - 1][0] - laneCanvas.edgeGap
+                                var ei = end.start ? 0 : ep.length - 1
+                                if (!(ep.length && Math.abs(ep[ei][0] - edgeT) < laneCanvas.edgeSnap)) {
+                                    ei = end.start ? 0 : ep.length
+                                    ep.splice(ei, 0, [edgeT, laneCanvas.valueAt(end.side, mouse.y)])
+                                }
+                                laneCanvas.drag = { side: end.side, index: ei, pin: ep[ei][0] }
+                                laneCanvas.editedSide = end.side
+                                laneCanvas.requestPaint()
                                 return
                             }
                             var lineSide = mouse.button === Qt.LeftButton ? laneCanvas.onLine(mouse.x, mouse.y) : ""
@@ -1914,7 +1988,8 @@ Rectangle {
                             // Between its neighbours, inside the zone.
                             var lo = d.index > 0 ? points[d.index - 1][0] : s[0][0]
                             var hi = d.index + 1 < points.length ? points[d.index + 1][0] : s[s.length - 1][0]
-                            var t = Math.max(lo + 1e-3, Math.min(hi - 1e-3, laneCanvas.timeAt(mouse.x)))
+                            var t = d.pin !== undefined ? d.pin
+                                    : Math.max(lo + 1e-3, Math.min(hi - 1e-3, laneCanvas.timeAt(mouse.x)))
                             points[d.index] = [t, laneCanvas.valueAt(d.side, mouse.y)]
                             laneCanvas.requestPaint()
                         }

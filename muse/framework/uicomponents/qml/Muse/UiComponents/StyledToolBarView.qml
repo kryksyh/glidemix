@@ -50,7 +50,43 @@ Item {
     property bool capsuleGroups: false
     property var groupRects: []
 
+    //! GlideMix: Customize Toolbar's Flexible Space. Items whose code is
+    //! flexibleCode share the room left on the row; they also end a capsule.
+    property string flexibleCode: "glidemix-flexible-space"
+    property real flexibleItemWidth: spacerWidth
+
+    function isFlexible(c) {
+        return Boolean(c.item) && c.item.code === root.flexibleCode
+    }
+
+    function updateFlexibleWidth() {
+        var kids = content.children
+        var fixed = 0, flex = 0, n = 0
+        for (var i = 0; i < kids.length; ++i) {
+            var c = kids[i]
+            if (!c || c.item === undefined || !c.visible) {
+                continue
+            }
+            ++n
+            if (root.isFlexible(c)) {
+                ++flex
+            } else {
+                fixed += c.width
+            }
+        }
+        if (flex === 0 || root.maximumWidth <= 0) {
+            root.flexibleItemWidth = root.spacerWidth
+            return
+        }
+        var free = root.maximumWidth - fixed - content.spacing * Math.max(0, n - 1)
+        var w = Math.max(root.spacerWidth, Math.floor(free / flex))
+        if (Math.abs(w - root.flexibleItemWidth) >= 1) {
+            root.flexibleItemWidth = w
+        }
+    }
+
     function updateGroupRects() {
+        root.updateFlexibleWidth()
         if (!root.capsuleGroups) {
             return
         }
@@ -62,7 +98,7 @@ Item {
             if (!c || c.item === undefined || !c.visible || c.width <= 0) {
                 continue
             }
-            var isSep = Boolean(c.item) && c.item.type === ToolBarItemType.SEPARATOR
+            var isSep = (Boolean(c.item) && c.item.type === ToolBarItemType.SEPARATOR) || root.isFlexible(c)
             if (isSep || (cur && Math.abs(c.y - cur.y) > 1)) {
                 if (cur) { rects.push(cur) }
                 cur = null
@@ -102,6 +138,7 @@ Item {
     }
 
     property int maximumWidth: -1
+    onMaximumWidthChanged: groupTimer.restart()
     property bool isMultiline: height > rowHeight
 
     property NavigationPanel navigationPanel: NavigationPanel {
@@ -152,6 +189,7 @@ Item {
         height: childrenRect.height
 
         onWidthChanged: groupTimer.restart()
+        Component.onCompleted: groupTimer.restart()
         onHeightChanged: groupTimer.restart()
         onPositioningComplete: groupTimer.restart()
 

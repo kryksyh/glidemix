@@ -33,11 +33,49 @@ Item {
 
     signal relayoutRequested
 
+    // GlideMix's own icons for its toolbar buttons (resources/toolbaricons/gm-*).
+    function gmIconFor(code) {
+        switch (code) {
+        case "mixhouse-sync": return "gm-sync"
+        case "mixhouse-tempo-lane": return "gm-tempo"
+        case "mixhouse-energy-lane": return "gm-energy"
+        case "mixhouse-keylock": return "gm-keylock"
+        case "mixhouse-link": return "gm-link"
+        case "mixhouse-perform": return "gm-perform"
+        case "mixhouse-mix-now": return "gm-mixnow"
+        case "mixhouse-automation-arm": return "gm-arm"
+        case "mixhouse-reenable-automation": return "gm-reenable"
+        case "glidemix-flexible-space": return "gm-flexspace"
+        }
+        return ""
+    }
+
     QtObject {
         id: prv
 
         property int customizeButtonSpaceWidth: root.clocksOnly ? 0 : 8 /* spacing */ + customizeButton.width + customizeButton.anchors.rightMargin
                                                                        + (rightRow.width > 0 ? rightRow.width + 12 : 0)
+    }
+
+    // GlideMix: right-click an empty part of the toolbar > Customize
+    // Toolbar…, as in Safari. Below the buttons, so they keep their clicks.
+    MouseArea {
+        anchors.fill: parent
+        visible: !root.clocksOnly
+        acceptedButtons: Qt.RightButton
+        onClicked: function(mouse) {
+            toolbarMenu.toggleOpened([{ id: "customize", title: qsTrc("projectscene", "Customize Toolbar…") }],
+                                     mouse.x, mouse.y)
+        }
+
+        StyledMenuLoader {
+            id: toolbarMenu
+            onHandleMenuItem: function(itemId) {
+                if (itemId === "customize") {
+                    customizePopup.open()
+                }
+            }
+        }
     }
 
     StyledToolBarView {
@@ -94,6 +132,8 @@ Item {
                 return broadcastComp
             case PlaybackToolBarModel.SLIDER:
                 return sliderComp
+            case PlaybackToolBarModel.FLEX_SPACE:
+                return flexSpaceComp
             }
 
             return null
@@ -393,13 +433,30 @@ Item {
             }
         }
 
+        // GlideMix: Customize Toolbar's Flexible Space takes the room left.
+        Component {
+            id: flexSpaceComp
+
+            Item {
+                property var itemData
+                width: view.flexibleItemWidth
+                height: 28
+            }
+        }
+
         Component {
             id: textToggleComp
 
             StyledToolBarItem {
                 height: 28
+                // 0 icon and text, 1 icon only, 2 text only (Customize Toolbar).
+                readonly property int displayStyle: view.model ? view.model.displayStyle : 2
+                readonly property string svgName: Boolean(itemData) ? root.gmIconFor(itemData.code) : ""
+                readonly property bool showIcon: svgName !== "" && displayStyle !== 2
+                readonly property bool showText: displayStyle !== 1 || svgName === ""
                 // SYNC / TEMPO fit 60; KEYLOCK needs a little more.
-                width: Boolean(itemData) && itemData.title.length > 5 ? 78 : 60
+                width: !showText ? 34
+                       : (Boolean(itemData) && itemData.title.length > 5 ? 78 : 60) + (showIcon ? 20 : 0)
 
                 // GlideMix modern look: a capsule, filled only when on,
                 // a thin outline when off (like the library pills).
@@ -417,8 +474,35 @@ Item {
                                           ui.theme.fontPrimaryColor.b, ui.theme.isDark ? 0.22 : 0.30)
                 }
 
-                text: Boolean(itemData) ? itemData.title.toUpperCase() : ""
+                // Text only: the button's own label. With an icon: icon and
+                // label drawn here as one centred row.
+                text: showText && !showIcon && Boolean(itemData) ? itemData.title.toUpperCase() : ""
                 textFont: ui.theme.bodyBoldFont
+
+                Row {
+                    visible: textToggle.showIcon
+                    anchors.centerIn: parent
+                    spacing: 5
+
+                    Image {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16
+                        height: 16
+                        sourceSize.width: 32
+                        sourceSize.height: 32
+                        // Light lines on the purple fill when on; the theme's colour when off.
+                        source: !textToggle.showIcon ? ""
+                                : "qrc:/resources/toolbaricons/" + textToggle.svgName + "-"
+                                  + (ui.theme.isDark || textToggle.accentButton ? "dark" : "light") + ".svg"
+                    }
+                    StyledTextLabel {
+                        visible: textToggle.showText
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: Boolean(textToggle.itemData) ? textToggle.itemData.title.toUpperCase() : ""
+                        font: ui.theme.bodyBoldFont
+                        color: textToggle.accentButton ? "#FFFFFF" : ui.theme.fontPrimaryColor
+                    }
+                }
 
                 // Performing (audience playback) is red, like a record light.
                 accentColor: Boolean(itemData) && itemData.code === "mixhouse-perform" ? "#E5484D" : ui.theme.accentColor
@@ -600,7 +684,7 @@ Item {
         iconFont: ui.theme.iconsFont
         //: Tooltip of the toolbar customization button
         toolTipTitle: qsTrc("projectscene", "Customize toolbar")
-        toolTipDescription: qsTrc("projectscene", "Show/hide toolbar buttons")
+        toolTipDescription: qsTrc("projectscene", "Drag buttons in and out of the toolbar")
 
         enabled: view.model.isEnabled
 
@@ -612,7 +696,8 @@ Item {
             customizePopup.toggleOpened()
         }
 
-        PlaybackToolBarCustomisePopup {
+        // GlideMix: Safari-style Customize Toolbar (drag items in and out).
+        CustomizeToolbarSheet {
             id: customizePopup
 
             anchorItem: !root.floating ? ui.rootItem : null

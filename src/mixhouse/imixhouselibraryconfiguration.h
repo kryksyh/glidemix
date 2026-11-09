@@ -100,6 +100,10 @@ public:
     /// GlideMix: the Key column as coloured badges (like Lexicon) or coloured text.
     virtual bool keyBadges() const = 0;
     virtual void setKeyBadges(bool badges) = 0;
+    /// GlideMix: the Key column's look: 0 plain text, 1 coloured text,
+    /// 2 coloured badges (keyBadges() is style 2).
+    virtual int keyStyle() const = 0;
+    virtual void setKeyStyle(int style) = 0;
 
     //! Stem separation (Preferences > Stems).
     virtual MixHouseStemsDevice stemsDevice() const = 0;

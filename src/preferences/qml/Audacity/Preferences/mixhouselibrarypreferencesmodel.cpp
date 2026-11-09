@@ -101,6 +101,20 @@ void MixHouseLibraryPreferencesModel::setKeyBadges(bool badges)
     emit keyNotationChanged();
 }
 
+int MixHouseLibraryPreferencesModel::keyStyle() const
+{
+    return configuration()->keyStyle();
+}
+
+void MixHouseLibraryPreferencesModel::setKeyStyle(int style)
+{
+    if (keyStyle() == style) {
+        return;
+    }
+    configuration()->setKeyStyle(style);
+    emit keyNotationChanged();
+}
+
 int MixHouseLibraryPreferencesModel::trackDoubleClickAction() const
 {
     return static_cast<int>(configuration()->trackDoubleClickAction());

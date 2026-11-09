@@ -146,6 +146,9 @@ ListItemBlank {
     StyledPopupView {
         id: colorIntensityPopup
 
+        // Opens under the ... button the menu came from, like the clip's
+        // popup opens where its menu was (it did not show from the header).
+        parent: menuButton
         contentWidth: 240
         contentHeight: intensityColumn.implicitHeight
         margins: 14

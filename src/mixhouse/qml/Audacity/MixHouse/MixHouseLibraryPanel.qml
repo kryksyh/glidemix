@@ -1151,6 +1151,17 @@ Item {
                     scrollRestore.restart()
                 }
 
+                // GlideMix: back at once, before the rebuilt list is drawn.
+                // Only the timer below let one frame show the top first, so
+                // during analysis (a count update every second) the sidebar
+                // flashed to Music Collection and back.
+                onModelChanged: {
+                    if (scrollRestore.running) {
+                        forceLayout()
+                        contentY = Math.max(0, Math.min(scrollRestore.y, contentHeight - height))
+                    }
+                }
+
                 Timer {
                     id: scrollRestore
                     property real y: 0
@@ -4179,7 +4190,7 @@ Item {
                         // enum) means the same key regardless of notation, so
                         // it's the one to color from. Falls back to the normal
                         // text color for every other column.
-                        color: (cell.col && cell.col.key === "musicalKey"
+                        color: (cell.col && cell.col.key === "musicalKey" && tracksModel.keyStyle !== 0
                                 && keyWheel.colorForKeyId(cell.model.keyId))
                                || ui.theme.fontPrimaryColor
                     }

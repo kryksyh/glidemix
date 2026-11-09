@@ -31,6 +31,8 @@ class PlaybackToolBarModel : public muse::uicomponents::AbstractToolBarModel
     //! GlideMix: the clocks (timecode, BPM, time signature) live in their
     //! own centered row; this model then serves either only them or the rest.
     Q_PROPERTY(bool clocksOnly READ clocksOnly WRITE setClocksOnly NOTIFY clocksOnlyChanged)
+    //! GlideMix: 0 icon and text, 1 icon only, 2 text only (Customize Toolbar).
+    Q_PROPERTY(int displayStyle READ displayStyle NOTIFY displayStyleChanged)
     //! GlideMix: the zoom sliders, shown at the right end of the toolbar
     //! beside the customize button rather than in the row.
     Q_PROPERTY(QVariantList rightItems READ rightItems NOTIFY rightItemsChanged)
@@ -64,7 +66,9 @@ public:
         METRONOME,
         TEXT_TOGGLE,
         BROADCAST,
-        SLIDER
+        SLIDER,
+        //! GlideMix: Customize Toolbar's Flexible Space, as wide as the room left.
+        FLEX_SPACE
     };
     Q_ENUM(ItemType)
 
@@ -79,6 +83,7 @@ public:
 
 signals:
     void isEnabledChanged();
+    void displayStyleChanged();
     void clocksOnlyChanged();
     void rightItemsChanged();
 
@@ -110,5 +115,9 @@ private:
 
     bool m_inited = false;
     bool m_clocksOnly = false;
+    int m_displayStyle = 2;
+public:
+    int displayStyle() const { return m_displayStyle; }
+private:
 };
 }

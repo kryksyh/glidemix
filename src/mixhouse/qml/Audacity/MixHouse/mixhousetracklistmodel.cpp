@@ -3063,6 +3063,7 @@ int MixHouseTrackListModel::themeFontPointSize() const
 int MixHouseTrackListModel::bpmPrecision() const { return libraryConfiguration()->bpmPrecision(); }
 int MixHouseTrackListModel::keyNotation() const { return static_cast<int>(libraryConfiguration()->keyNotation()); }
 bool MixHouseTrackListModel::keyBadges() const { return libraryConfiguration() && libraryConfiguration()->keyBadges(); }
+int MixHouseTrackListModel::keyStyle() const { return libraryConfiguration() ? libraryConfiguration()->keyStyle() : 2; }
 int MixHouseTrackListModel::waveformOverviewType() const
 {
     return static_cast<int>(libraryConfiguration()->waveformOverviewType());

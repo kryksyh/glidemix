@@ -100,6 +100,11 @@ void UiState::updateToolConfig(const QString& toolName, ToolConfig& userConfig, 
             if (item.isSeparator()) {
                 continue;
             }
+            // GlideMix: Customize Toolbar's own items (Flexible Space, the
+            // Icon/Text choice) are never in a default list; keep them.
+            if (item.intent.rfind("glidemix-", 0) == 0) {
+                continue;
+            }
 
             if (std::find_if(defaultConfig.items.cbegin(), defaultConfig.items.cend(), [item](const auto& defaultItem) {
                 return item.intent == defaultItem.intent;

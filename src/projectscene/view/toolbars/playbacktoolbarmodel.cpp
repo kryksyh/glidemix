@@ -3,6 +3,8 @@
 */
 #include "playbacktoolbarmodel.h"
 
+#include <algorithm>
+
 #include <QQmlContext>
 #include <QQmlEngine>
 
@@ -398,8 +400,33 @@ void PlaybackToolBarModel::updateActions()
     muse::ui::ToolConfig playbackConfig = uiState()->toolConfig(TOOLBAR_NAME,
                                                                 ProjectSceneUiActions::defaultPlaybackToolBarConfig());
 
+    // GlideMix: Customize Toolbar keeps its Icon/Text choice in the saved
+    // list as a hidden marker item; a list with the marker was arranged by
+    // hand, so nothing below moves items for it.
+    bool customised = false;
+    int displayStyle = 2;
+    for (const muse::ui::ToolConfig::Item& citem : playbackConfig.items) {
+        const QString intent = QString::fromStdString(citem.intent);
+        if (intent.startsWith(QStringLiteral("glidemix-toolbar-style-"))) {
+            customised = true;
+            displayStyle = std::clamp(intent.mid(23).toInt(), 0, 2);
+        }
+    }
+    if (displayStyle != m_displayStyle) {
+        m_displayStyle = displayStyle;
+        emit displayStyleChanged();
+    }
+
     for (const muse::ui::ToolConfig::Item& citem : playbackConfig.items) {
         if (!citem.show) {
+            continue;
+        }
+        if (citem.intent == "glidemix-flexible-space") {
+            if (!m_clocksOnly) {
+                UiAction flex;
+                flex.code = "glidemix-flexible-space";
+                items << new ToolBarItem(flex, static_cast<ToolBarItemType::Type>(FLEX_SPACE), this);
+            }
             continue;
         }
 
@@ -454,7 +481,7 @@ void PlaybackToolBarModel::updateActions()
             keylockAt = i;
         }
     }
-    if (snapAt >= 0 && keylockAt >= 0) {
+    if (!customised && snapAt >= 0 && keylockAt >= 0) {
         ToolBarItem* snap = items.takeAt(snapAt);
         if (snapAt < keylockAt) {
             --keylockAt;
@@ -482,12 +509,26 @@ void PlaybackToolBarModel::updateActions()
             stopAt = i;
         }
     }
-    if (performAt >= 0 && stopAt >= 0 && stopAt != performAt + 1) {
+    if (!customised && performAt >= 0 && stopAt >= 0 && stopAt != performAt + 1) {
         ToolBarItem* stop = items.takeAt(stopAt);
         if (stopAt < performAt) {
             --performAt;
         }
         items.insert(performAt + 1, stop);
+    }
+
+    // GlideMix: an emptied group leaves no gap: no separator first, last or
+    // next to another one.
+    for (int i = items.size() - 1; i > 0; --i) {
+        if (items[i]->type() == ToolBarItemType::SEPARATOR && items[i - 1]->type() == ToolBarItemType::SEPARATOR) {
+            delete items.takeAt(i);
+        }
+    }
+    while (!items.isEmpty() && items.first()->type() == ToolBarItemType::SEPARATOR) {
+        delete items.takeFirst();
+    }
+    while (!items.isEmpty() && items.last()->type() == ToolBarItemType::SEPARATOR) {
+        delete items.takeLast();
     }
 
     setItems(items);

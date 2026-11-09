@@ -42,6 +42,7 @@ class BezierAutomationLane : public QQuickPaintedItem
     Q_PROPERTY(double activePointValue READ activePointValue NOTIFY activePointChanged)
 public:
     explicit BezierAutomationLane(QQuickItem* parent = nullptr);
+    ~BezierAutomationLane() override;
     QVariantList segments() const;
     void setSegments(const QVariantList& data);
     double viewStart() const { return m_start; }
@@ -69,6 +70,10 @@ public:
     Q_INVOKABLE int nodeAt(double x, double y) const { return hitNode(QPointF(x, y)); }
     /// True when x, y is on a point or on the line.
     Q_INVOKABLE bool grabsAt(double x, double y) const { return hitNode(QPointF(x, y)) >= 0 || hitSegment(QPointF(x, y)) >= 0; }
+    /// GlideMix: whether any editable lane on screen (a clip's volume or FX
+    /// line) has a point at this scene position. The transition pill's lane
+    /// is drawn over the clips and lets such a press through to the point.
+    Q_INVOKABLE bool anyLaneNodeAtScene(double sceneX, double sceneY) const;
     Q_INVOKABLE int nodeCount() const { return m_curve.segments.empty() ? 0 : static_cast<int>(m_curve.segments.size()) + 1; }
 signals:
     void segmentsChanged();

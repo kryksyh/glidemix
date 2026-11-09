@@ -213,7 +213,10 @@ Item {
             StyledListView {
                 id: view
 
-                Layout.topMargin: 1
+                // GlideMix 1.2.0: the panel card's 4 px top gap (muse
+                // DockFrame cardGap) moved every header 4 px below its row in
+                // the timeline, which has no gap; take it back here.
+                Layout.topMargin: 1 - 4
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 

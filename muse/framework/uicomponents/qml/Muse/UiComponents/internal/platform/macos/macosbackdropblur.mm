@@ -5,7 +5,6 @@
 #import <AppKit/AppKit.h>
 
 static const NSUserInterfaceItemIdentifier kBlurId = @"GlideMixBackdropBlur";
-static const NSUserInterfaceItemIdentifier kContainerId = @"GlideMixBackdropContainer";
 
 void muse::uicomponents::macosSetBackdropBlur(QWindow* window, const QRectF& rect, qreal radius, bool dark)
 {
@@ -18,24 +17,21 @@ void muse::uicomponents::macosSetBackdropBlur(QWindow* window, const QRectF& rec
         return;
     }
 
-    // Put Qt's view inside a plain container once, so the blur view can sit
-    // behind it (Qt's view draws with its own layer and cannot hold subviews).
-    NSView* container = qtView.superview;
-    if (![container.identifier isEqualToString:kContainerId]) {
-        NSRect frame = qtView.frame;
-        container = [[NSView alloc] initWithFrame:frame];
-        container.identifier = kContainerId;
-        container.autoresizesSubviews = YES;
-        nsWindow.contentView = container;
-        qtView.frame = container.bounds;
-        qtView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-        [container addSubview:qtView];
+    // The blur view sits beside Qt's view in the window's frame view, behind
+    // it. Qt's view stays the window's content view: moving it into another
+    // view stopped Qt drawing popups that resize after they open (tooltips
+    // showed as empty boxes, 1.2.0).
+    NSView* frameView = qtView.superview;
+    if (!frameView) {
+        return;
+    }
+    if (nsWindow.opaque) {
         nsWindow.opaque = NO;
         nsWindow.backgroundColor = NSColor.clearColor;
     }
 
     NSVisualEffectView* blur = nil;
-    for (NSView* v in container.subviews) {
+    for (NSView* v in frameView.subviews) {
         if ([v.identifier isEqualToString:kBlurId]) {
             blur = (NSVisualEffectView*)v;
         }
@@ -48,16 +44,19 @@ void muse::uicomponents::macosSetBackdropBlur(QWindow* window, const QRectF& rec
         blur.state = NSVisualEffectStateActive;
         blur.wantsLayer = YES;
         blur.layer.masksToBounds = YES;
-        [container addSubview:blur positioned:NSWindowBelow relativeTo:qtView];
+        [frameView addSubview:blur positioned:NSWindowBelow relativeTo:qtView];
     }
 
     blur.appearance = [NSAppearance appearanceNamed:dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
     blur.layer.cornerRadius = radius;
     blur.hidden = rect.isEmpty();
 
-    // AppKit's origin is bottom-left.
-    const CGFloat h = container.bounds.size.height;
-    blur.frame = NSMakeRect(rect.x(), h - rect.y() - rect.height(), rect.width(), rect.height());
+    // rect is in Qt's view coordinates (top-left origin); place it in the
+    // frame view, whose origin is bottom-left.
+    const NSRect qtFrame = qtView.frame;
+    blur.frame = NSMakeRect(qtFrame.origin.x + rect.x(),
+                            qtFrame.origin.y + qtFrame.size.height - rect.y() - rect.height(),
+                            rect.width(), rect.height());
 
     // The system shadow follows the popup's own shape (rounded corners, arrow).
     nsWindow.hasShadow = YES;

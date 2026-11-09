@@ -35,14 +35,14 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.0: a new look**\n\n"
-                      + "- **Modern look:** rounded buttons, menus and panels; buttons are pills, purple only when on.\n"
-                      + "- **Display at the top:** time, key, energy, song 2 of 4, processor and disk use, and a play light.\n"
-                      + "- **Toolbar in groups**, each in its own capsule.\n"
-                      + "- **New knobs and faders:** a thin coloured arc on each knob (hover to see the value), see-through glass caps on the faders.\n"
-                      + "- **See-through menus** with the window behind them softly blurred (Mac, Windows 11).\n"
-                      + "- **Library buttons on top** in one row with the Key Wheel; the search sits below.\n"
-                      + "- **Light theme in GlideMix purple.**\n"
+                text: "**GlideMix v1.2.1: your own toolbar**\n\n"
+                      + "- **Customize the toolbar** like Safari: right-click the toolbar (or its gear) and drag buttons in, out and along it; Space and Flexible Space; show icons, text or both (new GlideMix icons). The default set puts it back.\n"
+                      + "- **Key column your way:** plain text, coloured text or coloured badges (Preferences > Music library).\n"
+                      + "- **Tooltips show their text again**, and submenus open as you point at them.\n"
+                      + "- **Transition dots:** the dot at the clip's edge moves the line's start or end, no more extra dots.\n"
+                      + "- **Track headers line up** with their rows in the timeline again.\n"
+                      + "- **No more flashing** in the library while songs are analysed.\n"
+                      + "- **Buttons are pills** everywhere, Color > Intensity works from the track header too.\n"
             }
         }
 

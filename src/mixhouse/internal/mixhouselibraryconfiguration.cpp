@@ -42,6 +42,8 @@ static const muse::Settings::Key LIBRARY_FONT_POINT_SIZE(module_name, "mixhouse/
 static const muse::Settings::Key BPM_PRECISION(module_name, "mixhouse/library/bpmPrecision");
 static const muse::Settings::Key KEY_NOTATION(module_name, "mixhouse/library/keyNotation");
 static const muse::Settings::Key KEY_BADGES(module_name, "mixhouse/library/keyBadges");
+// GlideMix: 0 plain, 1 coloured text, 2 badges; -1 = not chosen yet, follow keyBadges.
+static const muse::Settings::Key KEY_STYLE(module_name, "mixhouse/library/keyStyle");
 static const muse::Settings::Key STEMS_DEVICE(module_name, "mixhouse/stems/device");
 static const muse::Settings::Key STEMS_HIGH_QUALITY(module_name, "mixhouse/stems/highQuality");
 static const muse::Settings::Key STEMS_CACHE_LIMIT_GB(module_name, "mixhouse/stems/cacheLimitGb");
@@ -89,6 +91,7 @@ void MixHouseLibraryConfiguration::init()
     muse::settings()->setDefaultValue(BPM_PRECISION, muse::Val(1));   // Mixxx's default
     muse::settings()->setDefaultValue(KEY_NOTATION, muse::Val(static_cast<int>(MixHouseKeyNotation::Lancelot)));
     muse::settings()->setDefaultValue(KEY_BADGES, muse::Val(true));
+    muse::settings()->setDefaultValue(KEY_STYLE, muse::Val(-1));
     muse::settings()->setDefaultValue(STEMS_DEVICE, muse::Val(static_cast<int>(MixHouseStemsDevice::Automatic)));
     muse::settings()->setDefaultValue(STEMS_HIGH_QUALITY, muse::Val(false));
     muse::settings()->setDefaultValue(STEMS_CACHE_LIMIT_GB, muse::Val(10));
@@ -454,12 +457,28 @@ void MixHouseLibraryConfiguration::setKeyNotation(MixHouseKeyNotation notation)
 
 bool MixHouseLibraryConfiguration::keyBadges() const
 {
-    return muse::settings()->value(KEY_BADGES).toBool();
+    return keyStyle() == 2;
 }
 
 void MixHouseLibraryConfiguration::setKeyBadges(bool badges)
 {
-    muse::settings()->setSharedValue(KEY_BADGES, muse::Val(badges));
+    setKeyStyle(badges ? 2 : 1);
+}
+
+int MixHouseLibraryConfiguration::keyStyle() const
+{
+    const int style = muse::settings()->value(KEY_STYLE).toInt();
+    if (style >= 0 && style <= 2) {
+        return style;
+    }
+    return muse::settings()->value(KEY_BADGES).toBool() ? 2 : 1;
+}
+
+void MixHouseLibraryConfiguration::setKeyStyle(int style)
+{
+    style = std::clamp(style, 0, 2);
+    muse::settings()->setSharedValue(KEY_STYLE, muse::Val(style));
+    muse::settings()->setSharedValue(KEY_BADGES, muse::Val(style == 2));
     m_settingsChanged.notify();
 }
 

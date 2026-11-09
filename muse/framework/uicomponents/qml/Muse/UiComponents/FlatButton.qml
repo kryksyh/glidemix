@@ -85,7 +85,10 @@ FocusScope {
     property real margins: isNarrow ? 12 : 16
     property real minWidth: isNarrow ? 24 : 132
 
-    property real backgroundRadius: 6
+    //! GlideMix modern look: a text button wider than it is tall is a pill
+    //! (OK, Cancel, Set...), like the dialog buttons; icon and small square
+    //! buttons (FX, M, S) keep the rounded square.
+    property real backgroundRadius: buttonType === FlatButton.TextOnly && width >= 2 * height ? height / 2 : 6
 
     property bool drawFocusBorderInsideRect: false
 

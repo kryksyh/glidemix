@@ -1,5 +1,25 @@
 <RCC>
     <qresource prefix="/">
+        <file>resources/toolbaricons/gm-sync-dark.svg</file>
+        <file>resources/toolbaricons/gm-sync-light.svg</file>
+        <file>resources/toolbaricons/gm-tempo-dark.svg</file>
+        <file>resources/toolbaricons/gm-tempo-light.svg</file>
+        <file>resources/toolbaricons/gm-energy-dark.svg</file>
+        <file>resources/toolbaricons/gm-energy-light.svg</file>
+        <file>resources/toolbaricons/gm-keylock-dark.svg</file>
+        <file>resources/toolbaricons/gm-keylock-light.svg</file>
+        <file>resources/toolbaricons/gm-link-dark.svg</file>
+        <file>resources/toolbaricons/gm-link-light.svg</file>
+        <file>resources/toolbaricons/gm-perform-dark.svg</file>
+        <file>resources/toolbaricons/gm-perform-light.svg</file>
+        <file>resources/toolbaricons/gm-mixnow-dark.svg</file>
+        <file>resources/toolbaricons/gm-mixnow-light.svg</file>
+        <file>resources/toolbaricons/gm-arm-dark.svg</file>
+        <file>resources/toolbaricons/gm-arm-light.svg</file>
+        <file>resources/toolbaricons/gm-reenable-dark.svg</file>
+        <file>resources/toolbaricons/gm-reenable-light.svg</file>
+        <file>resources/toolbaricons/gm-flexspace-dark.svg</file>
+        <file>resources/toolbaricons/gm-flexspace-light.svg</file>
         <file>resources/toolbaricons/metronome-dark.svg</file>
         <file>resources/toolbaricons/metronome-light.svg</file>
         <file>resources/toolbaricons/arrows-vertical-dark.svg</file>
@@ -64,6 +84,7 @@
         <file>qml/Audacity/ProjectScene/toolbars/internal/CustomiseView.qml</file>
         <file>qml/Audacity/ProjectScene/toolbars/internal/PlaybackToolBarActionDelegate.qml</file>
         <file>qml/Audacity/ProjectScene/toolbars/internal/PlaybackToolBarCustomisePopup.qml</file>
+        <file>qml/Audacity/ProjectScene/toolbars/internal/CustomizeToolbarSheet.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/ClipItemSmall.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/ClipPreview.qml</file>
         <file>qml/Audacity/ProjectScene/tracksitemsview/ClipHandles.qml</file>
