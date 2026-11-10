@@ -35,12 +35,8 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.3: no more freezes, plus a few wishes**\n\n"
-                      + "- **No more long freezes** after editing a beat grid, adding songs or starting up, with a big library and many smart playlists. The smart playlist counts are worked out in the background now.\n"
-                      + "- **Set IN and OUT anchors from the keyboard:** Alt+I and Alt+O put them at the playhead on the selected song (change the keys in Preferences > Shortcuts).\n"
-                      + "- **Rename a project** from its … menu on the Home page.\n"
-                      + "- **The Related tab's search box works:** type a name, genre or BPM to narrow the related songs.\n"
-                      + "- **Windows:** Task Manager shows the real version, not \"GlideMix 1.1 beta dev\".\n"
+                text: "**GlideMix v1.2.4**\n\n"
+                      + "- Library preview fixes.\n"
             }
         }
 

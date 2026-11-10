@@ -207,6 +207,15 @@ void MixHouseTrackListModel::previewTrackAt(int row, double fraction)
         return;
     }
 
+    // GlideMix (Marc, 1.2.3): one preview deck for every song list, as in
+    // Mixxx. Each list owns its own player, so a new preview stops the one
+    // in any other list (the Related tab's could play on with no row left).
+    for (MixHouseTrackListModel* other : s_liveModels) {
+        if (other != this) {
+            other->stopPreview();
+        }
+    }
+
     // A different track, or this one while stopped. The fork loaded into
     // mixxx's preview deck and then waited 140ms for the load to reset the
     // position before seeking; AVAudioFile opens synchronously, so playback
@@ -761,6 +770,14 @@ void MixHouseTrackListModel::load()
     beginResetModel();
     m_tracks = std::move(fresh);
     endResetModel();
+    // GlideMix (Marc, 1.2.3): a preview never outlives its row. When the
+    // previewed song leaves this list (Related cleared because its reference
+    // song was deleted, a filter, another playlist), nothing could stop it.
+    if (m_previewPlaying
+        && std::none_of(m_tracks.begin(), m_tracks.end(), [this](const MixHouseTrack& t) { return t.id == m_previewTrackId; })) {
+        LOGI() << "GlideMix preview: song " << m_previewTrackId << " left the list, preview stopped";
+        stopPreview();
+    }
     emit loaded();
     if (loadTimer.elapsed() >= 50) {
         LOGI() << "GlideMix library view: " << m_tracks.size() << " rows loaded in " << loadTimer.elapsed() << " ms";
