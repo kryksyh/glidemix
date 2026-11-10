@@ -56,6 +56,7 @@ private:
     void setRecentProjects(const std::vector<QVariantMap>& items);
     void clearContextMenuModels();
     void deleteProject(const QString& path);
+    void renameProject(const QString& path);
 };
 }
 

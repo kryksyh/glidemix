@@ -35,10 +35,12 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.2: your plug-ins play along**\n\n"
-                      + "- **Tempo-synced plug-ins follow the beat:** loopers, tape stops, gates and beat FX get the tempo, beat and bar now (VST3 and Audio Unit).\n"
-                      + "- **AIR plug-ins no longer crash GlideMix** (Mac), nor do others that bring their own Qt.\n"
-                      + "- **No crash when quitting** with plug-ins like TimeStop or Hyperlift loaded.\n"
+                text: "**GlideMix v1.2.3: no more freezes, plus a few wishes**\n\n"
+                      + "- **No more long freezes** after editing a beat grid, adding songs or starting up, with a big library and many smart playlists. The smart playlist counts are worked out in the background now.\n"
+                      + "- **Set IN and OUT anchors from the keyboard:** Alt+I and Alt+O put them at the playhead on the selected song (change the keys in Preferences > Shortcuts).\n"
+                      + "- **Rename a project** from its … menu on the Home page.\n"
+                      + "- **The Related tab's search box works:** type a name, genre or BPM to narrow the related songs.\n"
+                      + "- **Windows:** Task Manager shows the real version, not \"GlideMix 1.1 beta dev\".\n"
             }
         }
 

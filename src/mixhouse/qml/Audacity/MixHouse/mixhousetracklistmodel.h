@@ -955,6 +955,8 @@ private:
     void updateIndexRow(const MixHouseTrack& t);
     MixHouseTrackList indexedTracks();
     QElapsedTimer m_lastRecount;
+    int m_recountGeneration = 0;
+    bool m_smartCountsPending = false;   // smart playlist counts on a worker thread   // a newer sidebar count makes older ones drop their result
     bool duplicatesView() const { return m_externalSource == u"duplicates"; }
     int rekordboxLoadProgress() const;
     bool rekordboxImportShown() const { return m_rekordboxImportShown; }

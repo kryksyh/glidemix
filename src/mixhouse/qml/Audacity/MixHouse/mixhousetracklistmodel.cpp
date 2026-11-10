@@ -8,6 +8,9 @@
  * this is "add it to the project as a real track", not playback.
  */
 #include "mixhousetracklistmodel.h"
+
+#include <map>
+#include <memory>
 #include "mixhouse/internal/mixhousedjapps.h"
 #include "mixhouse/internal/mixhousepreviewplayer.h"
 #include "mixhouse/internal/mixhouseprojectaligner.h"
@@ -106,6 +109,9 @@ MixHouseTrackListModel::MixHouseTrackListModel(QObject* parent)
             return;
         }
         m_countsTimer.setInterval(3000);
+        if (m_smartCountsPending) {
+            return;   // another song list is counting; its result comes here too
+        }
         recountSidebar();
     });
 }
@@ -682,6 +688,18 @@ void MixHouseTrackListModel::load()
         m_query.limit = m_pageLimit;
         if (m_relatedView) {
             fresh = MixHouseTrackList(m_relatedTracks.begin(), m_relatedTracks.end());
+            // GlideMix (Marc Mont): the search box narrows the related songs,
+            // with the library's own search syntax ("genre:house", artist, title).
+            if (!m_query.filter.trimmed().isEmpty()) {
+                IMixHouseLibrary::TrackQuery search;
+                search.filter = m_query.filter;
+                search.limit = 0;
+                const QList<int> ids = library()->matchingTracks(search).ids;
+                const QSet<int> found(ids.begin(), ids.end());
+                fresh.erase(std::remove_if(fresh.begin(), fresh.end(),
+                                           [&](const MixHouseTrack& t) { return !found.contains(t.id); }),
+                            fresh.end());
+            }
             if (m_relatedSortByColumn) {
                 IMixHouseLibrary::TrackQuery q = m_query;
                 q.limit = 0;
@@ -2474,16 +2492,80 @@ void MixHouseTrackListModel::recountSidebar()
     took.start();
     m_lastRecount.start();
     m_countsStale = false;
-    m_smartCounts.clear();
-    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
-        m_smartCounts.insert(p.id, smartPlaylistCount(p));
+    for (MixHouseTrackListModel* model : s_liveModels) {
+        if (model->library() == library()) {
+            model->m_smartCountsPending = true;   // sidebarNodes must not count them itself meanwhile
+        }
     }
-    IMixHouseLibrary::TrackQuery q;
-    q.limit = 0;
-    m_duplicateCount = static_cast<int>(duplicateTracks(q, nullptr, nullptr).size());
+    // GlideMix: the database reads stay here (each source once, not once per
+    // playlist: 70 playlists x 50,000 songs froze Windows for 24 s); the rule
+    // checks run on a worker thread and the counts come back to this thread.
+    struct Job {
+        MixHouseSmartPlaylist playlist;
+        MixHouseSmartContext context;
+    };
+    auto jobs = std::make_shared<std::vector<Job> >();
+    auto candidates = std::make_shared<std::map<QString, MixHouseTrackList> >();
+    IMixHouseLibrary::TrackQuery all;
+    all.limit = 0;
+    for (const MixHouseSmartPlaylist& p : library()->smartPlaylists()) {
+        if (candidates->find(p.source) == candidates->end()) {
+            candidates->emplace(p.source, smartCandidates(p.source, all));
+        }
+        jobs->push_back({ p, smartContextFor(p) });
+    }
+    m_duplicateCount = static_cast<int>(duplicateTracks(all, nullptr, nullptr).size());
     m_unanalyzedCount = library()->unanalyzedTrackCount();
-    LOGI() << "GlideMix: sidebar counts in " << took.elapsed() << " ms";
-    emit sidebarCountsChanged();
+    const qint64 readMs = took.elapsed();
+    const int generation = ++m_recountGeneration;
+    QPointer<MixHouseTrackListModel> self(this);
+    std::thread([self, jobs, candidates, generation, readMs]() {
+        QElapsedTimer counting;
+        counting.start();
+        QHash<int, int> counts;
+        for (const Job& job : *jobs) {
+            const MixHouseTrackList& tracks = candidates->at(job.playlist.source);
+            counts.insert(job.playlist.id,
+                          static_cast<int>(applySmartPlaylist(job.playlist, tracks, job.context).size()));
+        }
+        const qint64 countMs = counting.elapsed();
+        QTimer::singleShot(0, qApp, [self, counts, generation, readMs, countMs]() {
+            if (!self) {
+                // Closed while counting: the others count again on their own.
+                for (MixHouseTrackListModel* model : s_liveModels) {
+                    if (model->m_smartCountsPending) {
+                        model->m_smartCountsPending = false;
+                        model->m_countsStale = true;
+                        emit model->sidebarCountsChanged();
+                    }
+                }
+                return;
+            }
+            if (generation != self->m_recountGeneration) {
+                return;   // a newer count is on its way
+            }
+            LOGI() << "GlideMix: sidebar counts: " << readMs << " ms reading (UI thread), "
+                   << countMs << " ms counting " << counts.size() << " smart playlists (worker)";
+            // The other open song lists (same library) take these counts
+            // instead of counting it all again right after.
+            for (MixHouseTrackListModel* model : s_liveModels) {
+                if (model != self.data() && model->library() != self->library()) {
+                    continue;
+                }
+                if (model != self.data()) {
+                    model->m_countsTimer.stop();
+                    model->m_lastRecount.start();
+                    model->m_countsStale = false;
+                    model->m_duplicateCount = self->m_duplicateCount;
+                    model->m_unanalyzedCount = self->m_unanalyzedCount;
+                }
+                model->m_smartCounts = counts;
+                model->m_smartCountsPending = false;
+                emit model->sidebarCountsChanged();
+            }
+        });
+    }).detach();
+    emit sidebarCountsChanged();   // duplicates and Analyze now; smart lists when counted
 }
 
 QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds) const
@@ -2535,7 +2617,7 @@ QVariantList MixHouseTrackListModel::sidebarNodes(const QStringList& expandedIds
     if (isOpen("smart")) {
         for (const MixHouseSmartPlaylist& p : smart) {
             // A new or edited playlist: counted on its own now (one playlist is quick).
-            if (!m_smartCounts.contains(p.id) && !m_countsStale) {
+            if (!m_smartCounts.contains(p.id) && !m_countsStale && !m_smartCountsPending) {
                 m_smartCounts.insert(p.id, smartPlaylistCount(p));
             }
             out << node("sp-" + QString::number(p.id), p.name, 1, "smart-playlist", p.id,

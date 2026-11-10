@@ -65,17 +65,9 @@ if(BUILD_MODE MATCHES "RELEASE")
     set(AU4_ALLOW_UPDATE_ON_PRERELEASE OFF)
 endif()
 
-# Display version number and the release channel (unless it is a release) as the app title
-set(MUSE_APP_TITLE_VERSION "${MUSE_APP_TITLE} ${MUSE_APP_VERSION_MAJOR}.${MUSE_APP_VERSION_MINOR}")
-
-if(NOT MUSE_APP_VERSION_LABEL STREQUAL "")
-    string(APPEND MUSE_APP_TITLE_VERSION " ${MUSE_APP_VERSION_LABEL}")
-endif()
-
-if(NOT MUSE_APP_RELEASE_CHANNEL STREQUAL "stable")
-    string(APPEND MUSE_APP_TITLE_VERSION " ${MUSE_APP_RELEASE_CHANNEL}")
-endif()
-
+# GlideMix: the name Windows shows for the .exe (Task Manager, file
+# properties) -- "GlideMix Beta v1.2.3", set in version.cmake. The old
+# "GlideMix 1.1 beta dev" (major.minor + build channel) looked stale there.
 add_compile_definitions(AU4_APP_TITLE_VERSION="${MUSE_APP_TITLE_VERSION}")
 
 ###########################################

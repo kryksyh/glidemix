@@ -1804,6 +1804,35 @@ void MixHouseBeatGrids::seatBarOneAtProjectStart(const trackedit::ClipKey& key)
     LOGI() << "GlideMix grid: trimmed " << leadIn << " s lead-in so bar 1 of " << grid.title << " sits on bar 1";
 }
 
+bool MixHouseBeatGrids::setSelectedClipAnchorAt(int which, double projectTime)
+{
+    const auto trackeditProject = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!trackeditProject || !selectionController()) {
+        return false;
+    }
+    trackedit::ClipKeyList targets = selectionController()->selectedClips();
+    if (targets.empty()) {
+        for (const trackedit::TrackId trackId : selectionController()->selectedTracks()) {
+            for (const trackedit::Clip& clip : trackeditProject->clipList(trackId)) {
+                targets.push_back(clip.key);
+            }
+        }
+    }
+    for (const trackedit::ClipKey& key : targets) {
+        const trackedit::Clip clip = trackeditProject->clip(key);
+        if (!clip.isValid() || projectTime < clip.startTime || projectTime > clip.endTime) {
+            continue;
+        }
+        if (!clipAnchors(key).valid) {
+            continue;
+        }
+        // Same as the clip menu's "Set IN/OUT anchor here", at the playhead.
+        moveClipAnchor(key, which, projectTime, true);
+        return true;
+    }
+    return false;
+}
+
 int MixHouseBeatGrids::splitSelectedAtGridJumps()
 {
     if (!selectionController()) {

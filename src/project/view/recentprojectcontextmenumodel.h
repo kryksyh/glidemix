@@ -22,6 +22,8 @@ public:
 
     //! GlideMix: "Delete…" on a local project (asks, then moves it to the Trash).
     void setDeleteHandler(std::function<void(const QString& path)> handler) { m_deleteHandler = std::move(handler); }
+    //! GlideMix: "Rename…" on a local project (a new name for the file).
+    void setRenameHandler(std::function<void(const QString& path)> handler) { m_renameHandler = std::move(handler); }
 
     Q_INVOKABLE void load() override;
     void handleMenuItem(const QString& itemId) override;
@@ -32,5 +34,6 @@ private:
     QString m_displayNameOverride;
     QString m_cloudProjectId;
     std::function<void(const QString& path)> m_deleteHandler;
+    std::function<void(const QString& path)> m_renameHandler;
 };
 }

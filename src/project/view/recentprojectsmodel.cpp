@@ -24,6 +24,7 @@
 #include "framework/global/translation.h"
 #include "framework/global/dataformatter.h"
 #include "framework/global/io/fileinfo.h"
+#include "framework/global/log.h"
 
 #include "view/recentprojectcontextmenumodel.h"
 
@@ -117,6 +118,7 @@ void RecentProjectsModel::updateRecentProjects()
         auto* menuModel = new RecentProjectContextMenuModel(isCloud, file.path.toQString(), file.displayNameOverride,
                                                             cloudProjectId, this);
         menuModel->setDeleteHandler([this](const QString& path) { deleteProject(path); });
+        menuModel->setRenameHandler([this](const QString& path) { renameProject(path); });
         obj[CONTEXT_MENU_MODEL_KEY] = QVariant::fromValue(menuModel);
 
         items.push_back(obj);
@@ -181,3 +183,76 @@ void RecentProjectsModel::deleteProject(const QString& path)
     });
 }
 
+void RecentProjectsModel::renameProject(const QString& path)
+{
+    // GlideMix: a new name for a saved project, from Home. The save panel
+    // opens in the project's folder with its name; the file (and any SQLite
+    // side files) is renamed there. An open project is closed first, like Delete.
+    if (globalContext() && globalContext()->currentProject()
+        && globalContext()->currentProject()->path().toQString() == path) {
+        interactive()->infoSync(muse::trc("project", "This project is open"),
+                                muse::trc("project", "Close the project before renaming it."));
+        return;
+    }
+    if (!QFileInfo::exists(path)) {
+        interactive()->errorSync(muse::trc("project", "Couldn’t rename the project"),
+                                 muse::trc("project", "The project file can’t be found. It may have been moved or deleted."));
+        return;
+    }
+
+    const std::vector<std::string> filter { muse::trc("project", "GlideMix projects") + " (*.aup4)" };
+    QString newPath = interactive()->selectSavingFileSync(muse::trc("project", "Rename project"),
+                                                          muse::io::path_t(path), filter).toQString();
+    if (newPath.isEmpty()) {
+        return;
+    }
+    QFileInfo picked(newPath);
+    if (picked.suffix().compare(u"aup4", Qt::CaseInsensitive) != 0) {
+        newPath = picked.absolutePath() + u'/' + picked.completeBaseName() + QStringLiteral(".aup4");
+    }
+    if (QFileInfo(newPath).absoluteFilePath() == QFileInfo(path).absoluteFilePath()) {
+        return;   // same name
+    }
+
+    const bool caseOnly = QFileInfo(newPath).absoluteFilePath().compare(QFileInfo(path).absoluteFilePath(),
+                                                                       Qt::CaseInsensitive) == 0;
+    // The save panel already asked about replacing another project of that name: it goes to the Trash.
+    if (!caseOnly && QFileInfo::exists(newPath)) {
+        if (globalContext() && globalContext()->currentProject()
+            && globalContext()->currentProject()->path().toQString() == newPath) {
+            interactive()->errorSync(muse::trc("project", "Couldn’t rename the project"),
+                                     muse::trc("project", "A project with that name is open. Choose another name."));
+            return;
+        }
+        QFile::moveToTrash(newPath);
+        for (const char* suffix : { "-wal", "-shm", "-journal" }) {
+            const QString side = newPath + QString::fromUtf8(suffix);
+            if (QFileInfo::exists(side)) {
+                QFile::moveToTrash(side);
+            }
+        }
+    }
+
+    const QString name = QFileInfo(path).completeBaseName();
+    if (!QFile::rename(path, newPath)) {
+        interactive()->errorSync(muse::trc("project", "Couldn’t rename the project"),
+                                 muse::qtrc("project", "“%1” could not be renamed.").arg(name).toStdString());
+        return;
+    }
+    // SQLite's side files travel with the project (a -wal file can hold the latest changes).
+    for (const char* suffix : { "-wal", "-shm", "-journal" }) {
+        const QString side = path + QString::fromUtf8(suffix);
+        if (QFileInfo::exists(side)) {
+            QFile::rename(side, newPath + QString::fromUtf8(suffix));
+        }
+    }
+    LOGI() << "GlideMix: project renamed " << path << " -> " << newPath;
+
+    // The menu that asked belongs to the list about to be rebuilt.
+    QTimer::singleShot(0, this, [this, path, newPath, caseOnly]() {
+        if (!caseOnly) {
+            recentFilesController()->removeRecentFile(muse::io::path_t(newPath));   // the replaced one, if listed
+        }
+        recentFilesController()->moveRecentFile(muse::io::path_t(path), RecentFile(muse::io::path_t(newPath)));
+    });
+}

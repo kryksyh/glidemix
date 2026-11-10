@@ -84,6 +84,7 @@ public:
     void resetClipAnchors(const trackedit::ClipKey& clip) override;
     void adjustSelectedClips(Adjust adjust) override;
     int splitSelectedAtGridJumps() override;
+    bool setSelectedClipAnchorAt(int which, double projectTime) override;
 
 private:
     struct Grid {

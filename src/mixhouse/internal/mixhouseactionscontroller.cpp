@@ -71,6 +71,19 @@ void MixHouseActionsController::init()
                                 muse::trc("mixhouse", "The beats of this song stay on its grid: nothing to split."));
         }
     });
+    // Marc Mont: the clip menu's "Set IN/OUT anchor here", from the keyboard, at the playhead.
+    for (const int which : { 0, 1 }) {
+        dispatcher()->reg(this, which == 0 ? "mixhouse-anchor-in-playhead" : "mixhouse-anchor-out-playhead", [this, which]() {
+            const auto playback = globalContext() ? globalContext()->playbackState() : nullptr;
+            if (!playback) {
+                return;
+            }
+            if (!beatGrids()->setSelectedClipAnchorAt(which, playback->playbackPosition().to_double()) && interactive()) {
+                interactive()->info(muse::trc("mixhouse", "No song under the playhead"),
+                                    muse::trc("mixhouse", "Select a song in the timeline and put the playhead over it."));
+            }
+        });
+    }
     dispatcher()->reg(this, "mixhouse-edit-beatgrid", [this]() {
         const int trackId = beatGrids()->selectedLibraryTrackId();
         if (trackId >= 0 && gridEditor()) {

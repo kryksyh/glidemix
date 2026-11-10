@@ -17,6 +17,7 @@ constexpr const char* OPEN_PROJECT_PAGE_ACTION = "audacity://cloud/open-project-
 constexpr const char* UPDATE_AUDIO_PREVIEW_ACTION = "audacity://cloud/update-audio-preview-for-project";
 constexpr const char* SHOW_IN_FOLDER_ACTION = "project-show-in-folder";
 constexpr const char* DELETE_PROJECT_ITEM = "mixtape-project-delete";
+constexpr const char* RENAME_PROJECT_ITEM = "mixtape-project-rename";
 }
 
 RecentProjectContextMenuModel::RecentProjectContextMenuModel(bool isCloudProject, QString path, QString displayNameOverride,
@@ -41,6 +42,14 @@ void RecentProjectContextMenuModel::load()
 
     if (!m_path.isEmpty()) {
         items.append(makeMenuItem(SHOW_IN_FOLDER_ACTION));
+    }
+
+    if (!isCloudProject && !m_path.isEmpty() && m_renameHandler) {
+        auto* renameItem = new muse::uicomponents::MenuItem(this);
+        renameItem->setId(QString::fromUtf8(RENAME_PROJECT_ITEM));
+        renameItem->setTitle(muse::TranslatableString("project", "Rename…"));
+        renameItem->setEnabled(true);
+        items.append(renameItem);
     }
 
     if (!isCloudProject && !m_path.isEmpty() && m_deleteHandler) {
@@ -91,6 +100,13 @@ void RecentProjectContextMenuModel::handleMenuItem(const QString& itemId)
         muse::actions::ActionQuery query(UPDATE_AUDIO_PREVIEW_ACTION);
         query.addParam("id", muse::Val(m_cloudProjectId));
         dispatch(query);
+        return;
+    }
+
+    if (itemId == QString::fromUtf8(RENAME_PROJECT_ITEM)) {
+        if (m_renameHandler && !m_path.isEmpty()) {
+            m_renameHandler(m_path);
+        }
         return;
     }
 

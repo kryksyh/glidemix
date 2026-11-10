@@ -951,6 +951,14 @@
         <seq>Alt+Z</seq>
     </SC>
     <SC>
+        <key>mixhouse-anchor-in-playhead</key>
+        <seq>Alt+I</seq>
+    </SC>
+    <SC>
+        <key>mixhouse-anchor-out-playhead</key>
+        <seq>Alt+O</seq>
+    </SC>
+    <SC>
         <key>zoom-in</key>
         <seq>Ctrl+=</seq>
     </SC>

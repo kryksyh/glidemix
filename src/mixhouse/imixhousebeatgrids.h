@@ -208,5 +208,10 @@ public:
     /// song's beats jump off its grid, each later part slid back onto the
     /// grid. Returns how many cuts were made (0: no jump found).
     virtual int splitSelectedAtGridJumps() = 0;
+    /// Keyboard "Set IN/OUT anchor at playhead" (Marc Mont): anchor `which`
+    /// (0 IN, 1 OUT) of the selected clip under `projectTime` (or, with no
+    /// clip selected, the selected tracks' clip there) moves to that time.
+    /// False when no such clip has anchors.
+    virtual bool setSelectedClipAnchorAt(int which, double projectTime) = 0;
 };
 }
