@@ -81,6 +81,23 @@ private:
 
     bool BypassEffect(bool bypass);
 
+    //! GlideMix: the host's tempo and transport, asked for by tempo-synced
+    //! plug-ins during AudioUnitRender (same thread as ProcessBlock).
+    static OSStatus HostBeatAndTempo(void* userData, Float64* outCurrentBeat, Float64* outCurrentTempo);
+    static OSStatus HostMusicalTimeLocation(void* userData, UInt32* outDeltaSampleOffsetToNextBeat,
+                                            Float32* outTimeSigNumerator, UInt32* outTimeSigDenominator,
+                                            Float64* outCurrentMeasureDownBeat);
+    static OSStatus HostTransportState(void* userData, Boolean* outIsPlaying, Boolean* outTransportStateChanged,
+                                       Float64* outCurrentSampleInTimeLine, Boolean* outIsCycling,
+                                       Float64* outCycleStartBeat, Float64* outCycleEndBeat);
+    static OSStatus HostTransportState2(void* userData, Boolean* outIsPlaying, Boolean* outIsRecording,
+                                        Boolean* outTransportStateChanged, Float64* outCurrentSampleInTimeLine,
+                                        Boolean* outIsCycling, Float64* outCycleStartBeat, Float64* outCycleEndBeat);
+    bool HostMusicalTime(double& bpm, double& beats) const;
+    bool mHostTimeValid = false;
+    bool mHostWasPlaying = false;
+    double mHostTimelineTime = 0.0;
+
     static OSStatus AutomationRenderNotify(void*, AudioUnitRenderActionFlags*,
         const AudioTimeStamp*, UInt32, UInt32, AudioBufferList*);
     bool PrepareAutomationEvents(size_t frames);

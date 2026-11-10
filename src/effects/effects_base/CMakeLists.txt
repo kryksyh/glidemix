@@ -129,7 +129,15 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/view/pluginmanagertableviewverticalheader.h
     ${CMAKE_CURRENT_LIST_DIR}/view/dropdownoptionsmodel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/view/dropdownoptionsmodel.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/pluginobjcguard.h
     )
+
+if (OS_IS_MAC)
+    list(APPEND MODULE_SRC ${CMAKE_CURRENT_LIST_DIR}/internal/pluginobjcguard.mm)
+    # The shared precompiled header is C++ only.
+    set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/internal/pluginobjcguard.mm
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON SKIP_UNITY_BUILD_INCLUSION ON)
+endif()
 
 
 set(MODULE_LINK

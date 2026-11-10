@@ -16,6 +16,8 @@
 #include <AudioToolbox/AudioUnitUtilities.h>
 #include <dispatch/dispatch.h>
 #include "au3-basic-ui/BasicUI.h"
+#include "au3-components/ParameterAutomationSnapshot.h"
+#include "au3-mixer/PlaybackSpeedCurve.h"
 #include "au3-exceptions/AudacityException.h"
 #include <wx/log.h>
 #include <charconv>
@@ -256,6 +258,23 @@ bool AudioUnitInstance::ProcessInitialize(EffectSettings& settings,
         return false;
     }
 
+    // GlideMix: without these a tempo-synced plug-in (looper, tape stop, beat
+    // gate) gets no tempo or position from the host and does nothing.
+    {
+        HostCallbackInfo callbacks {};
+        callbacks.hostUserData = this;
+        callbacks.beatAndTempoProc = HostBeatAndTempo;
+        callbacks.musicalTimeLocationProc = HostMusicalTimeLocation;
+        callbacks.transportStateProc = HostTransportState;
+        callbacks.transportStateProc2 = HostTransportState2;
+        if (AudioUnitSetProperty(mUnit.get(), kAudioUnitProperty_HostCallbacks, kAudioUnitScope_Global, 0,
+                                 &callbacks, sizeof(callbacks)) != noErr) {
+            wxLogMessage("%ls didn't take the host tempo callbacks", mIdentifier.wx_str());
+        }
+    }
+    mHostTimeValid = false;
+    mHostWasPlaying = false;
+
     if (!BypassEffect(false)) {
         // Ignore bad return value.  Some (like Xfer OTT) give a bad status.
     }
@@ -436,6 +455,13 @@ size_t AudioUnitInstance::ProcessBlock(EffectSettings&,
                            outBlock[i] };
     }
 
+    if (const auto* times = GetParameterAutomationTimes()) {
+        mHostTimelineTime = times->At(0);
+        mHostTimeValid = std::isfinite(mHostTimelineTime);
+    } else {
+        mHostTimeValid = false;
+    }
+
     AudioUnitRenderActionFlags flags = 0;
     OSStatus result;
 
@@ -459,6 +485,101 @@ size_t AudioUnitInstance::ProcessBlock(EffectSettings&,
 
     mTimeStamp.mSampleTime += blockLen;
     return blockLen;
+}
+
+bool AudioUnitInstance::HostMusicalTime(double& bpm, double& beats) const
+{
+    PlaybackSpeedCurve::MusicalTime music;
+    if (!mHostTimeValid || !PlaybackSpeedCurve::MusicalTimeAt(mHostTimelineTime, music)) {
+        return false;
+    }
+    bpm = music.bpm;
+    beats = music.beats;
+    return true;
+}
+
+OSStatus AudioUnitInstance::HostBeatAndTempo(void* userData, Float64* outCurrentBeat, Float64* outCurrentTempo)
+{
+    double bpm = 0.0, beats = 0.0;
+    if (!userData || !static_cast<AudioUnitInstance*>(userData)->HostMusicalTime(bpm, beats)) {
+        return kAudioUnitErr_CannotDoInCurrentContext;
+    }
+    if (outCurrentBeat) {
+        *outCurrentBeat = beats;
+    }
+    if (outCurrentTempo) {
+        *outCurrentTempo = bpm;
+    }
+    return noErr;
+}
+
+OSStatus AudioUnitInstance::HostMusicalTimeLocation(void* userData, UInt32* outDeltaSampleOffsetToNextBeat,
+                                                    Float32* outTimeSigNumerator, UInt32* outTimeSigDenominator,
+                                                    Float64* outCurrentMeasureDownBeat)
+{
+    const auto* self = static_cast<AudioUnitInstance*>(userData);
+    double bpm = 0.0, beats = 0.0;
+    if (!self || !self->HostMusicalTime(bpm, beats)) {
+        return kAudioUnitErr_CannotDoInCurrentContext;
+    }
+    if (outDeltaSampleOffsetToNextBeat) {
+        const double toNext = std::ceil(beats) - beats;
+        *outDeltaSampleOffsetToNextBeat
+            = static_cast<UInt32>(std::llround(toNext * 60.0 / bpm * self->mInitializedSampleRate));
+    }
+    if (outTimeSigNumerator) {
+        *outTimeSigNumerator = 4;
+    }
+    if (outTimeSigDenominator) {
+        *outTimeSigDenominator = 4;
+    }
+    if (outCurrentMeasureDownBeat) {
+        *outCurrentMeasureDownBeat = std::floor(beats / 4.0) * 4.0;
+    }
+    return noErr;
+}
+
+OSStatus AudioUnitInstance::HostTransportState(void* userData, Boolean* outIsPlaying, Boolean* outTransportStateChanged,
+                                               Float64* outCurrentSampleInTimeLine, Boolean* outIsCycling,
+                                               Float64* outCycleStartBeat, Float64* outCycleEndBeat)
+{
+    return HostTransportState2(userData, outIsPlaying, nullptr, outTransportStateChanged,
+                               outCurrentSampleInTimeLine, outIsCycling, outCycleStartBeat, outCycleEndBeat);
+}
+
+OSStatus AudioUnitInstance::HostTransportState2(void* userData, Boolean* outIsPlaying, Boolean* outIsRecording,
+                                                Boolean* outTransportStateChanged, Float64* outCurrentSampleInTimeLine,
+                                                Boolean* outIsCycling, Float64* outCycleStartBeat, Float64* outCycleEndBeat)
+{
+    auto* self = static_cast<AudioUnitInstance*>(userData);
+    if (!self) {
+        return kAudioUnitErr_CannotDoInCurrentContext;
+    }
+    // Blocks with timeline times come from playback or export: the transport runs.
+    const bool playing = self->mHostTimeValid;
+    if (outIsPlaying) {
+        *outIsPlaying = playing;
+    }
+    if (outIsRecording) {
+        *outIsRecording = false;
+    }
+    if (outTransportStateChanged) {
+        *outTransportStateChanged = playing != self->mHostWasPlaying;
+    }
+    self->mHostWasPlaying = playing;
+    if (outCurrentSampleInTimeLine) {
+        *outCurrentSampleInTimeLine = playing ? self->mHostTimelineTime * self->mInitializedSampleRate : 0.0;
+    }
+    if (outIsCycling) {
+        *outIsCycling = false;
+    }
+    if (outCycleStartBeat) {
+        *outCycleStartBeat = 0.0;
+    }
+    if (outCycleEndBeat) {
+        *outCycleEndBeat = 0.0;
+    }
+    return noErr;
 }
 
 bool AudioUnitInstance::RealtimeInitialize(

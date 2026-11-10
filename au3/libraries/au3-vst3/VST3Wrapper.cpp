@@ -7,6 +7,9 @@
 #include <map>
 
 #include "au3-components/EffectInterface.h"
+#include "au3-components/ParameterAutomationSnapshot.h"
+#include "au3-mixer/PlaybackSpeedCurve.h"
+#include <cmath>
 
 #include "AudacityVst3HostApplication.h"
 
@@ -1051,6 +1054,31 @@ size_t VST3Wrapper::Process(const float* const* inBlock, float* const* outBlock,
     data.processMode = mSetup.processMode;
     data.symbolicSampleSize = mSetup.symbolicSampleSize;
     data.inputParameterChanges = &inputParameterChanges;
+    // GlideMix: tell the plug-in where it is in the music. Before this only
+    // kPlaying and the sample rate were set (tempo 0, position never moving),
+    // so tempo-synced plug-ins -- loopers, tape stops, beat gates, rumble
+    // generators -- loaded but did nothing.
+    {
+        constexpr auto musicalFlags = Vst::ProcessContext::kTempoValid
+                                      | Vst::ProcessContext::kProjectTimeMusicValid
+                                      | Vst::ProcessContext::kBarPositionValid
+                                      | Vst::ProcessContext::kTimeSigValid;
+        mProcessContext.state &= ~musicalFlags;
+        PlaybackSpeedCurve::MusicalTime music;
+        if (automationTimes && (mProcessContext.state & Vst::ProcessContext::kPlaying)) {
+            const double timelineTime = automationTimes->At(0);
+            mProcessContext.projectTimeSamples
+                = static_cast<Vst::TSamples>(std::llround(timelineTime * mSetup.sampleRate));
+            if (PlaybackSpeedCurve::MusicalTimeAt(timelineTime, music)) {
+                mProcessContext.state |= musicalFlags;
+                mProcessContext.tempo = music.bpm;
+                mProcessContext.projectTimeMusic = music.beats;
+                mProcessContext.barPositionMusic = std::floor(music.beats / 4.0) * 4.0;
+                mProcessContext.timeSigNumerator = 4;
+                mProcessContext.timeSigDenominator = 4;
+            }
+        }
+    }
     data.processContext = &mProcessContext;
 
     static_assert(std::numeric_limits<decltype(blockLen)>::max()

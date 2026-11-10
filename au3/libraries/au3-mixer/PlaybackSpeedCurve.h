@@ -50,4 +50,15 @@ public:
     //! every 60 / ProjectTempo() timeline seconds from it.
     static void SetBeatOrigin(double time);
     static double BeatOrigin();
+
+    //! GlideMix: what a host tells VST3 / Audio Unit plug-ins about the
+    //! music at timeline time `t`: the tempo heard there (project tempo times
+    //! the tempo lane's speed) and quarter-note beats counted from bar 1, the
+    //! way the DJ effects count them. False while the project tempo is unknown.
+    //! Tempo-synced plug-ins (loopers, tape stops, gates) do nothing without it.
+    struct MusicalTime {
+        double bpm = 0.0;
+        double beats = 0.0;
+    };
+    static bool MusicalTimeAt(double timelineTime, MusicalTime& out);
 };

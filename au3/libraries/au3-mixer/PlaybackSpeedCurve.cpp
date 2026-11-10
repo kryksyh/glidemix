@@ -199,3 +199,20 @@ std::shared_ptr<const PlaybackSpeedCurve> PlaybackSpeedCurve::Live()
     std::lock_guard<std::mutex> lock(LiveMutex());
     return State().curve;
 }
+
+bool PlaybackSpeedCurve::MusicalTimeAt(double timelineTime, MusicalTime& out)
+{
+    const double tempo = ProjectTempo();
+    if (!(tempo > 0.0) || !std::isfinite(timelineTime)) {
+        return false;
+    }
+    double speed = 1.0;
+    if (const auto curve = Live()) {
+        speed = std::max(0.01, curve->SpeedAt(timelineTime));
+    }
+    // The timeline is in bars at the project tempo, so beats are linear in
+    // timeline time; the tempo lane only changes how fast it is played.
+    out.bpm = tempo * speed;
+    out.beats = (timelineTime - BeatOrigin()) * tempo / 60.0;
+    return true;
+}

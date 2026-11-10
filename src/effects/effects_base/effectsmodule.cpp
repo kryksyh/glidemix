@@ -41,6 +41,7 @@
 #include "view/generatedeffectviewermodel.h"
 #include "view/dropdownoptionsmodel.h"
 #include "view/pluginmanagertableviewmodel.h"
+#include "internal/pluginobjcguard.h"
 
 using namespace au::effects;
 
@@ -125,6 +126,8 @@ void EffectsModule::onInit(const muse::IApplication::RunMode& mode)
             m_effectsProvider->setPluginsThatCrashedLastRun(PluginCrashGuard::ReadRecords(dir));
             PluginCrashGuard::Install(dir);
         }
+        // GlideMix: plug-ins with their own Qt (AIR) must not take over ours.
+        installPluginObjCGuard();
     }
 
     //! --- Diagnostics ---

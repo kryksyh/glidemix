@@ -25,6 +25,7 @@ PUBLIC
 PRIVATE
    au3-basic-ui
    au3-exceptions
+   au3-mixer
    au3-module-manager
    "-framework AudioUnit"
    "-framework AudioToolbox"

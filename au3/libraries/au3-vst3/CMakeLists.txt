@@ -43,6 +43,7 @@ PRIVATE
    au3-basic-ui
    au3-exceptions
    au3-files
+   au3-mixer
    au3-module-manager
    au3-strings
    wxBase

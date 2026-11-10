@@ -12,6 +12,8 @@
 #include <QTextCodec>
 
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
 
 #include "appfactory.h"
 #include "commandlineparser.h"
@@ -237,5 +239,12 @@ int main(int argc, char** argv)
     delete qApplication;
 
     LOGI() << "Goodbye!! code: " << code;
-    return code;
+
+    // GlideMix: everything is saved and shut down. Leave now, without running
+    // the static destructors of every loaded library: plug-ins (TimeStop,
+    // Hyperlift, The Drop -- JUCE timers and licence clocks) keep their own
+    // threads running, and tearing down their statics under them crashed
+    // GlideMix on quit (crash reports 2026-11-08 and 2026-11-09).
+    std::fflush(nullptr);
+    std::_Exit(code);
 }

@@ -35,14 +35,10 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.1: your own toolbar**\n\n"
-                      + "- **Customize the toolbar** like Safari: right-click the toolbar (or its gear) and drag buttons in, out and along it; Space and Flexible Space; show icons, text or both (new GlideMix icons). The default set puts it back.\n"
-                      + "- **Key column your way:** plain text, coloured text or coloured badges (Preferences > Music library).\n"
-                      + "- **Tooltips show their text again**, and submenus open as you point at them.\n"
-                      + "- **Transition dots:** the dot at the clip's edge moves the line's start or end, no more extra dots.\n"
-                      + "- **Track headers line up** with their rows in the timeline again.\n"
-                      + "- **No more flashing** in the library while songs are analysed.\n"
-                      + "- **Buttons are pills** everywhere, Color > Intensity works from the track header too.\n"
+                text: "**GlideMix v1.2.2: your plug-ins play along**\n\n"
+                      + "- **Tempo-synced plug-ins follow the beat:** loopers, tape stops, gates and beat FX get the tempo, beat and bar now (VST3 and Audio Unit).\n"
+                      + "- **AIR plug-ins no longer crash GlideMix** (Mac), nor do others that bring their own Qt.\n"
+                      + "- **No crash when quitting** with plug-ins like TimeStop or Hyperlift loaded.\n"
             }
         }
 
