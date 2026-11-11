@@ -234,6 +234,10 @@ private:
     qreal findZoomFocusPosition() const;
 
     void fitSelectionToWidth();
+    //! GlideMix: Ableton's X -- back one Zoom to selection step.
+    void zoomBack();
+    //! GlideMix: Ableton's grid keys -- finer/coarser musical grid, triplets, snap on/off.
+    void stepGrid(int finer);
     void fitProjectToWidth();
     void zoomToggle();
     double getZoomOfPreset(ZoomPresets::Preset preset) const;
@@ -280,6 +284,8 @@ private:
     double m_lastZoomEndTime = 0.0;
 
     double m_zoom = 1.0; // see initToViewState
+    //! GlideMix: the views Zoom to selection left (zoom, frame start), newest last.
+    std::vector<std::pair<double, double> > m_zoomHistory;
     int m_BPM = 120;
     // time signature
     int m_timeSigUpper = 4;

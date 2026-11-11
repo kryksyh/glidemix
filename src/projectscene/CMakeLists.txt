@@ -177,6 +177,8 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/selectioncontextmenumodel.h
     ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/canvascontextmenumodel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/canvascontextmenumodel.h
+    ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/gridmenuitems.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/gridmenuitems.h
     ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/splittoolcontroller.cpp
     ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/splittoolcontroller.h
     ${CMAKE_CURRENT_LIST_DIR}/view/tracksitemsview/mousehelper.cpp

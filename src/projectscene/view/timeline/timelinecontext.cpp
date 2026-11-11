@@ -3,6 +3,7 @@
 
 #include <QWheelEvent>
 #include <cmath>
+#include <algorithm>
 
 #include "global/types/number.h"
 
@@ -131,7 +132,41 @@ void TimelineContext::init(double frameWidth)
         emit userHorizontalScrolled();
     });
     dispatcher()->reg(this, "zoom-default", this, &TimelineContext::zoomDefault);
-    dispatcher()->reg(this, "zoom-to-selection", this, &TimelineContext::fitSelectionToWidth);
+    dispatcher()->reg(this, "zoom-to-selection", [this]() {
+        fitSelectionToWidth();
+        emit userHorizontalScrolled();
+    });
+    dispatcher()->reg(this, "zoom-back", [this]() {
+        zoomBack();
+        emit userHorizontalScrolled();
+    });
+    dispatcher()->reg(this, "grid-set", [this](const muse::actions::ActionData& args) {
+        const auto vs = viewState();
+        if (!vs || args.count() < 1) {
+            return;
+        }
+        Snap snap = vs->getSnap();
+        snap.type = static_cast<SnapType>(args.arg<int>(0));
+        snap.enabled = true;
+        vs->setSnap(snap);
+    });
+    // GlideMix: Ableton's R -- the built-in Reverse on the selected time or clip.
+    dispatcher()->reg(this, "reverse", [this]() {
+        dispatcher()->dispatch(muse::actions::ActionQuery(
+                                   "action://effects/apply?effectId=Effect_Audacity_Audacity_Reverse_Built-in Effect: Reverse"));
+    });
+    dispatcher()->reg(this, "grid-narrow", [this]() { stepGrid(1); });
+    dispatcher()->reg(this, "grid-widen", [this]() { stepGrid(-1); });
+    dispatcher()->reg(this, "grid-triplets", [this]() {
+        if (const auto vs = viewState()) {
+            vs->setIsSnapTripletsEnabled(!vs->isSnapTripletsEnabled());
+        }
+    });
+    dispatcher()->reg(this, "snap-toggle", [this]() {
+        if (const auto vs = viewState()) {
+            vs->setIsSnapEnabled(!vs->isSnapEnabled());
+        }
+    });
     dispatcher()->reg(this, "zoom-to-fit-project", this, &TimelineContext::fitProjectToWidth);
     dispatcher()->reg(this, "center-view-on-playhead", this, &TimelineContext::centerViewOnPlayhead);
     dispatcher()->reg(this, "zoom-toggle", this, &TimelineContext::zoomToggle);
@@ -712,9 +747,11 @@ qreal TimelineContext::findZoomFocusPosition() const
 {
     double result = 0.0;
 
-    if (m_selectionActive) {
-        // Active range selection: zoom at the center of the selection
-        result = selectionCenterPosition();
+    // GlideMix: a selected clip counts as a selection too (Ableton zooms
+    // around whatever is selected).
+    const auto [selStart, selEnd] = selectionRange();
+    if (selEnd > selStart) {
+        result = timeToPosition(selStart + (selEnd - selStart) / 2.0);
     } else {
         // No range selection: zoom at the current playback position
         result = timeToPosition(playbackState()->playbackPosition());
@@ -751,11 +788,50 @@ void TimelineContext::fitSelectionToWidth()
         return;
     }
 
+    // GlideMix: remember where we were, so X (zoom-back) can return -- one
+    // step per Z, as in Ableton.
+    m_zoomHistory.emplace_back(m_zoom, m_frameStartTime);
+    if (m_zoomHistory.size() > 32) {
+        m_zoomHistory.erase(m_zoomHistory.begin());
+    }
+
     double newZoom = m_frameWidth / (endTime - startTime);
     setZoom(newZoom, 0.0);
 
     //! position view to start of selection
     shiftFrameTime(startTime - m_frameStartTime);
+}
+
+void TimelineContext::zoomBack()
+{
+    if (m_zoomHistory.empty()) {
+        return;
+    }
+    const auto [zoom, frameStart] = m_zoomHistory.back();
+    m_zoomHistory.pop_back();
+    setZoom(zoom, 0.0);
+    shiftFrameTime(frameStart - m_frameStartTime);
+}
+
+void TimelineContext::stepGrid(int finer)
+{
+    const auto vs = viewState();
+    if (!vs) {
+        return;
+    }
+    // Bar .. 1/32, as Ableton's Fixed Grid; Beat and Smart join it at 1/4.
+    static const std::vector<SnapType> steps {
+        SnapType::Bar, SnapType::Half, SnapType::Quarter, SnapType::Eighth, SnapType::Sixteenth, SnapType::ThirtySecond
+    };
+    auto it = std::find(steps.begin(), steps.end(), vs->snapType());
+    int index = it != steps.end() ? static_cast<int>(it - steps.begin()) : 2;
+    if (it != steps.end()) {
+        index = std::clamp(index + finer, 0, static_cast<int>(steps.size()) - 1);
+    }
+    Snap snap = vs->getSnap();
+    snap.type = steps[static_cast<size_t>(index)];
+    snap.enabled = true;   // a grid change means the grid is wanted
+    vs->setSnap(snap);
 }
 
 void TimelineContext::showTimeRange(double startSec, double endSec)

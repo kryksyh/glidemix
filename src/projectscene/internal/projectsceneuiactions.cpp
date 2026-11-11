@@ -105,6 +105,65 @@ static UiActionList STATIC_ACTIONS = {
              TranslatableString("action_description", "Zoom toggle"),
              IconCode::Code::ZOOM_TOGGLE
              ),
+    // GlideMix: Ableton's X -- back one step from Zoom to selection (Z).
+    UiAction("zoom-back",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Zoom back"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Go back to the zoom before the last Zoom to selection")
+             ),
+    UiAction("grid-set",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Fixed grid"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Snap to a fixed grid size")
+             ),
+    // GlideMix: Ableton's R.
+    UiAction("reverse",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Reverse"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Play the selected audio backwards")
+             ),
+    // GlideMix: Ableton's grid keys (⌘1 ⌘2 ⌘3 ⌘4).
+    UiAction("grid-narrow",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Narrow grid"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Make the snapping grid finer")
+             ),
+    UiAction("grid-widen",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Widen grid"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Make the snapping grid coarser")
+             ),
+    UiAction("grid-triplets",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Triplet grid"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Switch the snapping grid to triplets and back")
+             ),
+    UiAction("snap-toggle",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_ANY,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Snap to grid"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Turn snapping to the grid on or off")
+             ),
     UiAction("center-view-on-playhead",
              au::context::UiCtxProjectOpened,
              au::context::CTX_ANY,
@@ -571,10 +630,10 @@ const ToolConfig& ProjectSceneUiActions::defaultPlaybackToolBarConfig()
             // GlideMix: the parked MixHouse DJ app's header controls
             { "metronome", true },
             { "mixhouse-sync", true },
-            { "mixhouse-tempo-lane", true },
-            { "mixhouse-energy-lane", true },
             { "mixhouse-keylock", true },
             { "mixhouse-link", true },
+            { "mixhouse-tempo-lane", true },
+            { "mixhouse-energy-lane", true },
             { "mixhouse-perform", true },
             { "mixhouse-reset-performance", true },
             { "mixhouse-broadcast", true },

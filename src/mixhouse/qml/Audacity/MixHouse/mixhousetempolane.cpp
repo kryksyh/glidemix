@@ -331,18 +331,19 @@ void MixHouseTempoLane::paint(QPainter* p)
     // A dark edge keeps the yellow line readable over the energy colours.
     p->setBrush(Qt::NoBrush);
     if (m_showEnergy) {
-        p->setPen(QPen(QColor(0, 0, 0, 150), 5.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p->setPen(QPen(QColor(0, 0, 0, 150), 3.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p->drawPath(path);
     }
-    p->setPen(QPen(m_lineColor, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    // GlideMix (Chris, 2026-11-11): Logic's thin line and small dots, like the clip lines.
+    p->setPen(QPen(m_lineColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p->drawPath(path);
 
     paintHandovers(p, points);
 
     // Points with their BPM; the readout flips below a point near the top.
     QFont font = p->font();
-    font.setPixelSize(11);
-    font.setBold(true);
+    font.setPixelSize(10);
+    font.setWeight(QFont::DemiBold);
     p->setFont(font);
     const QFontMetricsF fm(font);
     for (int i = 0; i < static_cast<int>(points.size()); ++i) {
@@ -351,12 +352,15 @@ void MixHouseTempoLane::paint(QPainter* p)
             continue;
         }
         const bool active = (m_drag == Drag::Point && i == m_dragIndex) || i == m_selectedIndex;
-        p->setPen(QPen(Qt::white, 1.5));
+        p->setPen(active ? QPen(Qt::white, 1.0) : QPen(Qt::NoPen));
         p->setBrush(m_pointColor);
-        p->drawEllipse(pt, active ? 6.0 : 5.0, active ? 6.0 : 5.0);
+        p->drawEllipse(pt, active ? 5.0 : 3.5, active ? 5.0 : 3.5);
+        const bool below = pt.y() - 6.0 - fm.height() < 0.0;
+        const QPointF at(pt.x() + 6.0, below ? pt.y() + 6.0 + fm.ascent() : pt.y() - 6.0);
+        p->setPen(QColor(0, 0, 0, 170));   // soft shadow, as on the clip lines
+        p->drawText(at + QPointF(1.0, 1.0), bpmLabel(points[i].bpm));
         p->setPen(m_labelColor);
-        const bool below = pt.y() - 4.0 - fm.height() < 0.0;
-        p->drawText(QPointF(pt.x() + 8.0, below ? pt.y() + fm.height() : pt.y() - 4.0), bpmLabel(points[i].bpm));
+        p->drawText(at, bpmLabel(points[i].bpm));
     }
 }
 

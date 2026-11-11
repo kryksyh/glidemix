@@ -238,19 +238,27 @@ SampleData getSampleData(const au::au3::Au3WaveClip& clip, int channelIndex, con
     const double t0 = metrics.fromTime;
     const auto s0 = sampleCount(floor(t0 * rate));
     const auto snSamples = clip.GetVisibleSampleCount();
-    if (s0 > snSamples) {
+    // GlideMix (crash 2026-11-10, 1.2.4): a window starting before the clip
+    // or past its end has nothing to draw here.
+    if (s0 < 0 || s0 > snSamples) {
         return SampleData();
     }
 
     const double t1 = metrics.toTime;
     const auto s1 = sampleCount(ceil(t1 * rate));
 
-    // Assume size_t will not overflow, else we wouldn't be here drawing the
-    // few individual samples
-    const auto slen = std::min(snSamples - s0, s1 - s0 + 1).as_size_t();
-    if (slen <= 0) {
-        SampleData();
+    // GlideMix: while a clip is being edited its window can briefly come out
+    // backwards (end before start). The count went negative, and release
+    // builds (no assert) turned it into a huge size_t: the buffer below then
+    // threw bad_alloc on the render thread and the app aborted. Draw nothing
+    // for that frame instead. The cap keeps a wrong window from asking for
+    // more than this close-zoom view ever draws.
+    constexpr long long maxSamples = 1 << 20;
+    const long long count = std::min((snSamples - s0).as_long_long(), (s1 - s0 + 1).as_long_long());
+    if (count <= 0 || count > maxSamples) {
+        return SampleData();
     }
+    const size_t slen = static_cast<size_t>(count);
 
     Floats buffer{ slen };
     clip.GetSamples(channelIndex, (samplePtr)buffer.get(), floatSample, s0, slen, false);

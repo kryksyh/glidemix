@@ -449,59 +449,114 @@ Item {
 
             StyledToolBarItem {
                 height: 28
+                // GlideMix (Chris, 2026-11-11): Re-enable is greyed out until a
+                // line is overridden, but its tooltip must still explain it, so
+                // it keeps the hover (a click with nothing overridden does nothing).
+                readonly property bool alwaysHover: Boolean(itemData) && itemData.code === "mixhouse-reenable-automation"
+                enabled: alwaysHover || (Boolean(itemData) ? itemData.enabled : false)
+                opacity: alwaysHover && !itemData.enabled ? 0.45 : 1.0
                 // 0 icon and text, 1 icon only, 2 text only (Customize Toolbar).
-                readonly property int displayStyle: view.model ? view.model.displayStyle : 2
+                readonly property int displayStyle: view.model ? view.model.displayStyle : 1
                 readonly property string svgName: Boolean(itemData) ? root.gmIconFor(itemData.code) : ""
                 readonly property bool showIcon: svgName !== "" && displayStyle !== 2
                 readonly property bool showText: displayStyle !== 1 || svgName === ""
-                // SYNC / TEMPO fit 60; KEYLOCK needs a little more.
-                width: !showText ? 34
-                       : (Boolean(itemData) && itemData.title.length > 5 ? 78 : 60) + (showIcon ? 20 : 0)
+                readonly property string label: Boolean(itemData) ? itemData.title.toUpperCase() : ""
+                readonly property color lineColor: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
+                                                           ui.theme.fontPrimaryColor.b, ui.theme.isDark ? 0.26 : 0.34)
 
-                // GlideMix modern look: a capsule, filled only when on,
-                // a thin outline when off (like the library pills).
+                TextMetrics {
+                    id: labelMetrics
+                    font: ui.theme.bodyBoldFont
+                    text: textToggle.label
+                }
+
+                // Text only: a capsule sized to the word (SYNC / TEMPO fit 60;
+                // KEYLOCK needs a little more). With an icon: a square tile
+                // and the word beside it, outside the tile.
+                width: !showIcon ? (Boolean(itemData) && itemData.title.length > 5 ? 78 : 60)
+                       : height + (showText ? 7 + Math.ceil(labelMetrics.advanceWidth) + 4 : 0)
+
                 id: textToggle
+
+                // GlideMix modern look, text only: a capsule, filled only when
+                // on, a thin outline when off (like the library pills).
                 backgroundRadius: height / 2
-                transparent: !accentButton
+                transparent: !accentButton || showIcon
+                // With an icon the tile below is the whole look.
+                Component { id: noBackground; Item {} }
+                Component.onCompleted: {
+                    const capsule = backgroundItem
+                    backgroundItem = Qt.binding(function() { return textToggle.showIcon ? noBackground : capsule })
+                }
 
                 Rectangle {
                     anchors.fill: parent
-                    visible: !textToggle.accentButton
+                    visible: !textToggle.accentButton && !textToggle.showIcon
                     color: "transparent"
                     radius: height / 2
                     border.width: 1
-                    border.color: Qt.rgba(ui.theme.fontPrimaryColor.r, ui.theme.fontPrimaryColor.g,
-                                          ui.theme.fontPrimaryColor.b, ui.theme.isDark ? 0.22 : 0.30)
+                    border.color: textToggle.lineColor
                 }
 
-                // Text only: the button's own label. With an icon: icon and
-                // label drawn here as one centred row.
-                text: showText && !showIcon && Boolean(itemData) ? itemData.title.toUpperCase() : ""
+                text: showText && !showIcon ? label : ""
                 textFont: ui.theme.bodyBoldFont
 
-                Row {
+                // Icon tile: the same square button as Audacity's own toolbar
+                // buttons (FlatButton's background: fill, opacity, border, top
+                // sheen, hover and press), filled with the button's colour when on.
+                Item {
+                    id: tile
                     visible: textToggle.showIcon
-                    anchors.centerIn: parent
-                    spacing: 5
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: textToggle.height
+                    height: width
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 6
+                        color: textToggle.accentButton ? textToggle.accentColor : ui.theme.buttonColor
+                        opacity: textToggle.accentButton ? 1.0
+                                 : textToggle.mouseArea.pressed ? ui.theme.buttonOpacityHit
+                                 : textToggle.mouseArea.containsMouse ? ui.theme.buttonOpacityHover
+                                 : ui.theme.buttonOpacityNormal
+                        border.width: ui.theme.borderWidth
+                        border.color: ui.theme.strokeColor
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, ui.theme.isDark ? 0.10 : 0.30) }
+                                GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0) }
+                            }
+                        }
+                    }
 
                     Image {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 16
-                        height: 16
-                        sourceSize.width: 32
-                        sourceSize.height: 32
-                        // Light lines on the purple fill when on; the theme's colour when off.
+                        anchors.centerIn: parent
+                        width: 18
+                        height: 18
+                        // Drawn at 4x and scaled down, so the lines stay sharp on Retina.
+                        sourceSize.width: 72
+                        sourceSize.height: 72
+                        smooth: true
+                        mipmap: true
+                        // Light lines on the coloured fill when on; the theme's colour when off.
                         source: !textToggle.showIcon ? ""
                                 : "qrc:/resources/toolbaricons/" + textToggle.svgName + "-"
                                   + (ui.theme.isDark || textToggle.accentButton ? "dark" : "light") + ".svg"
                     }
-                    StyledTextLabel {
-                        visible: textToggle.showText
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: Boolean(textToggle.itemData) ? textToggle.itemData.title.toUpperCase() : ""
-                        font: ui.theme.bodyBoldFont
-                        color: textToggle.accentButton ? "#FFFFFF" : ui.theme.fontPrimaryColor
-                    }
+                }
+
+                StyledTextLabel {
+                    visible: textToggle.showIcon && textToggle.showText
+                    anchors.left: tile.right
+                    anchors.leftMargin: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: textToggle.label
+                    font: ui.theme.bodyBoldFont
+                    color: ui.theme.fontPrimaryColor
                 }
 
                 // Performing (audience playback) is red, like a record light.
@@ -640,11 +695,22 @@ Item {
             width: 28
             height: width
 
-            icon: IconCode.FIT_PROJECT
-            iconFont: ui.theme.iconsFont
+            // GlideMix (Chris, 2026-11-11): its own reset icon on the standard
+            // button background, like the other toolbar buttons.
+
+            Image {
+                anchors.centerIn: parent
+                width: 18
+                height: 18
+                sourceSize.width: 72
+                sourceSize.height: 72
+                smooth: true
+                mipmap: true
+                source: "qrc:/resources/toolbaricons/gm-reset-" + (ui.theme.isDark ? "dark" : "light") + ".svg"
+            }
             //: Tooltip of the toolbar button that resets zoom, lane heights and scrolling
             toolTipTitle: qsTrc("projectscene", "Reset view")
-            toolTipDescription: qsTrc("projectscene", "Lanes at their default height, the first songs readable")
+            toolTipDescription: qsTrc("projectscene", "Puts the view back to normal: tracks at their default height, zoomed so the first songs are readable, scrolled to the start")
 
             enabled: view.model.isEnabled
 

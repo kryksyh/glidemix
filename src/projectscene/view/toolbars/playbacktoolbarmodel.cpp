@@ -1,3 +1,6 @@
+#include <map>
+#include <QTimer>
+#include <QSettings>
 /*
 * Audacity: A Digital Audio Editor
 */
@@ -392,6 +395,22 @@ QColor PlaybackToolBarModel::themeColor(muse::ui::ThemeStyleKey key) const
     return uiConfiguration()->currentTheme().values.value(key).value<QColor>();
 }
 
+//! GlideMix: the toolbar's categories, each in its own capsule
+//! (0 = not one of them). The number is also their order.
+static int toolbarCategory(const std::string& code)
+{
+    static const std::map<std::string, int> categories {
+        { "action://record/level", 1 }, { "action://playback/level", 1 }, { "metronome", 1 },
+        { "mixhouse-sync", 2 }, { "mixhouse-keylock", 2 }, { "mixhouse-link", 2 },
+        { "snap", 3 },
+        { "mixhouse-tempo-lane", 4 }, { "mixhouse-energy-lane", 4 },
+        { "mixhouse-perform", 5 }, { "mixhouse-reset-performance", 5 }, { "mixhouse-broadcast", 5 }, { "mixhouse-mix-now", 5 },
+        { "mixhouse-automation-arm", 6 }, { "mixhouse-reenable-automation", 6 },
+    };
+    const auto it = categories.find(code);
+    return it != categories.end() ? it->second : 0;
+}
+
 void PlaybackToolBarModel::updateActions()
 {
     ToolBarItemList items;
@@ -403,8 +422,53 @@ void PlaybackToolBarModel::updateActions()
     // GlideMix: Customize Toolbar keeps its Icon/Text choice in the saved
     // list as a hidden marker item; a list with the marker was arranged by
     // hand, so nothing below moves items for it.
+    // GlideMix (Chris, 2026-11-11): icon tiles only, no words (the name and
+    // what it does show on hover), and the GlideMix buttons in order of their
+    // category, each category its own capsule. Once per saved toolbar: the
+    // hidden marker "glidemix-toolbar-groups-1" is saved with it, so a later
+    // "Text only" from Customize Toolbar stays.
+    {
+        bool marked = false;
+        for (const muse::ui::ToolConfig::Item& citem : playbackConfig.items) {
+            marked = marked || citem.intent == "glidemix-toolbar-groups-1";
+        }
+        if (!marked) {
+            bool changed = false;
+            for (muse::ui::ToolConfig::Item& citem : playbackConfig.items) {
+                if (citem.intent == "glidemix-toolbar-style-2" || citem.intent == "glidemix-toolbar-style-0") {
+                    citem.intent = "glidemix-toolbar-style-1";
+                    changed = true;
+                }
+            }
+            // The categorised buttons keep their slots; inside those slots they
+            // are sorted by category (a stable sort keeps the order within one).
+            QList<int> places;
+            QList<muse::ui::ToolConfig::Item> grouped;
+            for (int i = 0; i < playbackConfig.items.size(); ++i) {
+                if (toolbarCategory(playbackConfig.items[i].intent) > 0) {
+                    places << i;
+                    grouped << playbackConfig.items[i];
+                }
+            }
+            std::stable_sort(grouped.begin(), grouped.end(), [](const auto& a, const auto& b) {
+                return toolbarCategory(a.intent) < toolbarCategory(b.intent);
+            });
+            for (int k = 0; k < places.size(); ++k) {
+                if (playbackConfig.items[places[k]].intent != grouped[k].intent) {
+                    playbackConfig.items[places[k]] = grouped[k];
+                    changed = true;
+                }
+            }
+            if (changed) {
+                // Saved after this pass (saving reloads the toolbar), with the marker.
+                playbackConfig.items.append(muse::ui::ToolConfig::Item("glidemix-toolbar-groups-1", false));
+                const muse::ui::ToolConfig save = playbackConfig;
+                QTimer::singleShot(0, this, [this, save]() { uiState()->setToolConfig(TOOLBAR_NAME, save); });
+            }
+        }
+    }
     bool customised = false;
-    int displayStyle = 2;
+    int displayStyle = 1;
     for (const muse::ui::ToolConfig::Item& citem : playbackConfig.items) {
         const QString intent = QString::fromStdString(citem.intent);
         if (intent.startsWith(QStringLiteral("glidemix-toolbar-style-"))) {
@@ -477,8 +541,8 @@ void PlaybackToolBarModel::updateActions()
         const QString code = QString::fromStdString(items[i]->action().code);
         if (code == QStringLiteral("snap")) {
             snapAt = i;
-        } else if (code == QStringLiteral("mixhouse-keylock")) {
-            keylockAt = i;
+        } else if (toolbarCategory(items[i]->action().code) == 2) {
+            keylockAt = i;   // GlideMix: after the last of SYNC / KEYLOCK / LINK
         }
     }
     if (!customised && snapAt >= 0 && keylockAt >= 0) {
@@ -515,6 +579,19 @@ void PlaybackToolBarModel::updateActions()
             --performAt;
         }
         items.insert(performAt + 1, stop);
+    }
+
+    // GlideMix: a capsule per category -- a separator wherever two
+    // neighbouring buttons belong to different categories.
+    for (int i = items.size() - 1; i > 0; --i) {
+        if (items[i]->type() == ToolBarItemType::SEPARATOR || items[i - 1]->type() == ToolBarItemType::SEPARATOR) {
+            continue;
+        }
+        const int here = toolbarCategory(items[i]->action().code);
+        const int before = toolbarCategory(items[i - 1]->action().code);
+        if (here != before && (here > 0 || before > 0)) {
+            items.insert(i, AbstractToolBarModel::makeSeparator());
+        }
     }
 
     // GlideMix: an emptied group leaves no gap: no separator first, last or

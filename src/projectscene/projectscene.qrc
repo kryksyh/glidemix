@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
+        <file>resources/toolbaricons/gm-reset-dark.svg</file>
+        <file>resources/toolbaricons/gm-reset-light.svg</file>
         <file>resources/toolbaricons/gm-sync-dark.svg</file>
         <file>resources/toolbaricons/gm-sync-light.svg</file>
         <file>resources/toolbaricons/gm-tempo-dark.svg</file>

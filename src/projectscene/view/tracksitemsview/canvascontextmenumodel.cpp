@@ -6,6 +6,8 @@
 
 #include "canvascontextmenumodel.h"
 
+#include "gridmenuitems.h"
+
 using namespace au::projectscene;
 using namespace muse;
 using namespace muse::uicomponents;
@@ -39,8 +41,29 @@ MenuItemList CanvasContextMenuModel::makeItems()
         makeMenuItem("new-label-track"),
         makeSeparator(),
         makeMenuItem("select-all"),
-        makeMenuItem("clear-selection")
+        makeMenuItem("clear-selection"),
+        // GlideMix: Ableton's zoom keys and grid section, here too.
+        makeSeparator(),
+        makeMenuItem("zoom-back"),
+        makeSeparator(),
     };
+    for (MenuItem* item : gridItems()) {
+        items.push_back(item);
+    }
 
     return items;
+}
+
+MenuItemList CanvasContextMenuModel::gridItems()
+{
+    Snap snap;
+    if (const auto project = globalContext()->currentProject(); project && project->viewState()) {
+        snap = project->viewState()->getSnap();
+    }
+    return makeGridMenuItems(snap,
+                             [this](const ActionCode& code, const TranslatableString& title) { return makeMenuItem(code, title); },
+                             [this](const TranslatableString& title, const MenuItemList& items, const QString& id) {
+        return makeMenu(title, items, id);
+    },
+                             [this]() { return makeSeparator(); });
 }

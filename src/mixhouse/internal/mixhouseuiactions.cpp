@@ -191,7 +191,7 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Mix now"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Pull the next track forward so it mixes in at the next bar")
+             TranslatableString("action_description", "Mix now: brings the next song in at the next bar (moves it forward on the timeline)")
              ),
     UiAction("mixhouse-automation-arm",
              au::context::UiCtxProjectOpened,
@@ -200,7 +200,7 @@ const UiActionList MixHouseUiActions::m_actions = {
              TranslatableString("action", "Arm"),
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description",
-                                "Automation Arm: while playing, moving a control in a plugin writes it into its line"),
+                                "Record automation: while it plays, every control you move (EQ, effects) is written into its line"),
              Checkable::Yes
              ),
     UiAction("mixhouse-reenable-automation",
@@ -210,7 +210,7 @@ const UiActionList MixHouseUiActions::m_actions = {
              TranslatableString("action", "Re-enable"),
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description",
-                                "Re-enable automation: lines you overrode by moving their controls play again"),
+                                "Re-enable automation: moving a control by hand stops its line (it turns grey). Click to make every stopped line play again"),
              Checkable::Yes
              ),
     UiAction("mixhouse-keylock",
@@ -228,7 +228,7 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Sync"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Lock tracks to the Snap grid (a bar when Snap is off); Mix Now lands on it too"),
+             TranslatableString("action_description", "Sync: songs you move lock to the beat grid (to a bar when Snap is off), so mixes stay in time"),
              Checkable::Yes
              ),
     UiAction(TEMPO_LANE_ACTION_CODE,
@@ -237,7 +237,7 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Tempo"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Show or hide the master tempo lane"),
+             TranslatableString("action_description", "Tempo lane: shows the mix's tempo line above the tracks. Drag its points to speed the mix up or slow it down"),
              Checkable::Yes
              ),
     UiAction(ENERGY_LANE_ACTION_CODE,
@@ -246,7 +246,7 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action title: shown as a menu item or a button label; keep it short
              TranslatableString("action", "Energy"),
              //: Action description: shown as a tooltip; can be a full sentence
-             TranslatableString("action_description", "Show or hide the energy of the mix (1-10) over time: how the set builds"),
+             TranslatableString("action_description", "Energy lane: shows the mix's energy (1-10) over time, so you see how the set builds"),
              Checkable::Yes
              ),
     UiAction(LINK_ACTION_CODE,

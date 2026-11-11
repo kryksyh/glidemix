@@ -35,8 +35,14 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.4**\n\n"
-                      + "- Library preview fixes.\n"
+                text: "**GlideMix v1.2.5**\n\n"
+                      + "- Edit like in Ableton: Z zooms to the selection, X goes back, ⌘E splits, ⌘L loops, R reverses, ⌘1–⌘4 set the grid.\n"
+                      + "- Some keys moved: Split is now ⌘E (was ⌘I), Record is F9, Rename is ⌘R.\n"
+                      + "- Tidier right-click menus, with Cut / Paste / Delete time and a Grid section.\n"
+                      + "- Thin automation lines with the value beside each point (dB, %, BPM).\n"
+                      + "- Toolbar: icons only, grouped; hover a button to see what it does.\n"
+                      + "- ⌘A selects all songs in the library, or the whole timeline.\n"
+                      + "- Fixed a crash when zoomed in very close.\n"
             }
         }
 

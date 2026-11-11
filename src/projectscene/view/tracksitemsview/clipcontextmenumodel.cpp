@@ -3,6 +3,8 @@
 */
 #include "clipcontextmenumodel.h"
 
+#include "gridmenuitems.h"
+
 #include "spectrogram/spectrogramtypes.h"
 #include "trackedit/dom/track.h"
 #include "framework/global/translation.h"
@@ -110,28 +112,45 @@ void ClipContextMenuModel::load()
     auto resetPitchSpeedItem = makeItemWithArg(RESET_PITCH_SPEED_CODE);
     updatePitchSpeedModifiedEnabledState(*resetPitchSpeedItem);
 
-    MenuItemList cutAndItems {
+    // GlideMix (2026-11-11): Ableton's order -- edit, zoom, split, loop and
+    // reverse, the "…Time" commands; then GlideMix's own clip items; the
+    // grid section comes last (added at the end of this function).
+    MenuItemList moreItems {
         makeMenuItem("cut-leave-gap",
                      muse::TranslatableString("clip", "Cut and leave gap")),
         makeMenuItem("cut-per-track-ripple",
                      muse::TranslatableString("clip", "Cut and close gap on this track")),
-        makeMenuItem("cut-all-tracks-ripple",
-                     muse::TranslatableString("clip", "Cut and close gap on all tracks")),
-    };
-
-    MenuItemList deleteAndItems {
+        makeSeparator(),
         makeMenuItem("delete-leave-gap",
                      muse::TranslatableString("clip", "Delete and leave gap")),
         makeMenuItem("delete-per-track-ripple",
                      muse::TranslatableString("clip", "Delete and close gap on this track")),
-        makeMenuItem("delete-all-tracks-ripple",
-                     muse::TranslatableString("clip", "Delete and close gap on all tracks")),
     };
 
     MenuItemList items {
+        makeItemWithArg("action://trackedit/cut"),
+        makeItemWithArg("action://trackedit/copy"),
+        makeItemWithArg("duplicate"),
+        makeItemWithArg("action://trackedit/delete"),
+        makeSeparator(),
+        makeMenuItem("zoom-to-selection", muse::TranslatableString("clip", "Zoom to clip")),
+        makeMenuItem("zoom-back"),
+        makeSeparator(),
+        makeItemWithArg("rename-item", muse::TranslatableString("clip", "Rename clip")),
+        makeItemWithArg("split"),
+        makeItemWithArg("disjoin", muse::TranslatableString("clip", "Split at silences")),
+        makeMenuItem("mixhouse-split-grid-jumps"),
+        makeSeparator(),
+        makeMenuItem("set-loop-region-to-selection", muse::TranslatableString("clip", "Loop clip")),
+        makeMenuItem("reverse"),
+        makeSeparator(),
+        // Ableton's "…Time" commands: every track, the song gets shorter.
+        makeMenuItem("cut-all-tracks-ripple", muse::TranslatableString("clip", "Cut time")),
+        makeMenuItem("delete-all-tracks-ripple", muse::TranslatableString("clip", "Delete time")),
+        makeMenu(muse::TranslatableString("clip", "More cut and delete"), moreItems, "menu-more-edit"),
+        makeSeparator(),
         makeSimpleItem(SHOW_IN_LIBRARY_ITEM, muse::TranslatableString("clip", "Show in Library")),
         makeItemWithArg("clip-properties"),
-        makeItemWithArg("rename-item", muse::TranslatableString("clip", "Rename clip")),
         makeMenu(muse::TranslatableString("clip", "Color"), {
             makeColorByKeyItem(),
             makeSeparator(),
@@ -143,18 +162,6 @@ void ClipContextMenuModel::load()
         }, "menu-clip-color"),
         makeMenu(muse::TranslatableString("clip", "Track visualization"), makeTrackVisualizationItems(),
                  "menu-clip-track-visualization"),
-        makeSeparator(),
-        makeItemWithArg("action://trackedit/cut"),
-        makeItemWithArg("action://trackedit/copy"),
-        makeItemWithArg("duplicate"),
-        makeItemWithArg("action://trackedit/delete"),
-        makeSeparator(),
-        makeMenu(muse::TranslatableString("clip", "Cut and…"), cutAndItems, "menu-cut-and"),
-        makeMenu(muse::TranslatableString("clip", "Delete and…"), deleteAndItems, "menu-delete-and"),
-        makeSeparator(),
-        makeItemWithArg("split"),
-        makeItemWithArg("disjoin", muse::TranslatableString("clip", "Split at silences")),
-        makeMenuItem("mixhouse-split-grid-jumps"),
         makeSeparator(),
         enableStretchItem,
         makeItemWithArg("clip-pitch-speed-open"),
@@ -195,6 +202,25 @@ void ClipContextMenuModel::load()
     if (!keyItems.empty()) {
         items.push_back(makeSeparator());
         for (MenuItem* item : keyItems) {
+            items.push_back(item);
+        }
+    }
+
+    // GlideMix: Ableton's grid section at the bottom.
+    {
+        Snap snap;
+        if (const auto p = globalContext()->currentProject(); p && p->viewState()) {
+            snap = p->viewState()->getSnap();
+        }
+        items.push_back(makeSeparator());
+        for (MenuItem* item : makeGridMenuItems(snap,
+                                                [this](const ActionCode& code, const muse::TranslatableString& title) {
+            return makeMenuItem(code, title);
+        },
+                                                [this](const muse::TranslatableString& title, const MenuItemList& sub, const QString& id) {
+            return makeMenu(title, sub, id);
+        },
+                                                [this]() { return makeSeparator(); })) {
             items.push_back(item);
         }
     }

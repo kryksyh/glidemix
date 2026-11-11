@@ -164,6 +164,7 @@ TrackItemsContainer {
                                     lineColor: laneModel.active ? laneModel.color : "#8a8a8a"
                                     dashed: !laneModel.automated
                                     stepped: laneModel.stepped
+                                    labelKind: "percent"
                                     onEditCommitted: function(data) { laneModel.commit(data) }
                                 }
                             }

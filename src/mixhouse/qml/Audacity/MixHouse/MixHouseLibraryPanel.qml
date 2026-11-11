@@ -3407,12 +3407,24 @@ Item {
                 // The app's own shortcuts (track up/down, go to start/end) take
                 // these keys first; claiming them here gives them to the list.
                 Keys.onShortcutOverride: function(event) {
+                    // GlideMix (Chris, 2026-11-11): Cmd+A (Ctrl+A on Windows) selects
+                    // all songs while the list has the keyboard; elsewhere it stays
+                    // the timeline's Select all.
+                    if (event.matches(StandardKey.SelectAll)) {
+                        event.accepted = true
+                        return
+                    }
                     if ([Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End].indexOf(event.key) >= 0
                             && !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier))) {
                         event.accepted = true
                     }
                 }
                 Keys.onPressed: function(event) {
+                    if (event.matches(StandardKey.SelectAll)) {
+                        root.selectAllRows()
+                        event.accepted = true
+                        return
+                    }
                     const rows = tracksModel.rowCount()
                     if (rows <= 0) {
                         return

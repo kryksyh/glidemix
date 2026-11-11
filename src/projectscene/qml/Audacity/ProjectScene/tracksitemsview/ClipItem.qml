@@ -1222,6 +1222,8 @@ Rectangle {
                     lineColor: pluginAutomationModel.active ? pluginAutomationModel.color : "#8a8a8a"
                     dashed: !pluginAutomationModel.automated
                     stepped: pluginAutomationModel.stepped
+                    // GlideMix: Logic's value beside each point (as Set value… shows it).
+                    labelKind: "percent"
                     // The header's Low/Mid/High/Color lines glow like the pill's lanes.
                     glow: pluginAutomationModel.bandLine
                     glowBase: pluginAutomationModel.colorLine ? 0.5 : 0.0
@@ -1311,6 +1313,10 @@ Rectangle {
                     // Stock Audacity's own volume-envelope colour (master's
                     // ClipItem.qml: ui.theme.extra["audio_envelope_line"]).
                     lineColor: ui.theme.extra["audio_envelope_line"]
+                    // GlideMix: Logic's dB value beside each point.
+                    labelKind: "db"
+                    labelGainMin: clipGainModel.minValue
+                    labelGainMax: clipGainModel.maxValue
                     segments: clipGainModel.segments
                     viewStart: waveView.itemStartTime
                     viewEnd: waveView.itemEndTime

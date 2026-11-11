@@ -115,7 +115,7 @@ private:
 
     bool m_inited = false;
     bool m_clocksOnly = false;
-    int m_displayStyle = 2;
+    int m_displayStyle = 1;
 public:
     int displayStyle() const { return m_displayStyle; }
 private:

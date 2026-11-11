@@ -335,7 +335,7 @@ QVariantList PlaybackToolBarCustomiseModel::entries() const
             const QVariant moved = list.takeAt(from);
             list.insert(indexOf(anchor) + 1, moved);
         };
-        moveAfter(QStringLiteral("snap"), QStringLiteral("mixhouse-keylock"));
+        moveAfter(QStringLiteral("snap"), QStringLiteral("mixhouse-link"));   // after SYNC / KEYLOCK / LINK
         moveAfter(QStringLiteral("mixhouse-reset-performance"), QStringLiteral("mixhouse-perform"));
     }
     return list;
@@ -362,6 +362,8 @@ void PlaybackToolBarCustomiseModel::applyEntries(const QVariantList& entries)
     }
     // The marker also says "arranged by hand": the toolbar moves nothing for it.
     config.items.append(ToolConfig::Item("glidemix-toolbar-style-" + std::to_string(displayStyle()), false));
+    // GlideMix: the one-time icon/category update is done (PlaybackToolBarModel).
+    config.items.append(ToolConfig::Item("glidemix-toolbar-groups-1", false));
     uiState()->setToolConfig(TOOLBAR_NAME, config);
     load();
 }
@@ -381,7 +383,7 @@ int PlaybackToolBarCustomiseModel::displayStyle() const
             return std::clamp(intent.mid(23).toInt(), 0, 2);
         }
     }
-    return 2;
+    return 1;
 }
 
 void PlaybackToolBarCustomiseModel::setDisplayStyle(int style)
@@ -393,6 +395,13 @@ void PlaybackToolBarCustomiseModel::setDisplayStyle(int style)
         }
     }
     config.items.append(ToolConfig::Item("glidemix-toolbar-style-" + std::to_string(std::clamp(style, 0, 2)), false));
+    bool marked = false;
+    for (const auto& item : config.items) {
+        marked = marked || item.intent == "glidemix-toolbar-groups-1";
+    }
+    if (!marked) {
+        config.items.append(ToolConfig::Item("glidemix-toolbar-groups-1", false));   // the user chose: keep it
+    }
     uiState()->setToolConfig(TOOLBAR_NAME, config);
     load();
 }

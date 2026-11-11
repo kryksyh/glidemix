@@ -31,6 +31,14 @@ class BezierAutomationLane : public QQuickPaintedItem
     //! (a value: 0 = the bottom; 0.5 = the centre, for the Color line).
     Q_PROPERTY(bool glow MEMBER m_glow NOTIFY lineColorChanged)
     Q_PROPERTY(double glowBase MEMBER m_glowBase NOTIFY lineColorChanged)
+    //! GlideMix: Logic's look -- each drawn point shows its value beside it.
+    //! "db": a volume line; labelGainMin/Max are the gain range of the owner's
+    //! 0..1 mapping (ClipGainModel::gainFromNormalized, split at 0.7 = unity).
+    //! "percent": an effect line, 0.8 = 100 % as in the Set value… box.
+    //! Empty: no labels.
+    Q_PROPERTY(QString labelKind MEMBER m_labelKind NOTIFY lineColorChanged)
+    Q_PROPERTY(double labelGainMin MEMBER m_labelGainMin NOTIFY lineColorChanged)
+    Q_PROPERTY(double labelGainMax MEMBER m_labelGainMax NOTIFY lineColorChanged)
     // Live drag feedback -- e.g. a floating dB readout while a point is being
     // dragged, the same job PolylinePlot's activePoint* properties did before
     // this component replaced it. Normalized 0..1, same as the values in
@@ -127,6 +135,10 @@ private:
     double m_bottomInset{10.0};
     bool m_glow = false;
     double m_glowBase = 0.0;
+    QString m_labelKind;
+    double m_labelGainMin = 0.0;
+    double m_labelGainMax = 2.0;
+    QString valueLabel(double value) const;
     bool m_dashed = false;
     bool m_stepped = false;
     QPointF m_press;

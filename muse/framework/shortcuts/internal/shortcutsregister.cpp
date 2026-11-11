@@ -22,6 +22,7 @@
 #include "shortcutsregister.h"
 
 #include <QKeySequence>
+#include <QSettings>
 
 #include "actions/actiontypes.h"
 #include "global/io/buffer.h"
@@ -36,6 +37,55 @@
 using namespace muse;
 using namespace muse::shortcuts;
 using namespace muse::async;
+
+namespace {
+// GlideMix (2026-11-11): the Ableton key layout. A user shortcuts file keeps
+// its own keys for every action it lists, so new defaults never reach it.
+// Once, move each listed action that still has its OLD default to the new
+// one; anything the user chose themself stays.
+bool migrateToAbletonLayout(ShortcutList& user)
+{
+    QSettings settings;
+    const QString flag = QStringLiteral("glidemix/shortcuts/abletonLayout");
+    if (settings.value(flag, 0).toInt() >= 1) {
+        return false;
+    }
+    settings.setValue(flag, 1);
+
+    struct Move {
+        std::string action;
+        std::vector<std::string> from;
+        std::vector<std::string> to;
+    };
+    static const std::vector<Move> moves {
+        { "split", { "Ctrl+I" }, { "Ctrl+E" } },
+        { "silence-audio-selection", { "Ctrl+L" }, {} },
+        { "set-loop-region-to-selection", { "Shift+L" }, { "Ctrl+L", "Shift+L" } },
+        { "zero-cross", { "Z" }, {} },
+        { "play-stop-select", { "X" }, {} },
+        { "action://record/start", { "R" }, { "F9" } },
+        { "zoom-in", { "Ctrl+=" }, { "Ctrl+=", "=" } },
+        { "zoom-out", { "Ctrl+-" }, { "Ctrl+-", "-" } },
+        { "repeat-last-effect", { "Ctrl+R" }, {} },
+        { "rename-item", { "F2" }, { "Ctrl+R", "F2" } },
+        { "zoom-sel", { "Ctrl+E" }, {} },
+        { "zoom-normal", { "Ctrl+2" }, {} },
+        { "trim", { "Ctrl+T" }, {} },
+        { "zoom-to-selection", {}, { "Z" } },
+        { "trim-audio-outside-selection", {}, { "Ctrl+Shift+J" } },
+    };
+    bool changed = false;
+    for (Shortcut& sc : user) {
+        for (const Move& m : moves) {
+            if (sc.action == m.action && sc.sequences == m.from) {
+                sc.sequences = m.to;
+                changed = true;
+            }
+        }
+    }
+    return changed;
+}
+}
 
 static constexpr std::string_view SHORTCUTS_TAG("Shortcuts");
 static constexpr std::string_view SHORTCUT_TAG("SC");
@@ -112,6 +162,11 @@ void ShortcutsRegister::reload(bool onlyDef)
             ok = readFromFile(m_shortcuts, userPath);
         } else {
             ok = false;
+        }
+
+        if (ok && migrateToAbletonLayout(m_shortcuts)) {
+            mi::WriteResourceLockGuard guard(multiwindowsProvider(), SHORTCUTS_RESOURCE_NAME);
+            writeToFile(m_shortcuts, userPath);
         }
 
         if (!ok) {

@@ -771,6 +771,7 @@ MenuItemList AppMenuModel::makeZoomItems()
         makeMenuItem("zoom-out"),
         makeMenuItem("zoom-default"),
         makeMenuItem("zoom-to-selection"),
+        makeMenuItem("zoom-back"),   // GlideMix: Ableton's X
         makeMenuItem("zoom-toggle"),
         makeSeparator(),
         makeMenuItem("zoom-to-fit-project"),

@@ -33,7 +33,7 @@ StyledPopupView {
 
     onOpened: reload()
 
-    property int displayStyle: 2
+    property int displayStyle: 1
 
     function reload() {
         work = customiseModel.entries()

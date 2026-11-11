@@ -3,6 +3,8 @@
 #include "bezierautomationlane.h"
 
 #include <algorithm>
+#include <cmath>
+#include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QMouseEvent>
@@ -235,7 +237,10 @@ void BezierAutomationLane::paint(QPainter* painter)
         Q_UNUSED(far)
     }
 
-    painter->setPen(QPen(m_color, 2, m_dashed ? Qt::DashLine : Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    // GlideMix (Chris, 2026-11-11): Logic's thin line and small dots -- the
+    // old 2 px line and 12 px dots covered the waveform. Grabbing is not
+    // affected: hitNode() keeps its 14 px reach.
+    painter->setPen(QPen(m_color, 1.5, m_dashed ? Qt::DashLine : Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter->setBrush(Qt::NoBrush);
     painter->drawPath(path);
     if (m_dashed) {
@@ -245,28 +250,77 @@ void BezierAutomationLane::paint(QPainter* painter)
         painter->setPen(Qt::NoPen);
         if (hovered) {
             painter->setBrush(m_color);
-            painter->drawEllipse(centre, 7.5, 7.5);          // 1 + 2 + 3
+            painter->drawEllipse(centre, 5.0, 5.0);
             painter->setBrush(QColor(0, 0, 0));
-            painter->drawEllipse(centre, 3.0, 3.0);          // 1 + 2
+            painter->drawEllipse(centre, 2.5, 2.5);
             painter->setBrush(QColor(255, 255, 255));
             painter->drawEllipse(centre, 1.0, 1.0);
         } else {
             painter->setBrush(m_color);
-            painter->drawEllipse(centre, 6.0, 6.0);   // GlideMix: easier to see and hit
+            painter->drawEllipse(centre, 3.5, 3.5);
         }
     };
     const int nodeCount = m_curve.segments.empty() ? 0 : static_cast<int>(m_curve.segments.size()) + 1;
+    QVector<int> drawn;
     for (int i = 0; i < nodeCount; ++i) {
         const bool active = i == m_hoverNode || (m_dragging && i == m_node) || i == m_selectedNode || m_picked.contains(i);
         if (active || nodeShown(i)) {
             paintNode(nodePosition(i), active);
+            drawn.push_back(i);
         }
     }
     if (m_hoverPoint && !m_dragging) {
         painter->setPen(Qt::NoPen);
         painter->setBrush(m_color);
-        painter->drawEllipse(m_hover, 4.0, 4.0);
+        painter->drawEllipse(m_hover, 3.0, 3.0);
     }
+
+    // Logic: the value beside each point, right of it and above the line.
+    if (!m_labelKind.isEmpty() && !drawn.isEmpty()) {
+        QFont font = painter->font();
+        font.setPixelSize(10);
+        font.setWeight(QFont::DemiBold);
+        painter->setFont(font);
+        const QFontMetricsF metrics(font);
+        QRectF previous;
+        for (int i : drawn) {
+            // The dragged point has the live readout above it already.
+            if (m_dragging && (i == m_node || m_picked.contains(i))) { continue; }
+            const QString text = valueLabel(nodeValue(i));
+            const QPointF centre = nodePosition(i);
+            const QSizeF size = metrics.size(Qt::TextSingleLine, text);
+            QPointF topLeft(centre.x() + 6.0, centre.y() - 6.0 - size.height());
+            if (topLeft.x() + size.width() > width() - 2.0) { topLeft.setX(centre.x() - 6.0 - size.width()); }
+            if (topLeft.y() < 1.0) { topLeft.setY(centre.y() + 6.0); }
+            const QRectF box(topLeft, size);
+            if (box.intersects(previous)) { continue; }   // too close to the last label: its dot says enough
+            previous = box;
+            painter->setPen(QColor(0, 0, 0, 170));         // a soft shadow keeps it readable on the waveform
+            painter->drawText(box.translated(1.0, 1.0), Qt::AlignLeft | Qt::AlignVCenter, text);
+            painter->setPen(m_color);
+            painter->drawText(box, Qt::AlignLeft | Qt::AlignVCenter, text);
+        }
+    }
+}
+
+QString BezierAutomationLane::valueLabel(double value) const
+{
+    value = std::clamp(value, 0.0, 1.0);
+    if (m_labelKind == QStringLiteral("percent")) {
+        // ClipItem.qml's Set value… box: 0.8 = 100 %.
+        return QString::number(std::lround(value / 0.8 * 100.0)) + QStringLiteral(" %");
+    }
+    // Same mapping as ClipGainModel::gainFromNormalized: 0..0.7 = min..unity, 0.7..1 = unity..max.
+    constexpr double split = 0.7;
+    const double gain = value <= split
+                        ? m_labelGainMin + value / split * (1.0 - m_labelGainMin)
+                        : 1.0 + (value - split) / (1.0 - split) * (m_labelGainMax - 1.0);
+    if (gain < 0.001) {
+        return QStringLiteral("-∞ dB");
+    }
+    const double db = 20.0 * std::log10(gain);
+    const QString number = QString::number(std::abs(db) < 0.05 ? 0.0 : db, 'f', 1);
+    return (db >= 0.05 ? QStringLiteral("+") : QString()) + number + QStringLiteral(" dB");
 }
 
 int BezierAutomationLane::hitSegment(QPointF p) const

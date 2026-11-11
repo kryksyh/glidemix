@@ -330,16 +330,8 @@
         <seq>Ctrl+D</seq>
     </SC>
     <SC>
-        <key>silence-audio-selection</key>
-        <seq>Ctrl+L</seq>
-    </SC>
-    <SC>
-        <key>trim</key>
-        <seq>Ctrl+T</seq>
-    </SC>
-    <SC>
         <key>split</key>
-        <seq>Ctrl+I</seq>
+        <seq>Ctrl+E</seq>
     </SC>
     <SC>
         <key>split-new</key>
@@ -519,10 +511,6 @@
         <key>get-more-effects</key>
     </SC>
     <SC>
-        <key>repeat-last-effect</key>
-        <seq>Ctrl+R</seq>
-    </SC>
-    <SC>
         <key>manage-analyzers</key>
     </SC>
     <SC>
@@ -589,10 +577,6 @@
     </SC>
     <SC>
         <key>store-cursor-position</key>
-    </SC>
-    <SC>
-        <key>zero-cross</key>
-        <seq>Z</seq>
     </SC>
     <SC>
         <key>snap-to-off</key>
@@ -815,10 +799,6 @@
         <key>track-move-bottom</key>
     </SC>
     <SC>
-        <key>play-stop-select</key>
-        <seq>X</seq>
-    </SC>
-    <SC>
         <key>once-play-stop</key>
         <seq>Shift+Space</seq>
     </SC>
@@ -831,7 +811,7 @@
     </SC>
     <SC>
         <key>action://record/start</key>
-        <seq>R</seq>
+        <seq>F9</seq>
     </SC>
     <SC>
         <key>action://record/lead-in-recording</key>
@@ -847,6 +827,7 @@
     </SC>
     <SC>
         <key>set-loop-region-to-selection</key>
+        <seq>Ctrl+L</seq>
         <seq>Shift+L</seq>
     </SC>
     <SC>
@@ -961,18 +942,44 @@
     <SC>
         <key>zoom-in</key>
         <seq>Ctrl+=</seq>
-    </SC>
-    <SC>
-        <key>zoom-normal</key>
-        <seq>Ctrl+2</seq>
+        <seq>=</seq>
     </SC>
     <SC>
         <key>zoom-out</key>
         <seq>Ctrl+-</seq>
+        <seq>-</seq>
     </SC>
     <SC>
-        <key>zoom-sel</key>
-        <seq>Ctrl+E</seq>
+        <key>zoom-to-selection</key>
+        <seq>Z</seq>
+    </SC>
+    <SC>
+        <key>zoom-back</key>
+        <seq>X</seq>
+    </SC>
+    <SC>
+        <key>reverse</key>
+        <seq>R</seq>
+    </SC>
+    <SC>
+        <key>trim-audio-outside-selection</key>
+        <seq>Ctrl+Shift+J</seq>
+    </SC>
+    <SC>
+        <key>grid-narrow</key>
+        <seq>Ctrl+1</seq>
+    </SC>
+    <SC>
+        <key>grid-widen</key>
+        <seq>Ctrl+2</seq>
+    </SC>
+    <SC>
+        <key>grid-triplets</key>
+        <seq>Ctrl+3</seq>
+    </SC>
+    <SC>
+        <key>snap-toggle</key>
+        <seq>Ctrl+4</seq>
     </SC>
     <SC>
         <key>zoom-toggle</key>
@@ -1139,6 +1146,7 @@
     </SC>
     <SC>
         <key>rename-item</key>
+        <seq>Ctrl+R</seq>
         <seq>F2</seq>
     </SC>
     <SC>
