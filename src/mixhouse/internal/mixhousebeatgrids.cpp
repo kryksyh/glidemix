@@ -1203,6 +1203,8 @@ void MixHouseBeatGrids::startRipple(const trackedit::ClipKey& key, int which)
     // The track that comes in here, and everything that comes in after it.
     const trackedit::ClipKey incoming = which == 1 ? *partner : key;
     const trackedit::ClipKey outgoing = which == 1 ? key : *partner;
+    m_ripple.outgoing = outgoing;
+    m_ripple.incoming = incoming;
     const auto startsAfter = [&](const trackedit::Clip& clip) {
         const Anchors a = clipAnchors(clip.key);
         return (a.valid ? a.intro : clip.startTime) > point + kLinked;
@@ -1292,6 +1294,10 @@ void MixHouseBeatGrids::applyRipple(double anchorNow, bool completed, const std:
         m_ripple.applied = shift;
     }
     if (completed) {
+        // MixMeister: the fade hangs off the anchors, so it moves with them.
+        if (std::abs(shift) > 1e-9 && transitions()) {
+            transitions()->followAnchors(m_ripple.outgoing, m_ripple.incoming, m_ripple.originalAnchor, shift);
+        }
         if (projectHistory() && std::abs(shift) > 1e-9) {
             subscribeToHistory();
             projectHistory()->pushHistoryState(muse::trc("mixhouse", "Moved a transition"),
@@ -1634,6 +1640,22 @@ void MixHouseBeatGrids::moveClipAnchor(const trackedit::ClipKey& key, int which,
         intro = std::clamp(sec, 0.0, std::max(0.0, outro - minGap));
     } else {
         outro = std::max(sec, intro + minGap);
+    }
+    // A linked anchor goes no further than the songs can follow it (Chris,
+    // 2026-11-11): an IN dragged far into a song slid it until it hit the start
+    // of the mix, the flag went on alone, IN and OUT came apart and nothing
+    // moved after that.
+    if (m_ripple.active && std::isfinite(m_ripple.minShift) && source.ratio > 0.0) {
+        const double limitAnchor = which == 1 ? m_ripple.originalAnchor + m_ripple.minShift
+                                   : m_ripple.originalAnchor - m_ripple.minShift;
+        double limitSec = (limitAnchor - sequenceStart) / source.ratio;
+        const bool snap = !libraryConfiguration() || libraryConfiguration()->syncEnabled();
+        const double first = grid.downbeatSec >= 0.0 ? grid.downbeatSec : grid.firstBeatSec;
+        if (which == 1 && outro < limitSec) {
+            outro = snap ? first + std::ceil((limitSec - first) / beat - 1e-6) * beat : limitSec;
+        } else if (which == 0 && intro > limitSec) {
+            intro = std::max(0.0, snap ? first + std::floor((limitSec - first) / beat + 1e-6) * beat : limitSec);
+        }
     }
     if (completed) {
         m_anchorDrag.remove(grid.filePath);

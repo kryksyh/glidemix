@@ -92,6 +92,12 @@ struct MixHouseTransitionSpec {
     /// the anchor and fades out after it, and the bass changes hands exactly
     /// there. Off: both fade over the same bars after the anchor.
     bool blendAroundAnchor = false;
+    /// MixMeister's Beatmix ending (Chris, 2026-11-11): at the end of the fade
+    /// the outgoing song drops to silence (a quarter beat), and the incoming
+    /// one is silent until the anchor. Without it, a fade that goes only part
+    /// of the way (strength below 100 %) would leave the outgoing song playing
+    /// on quietly to its end.
+    bool cutAtEnd = false;
 };
 
 /// Turns a spec into the concrete markers the transition code writes onto the
@@ -118,8 +124,15 @@ std::string validateTransitionSpec(const MixHouseTransitionSpec& spec);
 
 /// The name Mix Now uses when nothing else is chosen.
 inline constexpr const char* kDefaultMixNowTransition = "Quick crossfade + bass swap";
+//! MixMeister's own fade, the one everybody asked for: the playing song is
+//! full up to its OUT anchor, slides to half volume (-6 dB) over 8 bars and
+//! then cuts; the next song starts at half volume on that anchor and rises to
+//! full over the same 8 bars (MixMeister's Beatmix 8 bars).
+inline constexpr const char* kVolumeFadeTransition = "Volume Fade";
+//! GlideMix's own way: the S-curve crossfade with a bass swap on the beat.
+inline constexpr const char* kGlideMixTransition = kDefaultMixNowTransition;
 //! What a new pair of songs gets, and Mix Now uses, until the user picks
-//! another. Chris (2026-11-01): the S-curves beat MixMeister's straight
-//! Beatmix lines, which stay in the menus.
-inline constexpr const char* kDefaultTransition = kDefaultMixNowTransition;
+//! another. Chris (2026-11-11): MixMeister's Volume Fade (it was GlideMix's
+//! quick crossfade + bass swap since 2026-11-01).
+inline constexpr const char* kDefaultTransition = kVolumeFadeTransition;
 }

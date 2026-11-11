@@ -49,8 +49,17 @@ public:
     std::string mixNow(double playhead) override;
     void beginEdit() override;
     void endEdit(const std::string& name) override;
+    void applyDefaultTransitions(const trackedit::ClipKeyList& clips) override;
+    void followAnchors(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, double oldAnchor,
+                       double incomingShift) override;
 
 private:
+    //! The zone's OUT and IN anchors meet (a MixMeister link).
+    bool anchorsLinked(const Zone& zone) const;
+    //! `out`'s OUT anchor sits on `in`'s IN anchor.
+    bool outLinkedToIn(const trackedit::ClipKey& out, const trackedit::ClipKey& in) const;
+    //! Laid over each other (a song and its stems), not a mix.
+    bool isLayer(const trackedit::Clip& a, const trackedit::Clip& b) const;
     struct GainPoint {
         double time = 0.0;
         double value = 1.0;

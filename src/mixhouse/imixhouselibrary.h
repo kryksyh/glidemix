@@ -92,7 +92,11 @@ public:
         /// Whether the track has been analysed (GlideMix: the status column).
         Analyzed,
         /// GlideMix: the energy rating (1-10).
-        Energy
+        Energy,
+        /// GlideMix: how alike a song sounds to the one under the playhead.
+        /// Not in the database: SQL returns date-added order and the song
+        /// list sorts in memory (MixHouseTrackListModel).
+        SoundsLike
     };
 
     struct TrackQuery {

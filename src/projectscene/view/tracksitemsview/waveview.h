@@ -15,6 +15,7 @@
 #include "playback/itrackplaybackcontrol.h"
 #include "mixhouse/imixhousebeatgrids.h"
 #include "mixhouse/imixhousekeymatch.h"
+#include "mixhouse/imixhousetransitions.h"
 #include "mixhouse/mixhousehdwaveform.h"
 #include "../timeline/timelinecontext.h"
 #include "types/projectscenetypes.h"
@@ -57,6 +58,7 @@ class WaveView : public QQuickPaintedItem, public muse::async::Asyncable, public
     muse::ContextInject<au::projectscene::IWavePainter> wavePainter{ this };
     muse::ContextInject<au::trackedit::IProjectHistory> projectHistory{ this };
     muse::ContextInject<au::mixhouse::IMixHouseBeatGrids> beatGrids{ this };   // GlideMix: bar marks
+    muse::ContextInject<au::mixhouse::IMixHouseTransitions> transitions{ this };   // GlideMix: the anchor's menu
     muse::ContextInject<au::mixhouse::IMixHouseKeyMatch> keyMatch{ this };     // GlideMix: the key in the header
     muse::GlobalInject<au::mixhouse::IMixHouseHdWaveforms> hdWaveforms;        // GlideMix: HD colour waveform
     muse::ContextInject<IProjectSceneUiState> projectSceneUiState { this };    // GlideMix: the workspace's lane look
@@ -117,6 +119,10 @@ public:
     Q_INVOKABLE QString keyText() const;
     Q_INVOKABLE void dragAnchor(int which, double x, bool completed);
     Q_INVOKABLE void resetAnchors();
+    //! GlideMix: right-click on an IN / OUT flag -- the transition at that
+    //! anchor: Volume Fade (MixMeister's) or GlideMix's own, or off.
+    Q_INVOKABLE QVariantList anchorTransitionMenu(int which) const;
+    Q_INVOKABLE void handleAnchorTransitionMenu(int which, const QString& itemId);
     Q_INVOKABLE void setLastClickPos(unsigned lastX, unsigned lastY, unsigned int x, const unsigned int y);
     Q_INVOKABLE void smoothLastClickPos(unsigned int x, const unsigned int y);
     Q_INVOKABLE void setIsolatedPoint(unsigned int x, unsigned int y);
@@ -148,6 +154,11 @@ private:
     double phraseRibbonHeight(const IWavePainter::Params& params) const;
     bool paintRgbWave(QPainter& painter, const IWavePainter::Params& params);
     bool paintHdLane(QPainter& painter, const IWavePainter::Params& params);
+    //! GlideMix (Chris, 2026-11-11): where the clip's volume line is silent
+    //! (before the IN anchor, after the OUT cut) the song is still drawn,
+    //! faintly, from its HD analysis -- so dragging IN shows where in the song
+    //! you are. Drawing only: the sound is unchanged.
+    void paintSilentGhost(QPainter& painter, const IWavePainter::Params& params, bool rgb);
     //! The track's volume slider as an amplitude (1 = 0 dB).
     double trackGain() const;
     //! Zoomed in past the stored columns: paint the audio in greys and multiply

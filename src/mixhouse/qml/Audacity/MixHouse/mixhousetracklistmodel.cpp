@@ -8,6 +8,7 @@
  * this is "add it to the project as a real track", not playback.
  */
 #include "mixhousetracklistmodel.h"
+#include "mixhousesamplesmodel.h"
 
 #include <map>
 #include <memory>
@@ -215,6 +216,7 @@ void MixHouseTrackListModel::previewTrackAt(int row, double fraction)
             other->stopPreview();
         }
     }
+    MixHouseSamplesModel::stopAllPreviews();
 
     // A different track, or this one while stopped. The fork loaded into
     // mixxx's preview deck and then waited 140ms for the load to reset the
@@ -325,6 +327,13 @@ void MixHouseTrackListModel::previewNextPhrase(int row)
     }
 }
 
+void MixHouseTrackListModel::stopAllPreviews()
+{
+    for (MixHouseTrackListModel* m : s_liveModels) {
+        m->stopPreview();
+    }
+}
+
 void MixHouseTrackListModel::stopPreview()
 {
     if (!m_previewPlayer) {
@@ -359,7 +368,7 @@ void MixHouseTrackListModel::load()
         m_ruleDataReady = true;
         prepareRuleData();
     }
-    if ((m_matchOn || m_relatedOn) && !m_referenceSubscribed) {
+    if (followsReference() && !m_referenceSubscribed) {
         subscribeReference();   // injected services are ready here, not in the constructor
         m_referenceTimer.start();
     }
@@ -709,7 +718,9 @@ void MixHouseTrackListModel::load()
                                            [&](const MixHouseTrack& t) { return !found.contains(t.id); }),
                             fresh.end());
             }
-            if (m_relatedSortByColumn) {
+            if (m_relatedSortByColumn && m_query.sort == IMixHouseLibrary::SortKey::SoundsLike) {
+                sortBySoundsLike(fresh, m_soundsLikeScore, m_query.ascending);
+            } else if (m_relatedSortByColumn) {
                 IMixHouseLibrary::TrackQuery q = m_query;
                 q.limit = 0;
                 sortAndLimitTracks(fresh, q, false);
@@ -5058,7 +5069,7 @@ QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
     case YearRole:        return t.year;
     case BpmRole:         return t.bpm;
     case EnergyRole:      return t.energy;
-    case SoundsLikeRole:  return m_soundsLikeScore.value(t.id, -1.0);
+    case SoundsLikeRole:  return (m_relatedView ? m_soundsLikeScore : m_soundsLikeAll).value(t.id, -1.0);
     case KeyRole:         return t.key;
     case KeyIdRole:       return t.keyId;
     case DurationRole:    return t.durationSec;
@@ -5341,6 +5352,10 @@ MixHouseTrackList MixHouseTrackListModel::indexedTracks()
     // collator (accents where a person expects them), using cached sort keys.
     using SortKey = IMixHouseLibrary::SortKey;
     const SortKey key = m_query.sort;
+    // GlideMix: Sounds like is not in the database; first click = closest first.
+    if (key == SortKey::SoundsLike) {
+        sortBySoundsLike(out, m_soundsLikeAll, m_query.ascending);
+    }
     const bool textSort = key == SortKey::Title || key == SortKey::Artist || key == SortKey::Album
                           || key == SortKey::Genre || key == SortKey::AlbumArtist || key == SortKey::Composer
                           || key == SortKey::Grouping || key == SortKey::FileType || key == SortKey::Comment;
@@ -5406,19 +5421,19 @@ void MixHouseTrackListModel::subscribeReference()
     QObject::connect(&m_referenceTimer, &QTimer::timeout, this, [this]() { updateReference(); });
     if (const auto state = globalContext()->playbackState()) {
         state->playbackPositionChanged().onReceive(this, [this](muse::secs_t) {
-            if ((m_matchOn || m_relatedOn) && !m_referenceTimer.isActive()) {
+            if (followsReference() && !m_referenceTimer.isActive()) {
                 m_referenceTimer.start();
             }
         });
     }
     globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() {
-        if (m_matchOn || m_relatedOn) {
+        if (followsReference()) {
             m_referenceTimer.start();
         }
     });
     if (projectHistory()) {
         projectHistory()->historyChanged().onReceive(this, [this](trackedit::HistoryEvent) {
-            if (m_matchOn || m_relatedOn) {
+            if (followsReference()) {
                 m_referenceTimer.start();
             }
         });
@@ -5588,6 +5603,65 @@ void MixHouseTrackListModel::updateReference()
             load();
         }
     }
+    if (m_soundsLikeOn && !m_relatedView) {
+        updateSoundsLikeAll();
+    }
+}
+
+void MixHouseTrackListModel::setSoundsLikeOn(bool on)
+{
+    if (m_soundsLikeOn == on) {
+        return;
+    }
+    m_soundsLikeOn = on;
+    emit soundsLikeOnChanged();
+    if (on && m_ruleDataReady) {
+        subscribeReference();
+        updateReference();
+        updateSoundsLikeAll();   // the reference may not have changed
+    }
+}
+
+void MixHouseTrackListModel::updateSoundsLikeAll()
+{
+    m_soundsLikeAll.clear();
+    if (m_reference.trackId >= 0) {
+        QElapsedTimer took;
+        took.start();
+        ensureSoundsLike();
+        ensureIndex();
+        std::vector<int> ids;
+        ids.reserve(m_index.size());
+        for (const auto& [id, t] : m_index) {
+            ids.push_back(id);
+        }
+        const std::vector<double> alike = m_soundsLike.percentAlike(m_reference.trackId, ids);
+        for (size_t i = 0; i < alike.size(); ++i) {
+            if (alike[i] >= 0.0) {
+                m_soundsLikeAll.insert(ids[i], alike[i]);
+            }
+        }
+        LOGI() << "GlideMix sounds like: " << m_soundsLikeAll.size() << " songs scored in " << took.elapsed() << " ms";
+    }
+    if (m_query.sort == IMixHouseLibrary::SortKey::SoundsLike) {
+        load();   // a new reference reorders the list
+    } else if (rowCount() > 0) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, std::max(0, m_uiColumnCount - 1)), { SoundsLikeRole });
+    }
+}
+
+void MixHouseTrackListModel::sortBySoundsLike(MixHouseTrackList& tracks, const QHash<int, double>& scores,
+                                              bool closestFirst) const
+{
+    // Songs without a score (not measured, or no song under the playhead) last.
+    std::stable_sort(tracks.begin(), tracks.end(), [&](const MixHouseTrack& a, const MixHouseTrack& b) {
+        const double sa = scores.value(a.id, -1.0);
+        const double sb = scores.value(b.id, -1.0);
+        if ((sa < 0.0) != (sb < 0.0)) {
+            return sb < 0.0;
+        }
+        return closestFirst ? sa > sb : sa < sb;
+    });
 }
 
 QVariantMap MixHouseTrackListModel::relatedRules() const
@@ -5610,6 +5684,8 @@ QVariantMap MixHouseTrackListModel::relatedRules() const
     def("yearRange", 0);
     def("ratingOn", false);
     def("minRating", 1);
+    def("soundsLikeOn", false);
+    def("minSoundsLike", 50);
     def("addedOn", false);
     def("addedDays", 30);
     def("composerOn", false);
@@ -5685,6 +5761,8 @@ void MixHouseTrackListModel::loadRules()
     m.yearRange = r.value(QStringLiteral("yearRange")).toInt();
     m.ratingOn = r.value(QStringLiteral("ratingOn")).toBool();
     m.minRating = r.value(QStringLiteral("minRating")).toInt();
+    m.soundsLikeOn = r.value(QStringLiteral("soundsLikeOn")).toBool();
+    m.minSoundsLike = r.value(QStringLiteral("minSoundsLike"), 50).toInt();
     m.addedOn = r.value(QStringLiteral("addedOn")).toBool();
     m.addedSince = QDate::currentDate().addDays(-r.value(QStringLiteral("addedDays")).toInt()).toString(Qt::ISODate);
     m.commentOn = r.value(QStringLiteral("commentOn")).toBool();
@@ -5849,6 +5927,15 @@ void MixHouseTrackListModel::updateRelated()
         if (alike[i] >= 0.0) {
             m_soundsLikeScore.insert(ids[i], alike[i]);
         }
+    }
+    // Rule "Sounds like at least N %". Songs not measured yet stay (shown
+    // with a dash, last): while the background pass runs most songs have no
+    // score, and the list would empty out.
+    if (m_rules.soundsLikeOn && !alike.empty()) {
+        m_relatedTracks.erase(std::remove_if(m_relatedTracks.begin(), m_relatedTracks.end(), [&](const MixHouseTrack& t) {
+            const auto it = m_soundsLikeScore.constFind(t.id);
+            return it != m_soundsLikeScore.constEnd() && it.value() < m_rules.minSoundsLike;
+        }), m_relatedTracks.end());
     }
     constexpr double kOtherKeyPoints = 5.0;    // a compatible but different key
     constexpr double kPointsPerBpmPercent = 1.0;

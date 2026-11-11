@@ -824,6 +824,35 @@ DockPage {
         // that go with the song under the playhead (Chris: a tab, not a side
         // panel, so every column is there). Opened by the library's Related
         // button or the + menu.
+        // GlideMix: the Samples tab -- the user's own sample and FX folders.
+        DockPanel {
+            id: mixHouseSamplesPanel
+
+            objectName: "mixHouseSamplesPanel"
+            title: qsTrc("appshell", "Samples")
+
+            navigationSection: root.navigationPanelSec(mixHouseSamplesPanel.location)
+
+            dropDestinations: root.horizontalPanelDropDestinations
+
+            height: 260
+            minimumHeight: 120
+            resizable: true
+
+            location: Location.Bottom
+            groupName: root.bottomPanelsGroup
+
+            toolbarComponent: bottomTabsPlus
+
+            // Always there (Chris): Music library, Project, Samples, Related.
+            // Hidden until Samples ships (kSamplesTabShipped, appshelltypes.h).
+            visible: false
+
+            MixHouseSamplesPanel {
+                navigationSection: mixHouseSamplesPanel.navigationSection
+            }
+        },
+
         DockPanel {
             id: mixHouseRelatedPanel
 
@@ -843,6 +872,10 @@ DockPage {
 
             toolbarComponent: bottomTabsPlus
 
+            // Closed at the first start, as in 1.2.6: open from the start, it and the
+            // library were taken for tabs of each other before either was docked and
+            // both floated (fresh 1.2.7 install, 2026-11-11). "Always there" comes with
+            // Samples (kSamplesTabShipped) and needs that fixed first.
             visible: false
 
             MixHouseLibraryPanel {
@@ -850,6 +883,7 @@ DockPage {
                 navigationSection: mixHouseRelatedPanel.navigationSection
             }
         },
+
 
         // GlideMix: the Beatgrid editor, the Beatgrid workspace's main
         // panel; opened with a track from the library or a clip's menu.

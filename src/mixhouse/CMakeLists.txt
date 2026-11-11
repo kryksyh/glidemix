@@ -90,6 +90,11 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesoundslike.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousesamplename.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousesamplename.h
+    ${CMAKE_CURRENT_LIST_DIR}/imixhousesamples.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousesamples.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousesamples.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousegridshifts.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousegridshifts.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.h
@@ -264,4 +269,9 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
                                $<TARGET_PROPERTY:mixhouse,INCLUDE_DIRECTORIES>)
     target_compile_definitions(glidemix-analyze PRIVATE $<TARGET_PROPERTY:mixhouse,COMPILE_DEFINITIONS>)
     target_link_libraries(glidemix-analyze PRIVATE mixhouse Qt::Core Qt::Gui)
+    add_executable(glidemix-samplescan tools/glidemix_samplescan.cpp)
+    target_include_directories(glidemix-samplescan PRIVATE ${CMAKE_CURRENT_LIST_DIR} ${CMAKE_CURRENT_LIST_DIR}/..
+        $<TARGET_PROPERTY:mixhouse,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(glidemix-samplescan PRIVATE $<TARGET_PROPERTY:mixhouse,COMPILE_DEFINITIONS>)
+    target_link_libraries(glidemix-samplescan PRIVATE mixhouse Qt::Core Qt::Gui)
 endif()

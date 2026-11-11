@@ -2,6 +2,8 @@
  * GlideMix
  */
 #include "mixhousetransitionconfiguration.h"
+
+#include <QSettings>
 #include "mixhouse/glidemixpaths.h"
 
 #include <algorithm>
@@ -166,6 +168,17 @@ void MixHouseTransitionConfiguration::init()
     muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW, muse::Val(std::string(kDefaultTransition)));
     muse::settings()->setDefaultValue(TRANSITIONS_MIX_NOW_LANDING, muse::Val(static_cast<int>(MixHouseMixNowLanding::NextPhrase)));
     muse::settings()->setDefaultValue(TRANSITIONS_MIXER_VIEW, muse::Val(false));
+
+    // Once (Chris, 2026-11-11): Volume Fade is the default now. Whoever still
+    // has the old default stored gets the new one; a transition picked by
+    // hand stays.
+    QSettings once;
+    if (!once.value(QStringLiteral("GlideMix/volumeFadeDefault1")).toBool()) {
+        once.setValue(QStringLiteral("GlideMix/volumeFadeDefault1"), true);
+        if (muse::settings()->value(TRANSITIONS_MIX_NOW).toString() == kGlideMixTransition) {
+            muse::settings()->setSharedValue(TRANSITIONS_MIX_NOW, muse::Val(std::string(kDefaultTransition)));
+        }
+    }
 }
 
 //! Your transitions are content, like an effect preset, not preferences. Kept as
@@ -196,6 +209,7 @@ std::vector<MixHouseTransitionSpec> specsFromJson(const QByteArray& raw)
         spec.filter = filterSweepFromName(json.value("filter").toString());
         spec.noise = noiseSweepFromName(json.value("noise").toString());
         spec.effectOut = effectOutFromName(json.value("effectOut").toString());
+        spec.cutAtEnd = json.value("cutAtEnd").toBool(false);
         spec.builtIn = false;
         // A hand-edited or damaged entry is dropped rather than trusted.
         if (validateTransitionSpec(spec).empty()) {
@@ -232,6 +246,7 @@ void MixHouseTransitionConfiguration::storeUserSpecs(const std::vector<MixHouseT
             { "filter", QLatin1String(filterSweepName(spec.filter)) },
             { "noise", QLatin1String(noiseSweepName(spec.noise)) },
             { "effectOut", QLatin1String(effectOutName(spec.effectOut)) },
+            { "cutAtEnd", spec.cutAtEnd },
         });
     }
 

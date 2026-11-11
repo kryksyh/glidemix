@@ -96,6 +96,13 @@ void MixHouseTrackAligner::alignDroppedFiles(const std::vector<muse::io::path_t>
                 }
                 // Dropped into a transition: the songs after it make room.
                 beatGrids()->insertAtTransition(first, false);
+                // Linked now: each new pair gets the default transition
+                // (Volume Fade unless another is chosen), in the drop's step.
+                if (transitions()) {
+                    trackedit::ClipKeyList placed = request.clips;
+                    placed.insert(placed.end(), result.splitClips.begin(), result.splitClips.end());
+                    transitions()->applyDefaultTransitions(placed);
+                }
             }
             if (tempoMap() && !request.projectWasEmpty) {
                 tempoMap()->trackPlaced(result.stretchRatio);

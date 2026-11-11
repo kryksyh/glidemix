@@ -90,6 +90,7 @@ Item {
         id: columnSettings
         category: "MixHouseLibrary"
         property string layoutJson: ""
+        property bool soundsLikeShown: false
     }
 
     property alias navigationSection: navPanel.section
@@ -111,6 +112,9 @@ Item {
     // which cannot have this problem because it has no input handling at all.
     MixHouseTrackListModel {
         id: tracksModel
+        // Score every song against the song under the playhead while the
+        // Sounds like column shows (the Related tab scores its own songs).
+        soundsLikeOn: !root.relatedMode && root.columns.some(function (c) { return c.key === "soundsLike" && c.visible })
     }
     // For children with a property of the same name (SmartPlaylistEditor).
     readonly property var tracksModelRef: tracksModel
@@ -170,9 +174,8 @@ Item {
         // GlideMix: 1-10, from the analysis (Lexicon's own for its songs).
         { key: "energy",       label: qsTrc("mixhouse", "Energy"),      sort: MixHouseTrackListModel.SortEnergy,           width: 100,  align: Qt.AlignLeft,    visible: true },
         // GlideMix "Sounds like": how alike a song sounds to the one under the
-        // playhead (the share of the library that sounds less alike). Only in
-        // the Related tab, which is already sorted by it.
-        { key: "soundsLike",   label: qsTrc("mixhouse", "Sounds like"), sort: -1,                                          width: 100, align: Qt.AlignRight,   visible: true, relatedOnly: true },
+        // playhead (the share of the library that sounds less alike).
+        { key: "soundsLike",   label: qsTrc("mixhouse", "Sounds like"), sort: MixHouseTrackListModel.SortSoundsLike,      width: 100, align: Qt.AlignRight,   visible: true },
         { key: "durationSec",  label: qsTrc("mixhouse", "Duration"),    sort: MixHouseTrackListModel.SortDuration,         width: 90,  align: Qt.AlignRight,   visible: true },
         { key: "rating",       label: qsTrc("mixhouse", "Rating"),      sort: MixHouseTrackListModel.SortRating,           width: 120, align: Qt.AlignRight,   visible: true },
         { key: "comment",      label: qsTrc("mixhouse", "Comment"),     sort: MixHouseTrackListModel.SortComment,          width: 220, align: Qt.AlignLeft,    visible: true },
@@ -246,6 +249,18 @@ Item {
     property var pendingViewRestore: null
     // GlideMix: the Rekordbox XML row opened, so its playlists show the
     // moment the XML has been read.
+    //! The keyboard is in this panel: the item with keyboard focus sits inside it.
+    function keyboardInLibrary() {
+        let item = root.Window.activeFocusItem
+        while (item) {
+            if (item === root) {
+                return true
+            }
+            item = item.parent
+        }
+        return false
+    }
+
     function openRekordboxNode() {
         if (sidebarColumn.expandedIds.indexOf("rekordbox") < 0) {
             sidebarColumn.expandedIds = sidebarColumn.expandedIds.concat(["rekordbox"])
@@ -898,12 +913,17 @@ Item {
 
     Component.onCompleted: {
         restoreColumnLayout()
-        // Related-only columns: always shown in the Related tab, never in the library.
-        var cols = root.columns
-        for (var ci = 0; ci < cols.length; ++ci) {
-            if (cols[ci].relatedOnly) cols[ci].visible = root.relatedMode
+        // GlideMix 1.2.7: Sounds like is a library column too. 1.2.6 saved it
+        // hidden in the library's layout: show it once (later choices stay).
+        if (!columnSettings.soundsLikeShown) {
+            var cols = root.columns
+            for (var ci = 0; ci < cols.length; ++ci) {
+                if (cols[ci].key === "soundsLike") cols[ci].visible = true
+            }
+            root.columns = cols
+            columnSettings.soundsLikeShown = true
+            saveColumnLayout()
         }
-        root.columns = cols
         tracksModel.uiColumnCount = root.columns.length
         if (root.relatedMode) {
             tracksModel.relatedView = true
@@ -961,7 +981,12 @@ Item {
         // so there's no separate silent "Hide" path to fall back to here).
         sequences: ["Delete", "Backspace"]
         context: Qt.ApplicationShortcut
-        enabled: root.visible && !search.activeFocus && root.selectedRows.length > 0
+        // GlideMix (Chris, 2026-11-11): only while the keyboard is in the
+        // library. App-wide it claimed Del/Backspace whenever a row was
+        // selected (always, after a double-click), fought the timeline's
+        // Delete for the same keys -- so deleting a song worked sometimes --
+        // and could remove songs from the library or a playlist instead.
+        enabled: root.visible && !search.activeFocus && root.selectedRows.length > 0 && root.keyboardInLibrary()
         onActivated: {
             // allMatchingSelected (set only by selectAllRows()) means the
             // real target is every track matching this view, however many
@@ -3262,7 +3287,6 @@ Item {
                     var items = []
                     var shown = {}
                     for (var i = 0; i < root.columns.length; ++i) {
-                        if (root.columns[i].relatedOnly && !root.relatedMode) continue
                         items.push({ id: String(i), title: root.columns[i].label,
                                      checkable: true, checked: root.columns[i].visible })
                         shown[root.columns[i].key] = true

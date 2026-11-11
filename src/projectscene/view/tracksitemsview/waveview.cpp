@@ -3,6 +3,8 @@
 */
 #include "waveview.h"
 
+#include "mixhouse/mixhousetransitionspec.h"
+
 #include <QFontMetricsF>
 
 #include <cmath>
@@ -322,6 +324,7 @@ void WaveView::paint(QPainter* painter)
             paintRgbTint(*painter, waveParams);
         }
     }
+    paintSilentGhost(*painter, waveParams, rgb);
     painter->restore();
     paintPhrases(*painter, params);
     paintBarMarks(*painter, params, ribbon);
@@ -619,6 +622,65 @@ bool WaveView::paintHdLane(QPainter& painter, const IWavePainter::Params& params
     return true;
 }
 
+void WaveView::paintSilentGhost(QPainter& painter, const IWavePainter::Params& params, bool rgb)
+{
+    const auto grids = beatGrids();
+    const auto hd = hdWaveforms();
+    mixhouse::IMixHouseBeatGrids::ClipFile file;
+    if (!grids || !hd || params.zoom <= 0.0 || params.geometry.width < 1.0 || params.geometry.height < 4.0
+        || !grids->clipFile(m_clipKey.key, file)) {
+        return;
+    }
+    // The volume line, one value per column: the silent stretches.
+    const int columns = static_cast<int>(std::ceil(params.geometry.width));
+    std::vector<double> gain;
+    if (!grids->clipVolume(m_clipKey.key, m_clipTime.itemStartTime + 0.5 / params.zoom, 1.0 / params.zoom,
+                           static_cast<size_t>(columns), gain) || gain.size() < static_cast<size_t>(columns)) {
+        return;
+    }
+    constexpr double kSilent = 0.01;   // -40 dB: nothing heard
+    std::vector<std::pair<int, int> > spans;
+    for (int x = 0; x < columns;) {
+        if (gain[static_cast<size_t>(x)] >= kSilent) {
+            ++x;
+            continue;
+        }
+        const int from = x;
+        while (x < columns && gain[static_cast<size_t>(x)] < kSilent) {
+            ++x;
+        }
+        spans.push_back({ from, x });
+    }
+    if (spans.empty()) {
+        return;
+    }
+    const mixhouse::MixHouseHdWavePtr wave = hd->wave(file.path);
+    if (!wave) {
+        return;
+    }
+    const qreal dpr = painter.device() ? std::max<qreal>(1.0, painter.device()->devicePixelRatioF()) : 1.0;
+    const int iw = std::max(1, static_cast<int>(std::ceil(columns * dpr)));
+    const int ih = std::max(2, static_cast<int>(std::round(params.geometry.height * dpr)));
+    const double fromSec = (m_clipTime.itemStartTime - file.sequenceStart) / file.ratio;
+    const double toSec = (m_clipTime.itemStartTime + columns / params.zoom - file.sequenceStart) / file.ratio;
+    QImage image(iw, ih, QImage::Format_ARGB32_Premultiplied);
+    mixhouse::paintHdWave(image, *wave, fromSec, toSec, nullptr);
+    if (!rgb) {
+        // In the clip's own waveform colour, like the audible part.
+        QPainter tint(&image);
+        tint.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        tint.fillRect(image.rect(), getWavePainterParams().style.samplePen);
+    }
+    painter.save();
+    painter.setOpacity(rgb ? 0.3 : 0.4);
+    for (const auto& [from, to] : spans) {
+        const QRectF target(from, 0.0, to - from, params.geometry.height);
+        const QRectF source(from * dpr, 0.0, (to - from) * dpr, ih);
+        painter.drawImage(target, image, source);
+    }
+    painter.restore();
+}
+
 // GlideMix: a library track's beat grid, marked the way rekordbox marks
 // it (the reference screenshots): a small white tick at the top and bottom
 // edge for every beat, and at each bar start a red triangle at both edges with
@@ -892,6 +954,64 @@ void WaveView::dragAnchor(int which, double x, bool completed)
     const double zoom = m_context ? m_context->zoom() : 0.0;
     if (grids && zoom > 0.0) {
         grids->moveClipAnchor(m_clipKey.key, which, m_clipTime.itemStartTime + x / zoom, completed);
+    }
+}
+
+namespace {
+//! The transition an anchor belongs to: the OUT flag's pair has this clip
+//! going out, the IN flag's has it coming in.
+std::optional<au::mixhouse::IMixHouseTransitions::Zone> anchorZone(const au::mixhouse::IMixHouseTransitions* transitions,
+                                                                   const au::trackedit::ClipKey& clip, int which)
+{
+    if (!transitions) {
+        return std::nullopt;
+    }
+    for (const auto& zone : transitions->zones()) {
+        if ((which == 1 ? zone.outgoing : zone.incoming) == clip) {
+            return zone;
+        }
+    }
+    return std::nullopt;
+}
+}
+
+QVariantList WaveView::anchorTransitionMenu(int which) const
+{
+    const auto zone = anchorZone(transitions().get(), m_clipKey.key, which);
+    if (!zone) {
+        return { QVariantMap { { "id", "none" }, { "title", muse::qtrc("projectscene", "No transition at this anchor") },
+                               { "enabled", false } } };
+    }
+    const std::string current = zone->crossfaded && !zone->disabled ? zone->preset : std::string();
+    const auto item = [&](const char* name, const QString& title) {
+        return QVariantMap { { "id", QString("transition:") + name }, { "title", title }, { "enabled", true },
+                             { "checkable", true }, { "checked", current == name } };
+    };
+    QVariantList menu;
+    menu << item(au::mixhouse::kVolumeFadeTransition, muse::qtrc("projectscene", "Volume Fade (MixMeister)"));
+    menu << item(au::mixhouse::kGlideMixTransition,
+                 muse::qtrc("projectscene", "GlideMix transition (crossfade + bass swap)"));
+    menu << QVariantMap {};
+    if (zone->disabled) {
+        menu << QVariantMap { { "id", "enable" }, { "title", muse::qtrc("projectscene", "Turn transition on") },
+                              { "enabled", true } };
+    } else {
+        menu << QVariantMap { { "id", "disable" }, { "title", muse::qtrc("projectscene", "Turn transition off") },
+                              { "enabled", true } };
+    }
+    return menu;
+}
+
+void WaveView::handleAnchorTransitionMenu(int which, const QString& itemId)
+{
+    const auto zone = anchorZone(transitions().get(), m_clipKey.key, which);
+    if (!zone) {
+        return;
+    }
+    if (itemId.startsWith("transition:")) {
+        transitions()->applyTransition(zone->outgoing, zone->incoming, itemId.mid(11).toStdString());
+    } else if (itemId == "disable" || itemId == "enable") {
+        transitions()->setTransitionEnabled(zone->outgoing, zone->incoming, itemId == "enable");
     }
 }
 

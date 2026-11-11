@@ -127,6 +127,22 @@ public:
     /// Puts both volume lines back to full over the regions a crossfade owns.
     virtual bool removeCrossfade(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming) = 0;
 
+    /// A song just placed on the timeline (dropped, double-clicked in the
+    /// library): every pair it now makes whose anchors are linked and that has
+    /// no transition yet gets the default one (Preferences > Transitions; none
+    /// when that is set to None). `clips` are the song's clips. No history of
+    /// its own: the placing step takes it.
+    virtual void applyDefaultTransitions(const trackedit::ClipKeyList& clips) = 0;
+    /// After an anchor was dragged (MixMeister): the transition between
+    /// `outgoing` and `incoming` is written again from where their linked
+    /// anchors are now, so the fade moves with the anchor. A switched-off or
+    /// removed one stays as it is. `oldAnchor`: where the anchor was (project
+    /// seconds); `incomingShift`: how far the incoming song slid, its old fade
+    /// with it -- both places are cleared. No history of its own: the anchor
+    /// drag's step takes it.
+    virtual void followAnchors(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, double oldAnchor,
+                               double incomingShift) = 0;
+
     /// The lanes the transition pill shows (DropLab's dots).
     enum class Lane {
         Volume,   ///< the clip volume line, 0..1 (full = 1)

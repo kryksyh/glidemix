@@ -991,6 +991,7 @@ MixHouseTrackList MixHouseLibrary::tracks(const TrackQuery& query) const
         orderBy = QStringLiteral("pt.position");
         break;
     case SortKey::SampleRate: orderBy = QStringLiteral("l.samplerate"); break;
+    case SortKey::SoundsLike: orderBy = QStringLiteral("l.datetime_added"); break;   // sorted in memory after
     // No backing column for Channels anywhere in this schema (see this
     // enum value's own comment) -- ties on 0, same as real mixxx sorting
     // an always-NULL column.

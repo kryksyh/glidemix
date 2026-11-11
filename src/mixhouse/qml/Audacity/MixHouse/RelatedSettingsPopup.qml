@@ -212,10 +212,28 @@ Popup {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setRule("minRating", index + 1)
+                            // Click the star that is already set to clear it (no minimum).
+                            onClicked: root.setRule("minRating",
+                                                    root.numberOr("minRating", 1) === index + 1 ? 0 : index + 1)
                         }
                     }
                 }
+            }
+
+            // Sounds like (the song under the playhead)
+            RuleCheck { ruleKey: "soundsLikeOn"; text: qsTrc("mixhouse", "Sounds like") }
+            RowLayout {
+                StyledTextLabel { text: qsTrc("mixhouse", "At least") }
+                IncrementalPropertyControl {
+                    Layout.preferredWidth: 80
+                    currentValue: root.numberOr("minSoundsLike", 50)
+                    step: 5
+                    decimals: 0
+                    minValue: 0
+                    maxValue: 100
+                    onValueEdited: function(newValue) { root.setRule("minSoundsLike", newValue) }
+                }
+                StyledTextLabel { text: "%" }
             }
 
             // Comment

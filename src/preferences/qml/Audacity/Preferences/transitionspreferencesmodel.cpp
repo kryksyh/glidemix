@@ -50,6 +50,8 @@ QVariantMap specToVariant(const MixHouseTransitionSpec& spec)
         { "filter", static_cast<int>(spec.filter) },
         { "noise", static_cast<int>(spec.noise) },
         { "effectOut", static_cast<int>(spec.effectOut) },
+        // Not on the page; carried so a duplicate of Volume Fade keeps its cut.
+        { "cutAtEnd", spec.cutAtEnd },
     };
 }
 
@@ -65,6 +67,7 @@ MixHouseTransitionSpec specFromVariant(const QVariantMap& map)
     spec.filter = static_cast<MixHouseFilterSweep>(std::clamp(map.value("filter").toInt(), 0, 4));
     spec.noise = static_cast<MixHouseNoiseSweep>(std::clamp(map.value("noise").toInt(), 0, 2));
     spec.effectOut = static_cast<MixHouseEffectOut>(std::clamp(map.value("effectOut").toInt(), 0, 2));
+    spec.cutAtEnd = map.value("cutAtEnd", false).toBool();
     return spec;
 }
 
@@ -104,6 +107,9 @@ QString specSummary(const MixHouseTransitionSpec& spec)
         if (!lane.isEmpty()) {
             parts << lane;
         }
+    }
+    if (spec.cutAtEnd) {
+        parts << QString("half way, then cut");
     }
     switch (spec.filter) {
     case MixHouseFilterSweep::None: break;

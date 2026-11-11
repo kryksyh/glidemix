@@ -408,6 +408,26 @@ ProjectViewState::TrackData& ProjectViewState::makeTrackData(const trackedit::Tr
                 auto track = au::au3::DomAccessor::findTrack(
                     *reinterpret_cast<au::au3::Au3Project*>(prj->au3ProjectPtr()), au::au3::Au3TrackId(trackId));
                 int savedHeight = au3::TrackHeightAttachment::Get(track).GetHeight();
+                // GlideMix (Chris, 2026-11-11): a new lane comes in at the height
+                // of the lanes already there, not the default -- songs 2, 3, 4
+                // of a mix came in taller than song 1.
+                // A new stereo lane starts in Single wave at half height and is
+                // doubled when the All tracks view turns that off, so it copies
+                // the other lane's height in the same state: halved when it is
+                // in Single wave and the other lane is not.
+                if (savedHeight <= 0 && defaultHeight != TRACK_LABEL_DEFAULT_HEIGHT) {
+                    for (const auto& [otherId, other] : m_tracks) {
+                        if (otherId != trackId && other.height.val > 0) {
+                            savedHeight = other.height.val;
+                            if (d.isSingleWave.val && !other.isSingleWave.val) {
+                                savedHeight = std::max(savedHeight / 2, TRACK_COLLAPSE_HEIGHT);
+                            } else if (!d.isSingleWave.val && other.isSingleWave.val) {
+                                savedHeight *= 2;
+                            }
+                            break;
+                        }
+                    }
+                }
                 savedHeight = savedHeight <= 0 ? defaultHeight : savedHeight;
                 height = std::max(savedHeight, TRACK_MIN_HEIGHT);
             }

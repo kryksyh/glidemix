@@ -626,6 +626,37 @@ void TrackeditActionsController::doGlobalCutAllTracksRipple()
 
 void TrackeditActionsController::doGlobalDelete()
 {
+    // GlideMix (Chris, 2026-11-11): one lane per song, so a lane emptied by
+    // deleting its song goes with it, in the same undo step. It stayed behind
+    // under the song's name, and the next song loaded landed in it.
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    TrackIdList hadClips;
+    if (project) {
+        for (const TrackId id : project->trackIdList()) {
+            if (!project->clipList(id).empty()) {
+                hadClips.push_back(id);
+            }
+        }
+    }
+    doGlobalDeleteImpl();
+    const auto after = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!after || after != project || !tracksInteraction()) {
+        return;
+    }
+    const TrackIdList now = after->trackIdList();
+    TrackIdList emptied;
+    for (const TrackId id : hadClips) {
+        if (std::find(now.begin(), now.end(), id) != now.end() && after->clipList(id).empty()) {
+            emptied.push_back(id);
+        }
+    }
+    if (!emptied.empty() && tracksInteraction()->deleteTracks(emptied) && projectHistory()) {
+        projectHistory()->modifyState();
+    }
+}
+
+void TrackeditActionsController::doGlobalDeleteImpl()
+{
     const bool isTrackSelected = selectionController()->timeSelectionIsEmpty() && !selectionController()->selectedTracks().empty()
                                  && !selectionController()->hasSelectedClips() && !selectionController()->hasSelectedLabels();
 

@@ -127,6 +127,13 @@ void MixHouseStatusModel::componentComplete()
             }
         });
     }
+    if (samples()) {
+        samples()->samplesChanged().onNotify(this, [this]() {
+            if (!m_busy && m_message.isEmpty()) {
+                refresh();
+            }
+        });
+    }
     if (rekordboxXml()) {
         rekordboxXml()->changed().onNotify(this, [this]() {
             if (rekordboxXml()->loading()) {
@@ -191,6 +198,12 @@ QString MixHouseStatusModel::idleText() const
     const int count = library()->trackCount();
     if (count <= 0) {
         return muse::qtrc("mixhouse", "Add your music in Preferences → Music library");
+    }
+    // GlideMix (Chris): the samples beside the songs.
+    const int sampleCount = samples() ? samples()->sampleCount() : 0;
+    if (sampleCount > 0) {
+        return muse::qtrc("mixhouse", "%1 songs and %2 samples in your collection")
+               .arg(QLocale().toString(count), QLocale().toString(sampleCount));
     }
     return muse::qtrc("mixhouse", "%1 songs in your collection").arg(QLocale().toString(count));
 }

@@ -15,6 +15,7 @@
 #include "framework/ui/iuiactionsregister.h"
 #include "internal/mixhousegrideditor.h"
 #include "internal/mixhouselibrary.h"
+#include "internal/mixhousesamples.h"
 #include "internal/mixhousefolderwatcher.h"
 #include "internal/mixhousehdwaveforms.h"
 #include "internal/mixhouseuiactions.h"
@@ -62,6 +63,8 @@ void MixHouseModule::registerExports()
     globalIoc()->registerExport<IMixHouseHdWaveforms>(mname, m_hdWaveforms);
     m_licence = std::make_shared<MixHouseLicence>();
     globalIoc()->registerExport<IMixHouseLicence>(mname, m_licence);
+    m_samples = std::make_shared<MixHouseSamples>();
+    globalIoc()->registerExport<IMixHouseSamples>(mname, m_samples);
 }
 
 void MixHouseModule::onInit(const muse::IApplication::RunMode& mode)
@@ -83,6 +86,8 @@ void MixHouseModule::onInit(const muse::IApplication::RunMode& mode)
     // normal quit, the post-routine for any other way the app object goes.
     if (qApp) {
         QObject::connect(qApp, &QCoreApplication::aboutToQuit, qApp, []() { stopDjAppReaders(); });
+        // GlideMix Samples: a running folder scan stops before Qt shuts down.
+        QObject::connect(qApp, &QCoreApplication::aboutToQuit, qApp, [samples = m_samples]() { samples->deinit(); });
     }
     qAddPostRoutine([]() { stopDjAppReaders(); });
 }

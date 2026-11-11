@@ -185,6 +185,23 @@ bool layered(const au::trackedit::Clip& a, const au::trackedit::Clip& b)
 }
 }
 
+bool MixHouseTransitions::outLinkedToIn(const trackedit::ClipKey& out, const trackedit::ClipKey& in) const
+{
+    if (!beatGrids()) {
+        return false;
+    }
+    const auto o = beatGrids()->clipAnchors(out);
+    const auto i = beatGrids()->clipAnchors(in);
+    return o.valid && i.valid && std::abs(o.outro - i.intro) < 0.05;
+}
+
+bool MixHouseTransitions::isLayer(const trackedit::Clip& a, const trackedit::Clip& b) const
+{
+    // Two songs whose OUT and IN are linked are a mix, however much of them the
+    // overlap covers (an IN dragged deep into the song).
+    return layered(a, b) && !outLinkedToIn(a.key, b.key) && !outLinkedToIn(b.key, a.key);
+}
+
 std::vector<au::trackedit::ClipKey> MixHouseTransitions::layersOf(const trackedit::ClipKey& key) const
 {
     std::vector<trackedit::ClipKey> result { key };
@@ -210,7 +227,7 @@ std::vector<au::trackedit::ClipKey> MixHouseTransitions::layersOf(const trackedi
     }
     std::vector<trackedit::Clip> layers;
     for (const trackedit::Clip& clip : clips) {
-        if (layered(*self, clip)) {
+        if (isLayer(*self, clip)) {
             layers.push_back(clip);
         }
     }
@@ -275,7 +292,7 @@ std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
     std::vector<bool> under(clips.size(), false);
     for (size_t i = 0; i < clips.size(); ++i) {
         for (size_t j = 0; j < clips.size() && !under[i]; ++j) {
-            under[i] = i != j && layered(clips[i], clips[j]) && lane[clips[j].key.trackId] < lane[clips[i].key.trackId];
+            under[i] = i != j && isLayer(clips[i], clips[j]) && lane[clips[j].key.trackId] < lane[clips[i].key.trackId];
         }
     }
     for (size_t ia = 0; ia < clips.size(); ++ia) {
@@ -298,23 +315,29 @@ std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
             // Clips laid over each other (a song and its stems, a copy on
             // another row) are layers, not a transition: a transition's
             // overlap never covers most of either song.
-            const double shorter = std::min(a.endTime - a.startTime, b.endTime - b.startTime);
-            if (shorter > 0.0 && (end - start) / shorter > 0.9) {
+            if (isLayer(a, b)) {
                 continue;
             }
             Zone zone;
-            zone.outgoing = a.key;
-            zone.incoming = b.key;
+            // The one that starts first goes out -- unless the anchors say the
+            // other way round (an IN deep in the song: it starts earlier).
+            const bool reversed = outLinkedToIn(b.key, a.key) && !outLinkedToIn(a.key, b.key);
+            zone.outgoing = reversed ? b.key : a.key;
+            zone.incoming = reversed ? a.key : b.key;
             zone.start = start;
             zone.end = end;
             // Read from the volume lines themselves, so it survives undo,
             // edits by hand and reopening the project.
-            zone.crossfaded = gainAt(a.key, end) < 0.01 && gainAt(b.key, start) < 0.01;
-            const auto applied = m_applied.find({ a.key, b.key });
+            const auto applied = m_applied.find({ zone.outgoing, zone.incoming });
+            // A named transition counts even when the outgoing song ends before its
+            // fade does (a Volume Fade cut short stops at the level reached, not at
+            // silence; the pill read BEATMATCH, 1.2.7 regression).
+            zone.crossfaded = gainAt(zone.incoming, start) < 0.01
+                              && (gainAt(zone.outgoing, end) < 0.01 || applied != m_applied.end());
             if (zone.crossfaded && applied != m_applied.end()) {
                 zone.preset = applied->second;
             }
-            zone.disabled = m_disabled.count({ a.key, b.key }) > 0;
+            zone.disabled = m_disabled.count({ zone.outgoing, zone.incoming }) > 0;
             result.push_back(zone);
         }
     }
@@ -438,6 +461,140 @@ void MixHouseTransitions::endEdit(const std::string& name)
         }
         m_zonesChanged.notify();
     }
+}
+
+bool MixHouseTransitions::anchorsLinked(const Zone& zone) const
+{
+    if (!beatGrids()) {
+        return false;
+    }
+    const auto out = beatGrids()->clipAnchors(zone.outgoing);
+    const auto in = beatGrids()->clipAnchors(zone.incoming);
+    return out.valid && in.valid && std::abs(out.outro - in.intro) < 0.05;
+}
+
+void MixHouseTransitions::applyDefaultTransitions(const trackedit::ClipKeyList& clips)
+{
+    const std::string name = transitionConfiguration() ? transitionConfiguration()->mixNowTransition()
+                             : std::string(kDefaultTransition);
+    if (name.empty() || clips.empty()) {
+        return;
+    }
+    const auto touches = [&](const Zone& z) {
+        return std::find(clips.begin(), clips.end(), z.outgoing) != clips.end()
+               || std::find(clips.begin(), clips.end(), z.incoming) != clips.end();
+    };
+    std::vector<std::pair<trackedit::ClipKey, trackedit::ClipKey> > pairs;
+    for (const Zone& z : zones()) {
+        if (touches(z) && !z.crossfaded && !z.disabled && anchorsLinked(z)) {
+            pairs.push_back({ z.outgoing, z.incoming });
+        }
+    }
+    if (pairs.empty()) {
+        return;
+    }
+    ++m_editDepth;
+    for (const auto& [out, in] : pairs) {
+        if (!applyTransition(out, in, name)) {
+            applyCrossfade(out, in);
+        }
+        LOGI() << "GlideMix: new pair gets " << name;
+    }
+    --m_editDepth;
+    // Folded into the drop's step, which fires no history event: that step
+    // must remember the names itself, or undoing back to it forgets them.
+    if (projectHistory()) {
+        m_namesAtState[projectHistory()->currentStateIndex()] = m_applied;
+    }
+    m_zonesChanged.notify();
+}
+
+void MixHouseTransitions::followAnchors(const trackedit::ClipKey& outgoing, const trackedit::ClipKey& incoming, double oldAnchor,
+                                        double incomingShift)
+{
+    struct Redo {
+        trackedit::ClipKey out, in;
+        std::string name;
+    };
+    std::vector<Redo> redo;
+    for (const Zone& z : zones()) {
+        if (z.outgoing != outgoing || z.incoming != incoming || z.disabled || !anchorsLinked(z)) {
+            continue;
+        }
+        const auto applied = m_applied.find({ z.outgoing, z.incoming });
+        if (applied != m_applied.end()) {
+            redo.push_back({ z.outgoing, z.incoming, applied->second });
+        } else if (z.crossfaded) {
+            redo.push_back({ z.outgoing, z.incoming, presets().front().name });   // a plain crossfade
+        }
+    }
+    if (redo.empty()) {
+        return;
+    }
+    const auto project = globalContext()->currentTrackeditProject();
+    ++m_editDepth;
+    for (const Redo& r : redo) {
+        // From clean lines: the old fade sits where the anchor was, which can
+        // be before the overlap now (an OUT anchor dragged later).
+        removeCrossfade(r.out, r.in);
+        if (project) {
+            // How far the transition reaches past its anchor, so the old fade
+            // on the incoming song is cleared wherever it was left (Chris,
+            // 2026-11-11: an anchor moved forward and back left the old fade
+            // standing after the new one).
+            const trackedit::TimeSignature ts = project->timeSignature();
+            const double beat = ts.tempo > 0.0 ? 60.0 / ts.tempo * (4.0 / std::max(1, ts.lower)) : 0.5;
+            double reach = 64.0 * beat;   // a plain crossfade: the overlap, at most this
+            std::optional<MixHouseTransitionPreset> preset;
+            if (auto spec = transitionConfiguration() ? transitionConfiguration()->spec(r.name) : std::nullopt) {
+                preset = presetFromSpec(*spec);
+            } else {
+                for (const MixHouseTransitionPreset& candidate : presets()) {
+                    if (candidate.name == r.name && (!candidate.intro.empty() || !candidate.outro.empty())) {
+                        preset = candidate;
+                    }
+                }
+            }
+            if (preset) {
+                const double unit = preset->beatmix ? beat : 1.0;
+                double far = 0.0;
+                for (const auto* line : { &preset->intro, &preset->outro }) {
+                    for (const MixHouseTransitionMarker& m : *line) {
+                        far = std::max(far, std::abs(m.offset) * unit);
+                    }
+                }
+                reach = far + beat;
+            }
+            const double newAnchor = beatGrids() ? beatGrids()->clipAnchors(r.in).intro : oldAnchor;
+            const trackedit::Clip outClip = project->clip(r.out);
+            // The outgoing song never fades before its anchor.
+            const double from = std::clamp(std::min(oldAnchor, newAnchor), outClip.startTime, outClip.endTime);
+            if (from < outClip.endTime) {
+                replaceGain(r.out, from, outClip.endTime, { { from, 1.0, 0.0f }, { outClip.endTime, 1.0, 0.0f } }, false);
+            }
+            // The incoming song's old fade slid with it (an IN anchor dragged:
+            // the song moves under a mix point that stays). Not past its own
+            // OUT anchor: from there on the line belongs to the next transition.
+            const trackedit::Clip inClip = project->clip(r.in);
+            double to = std::max({ oldAnchor, newAnchor, oldAnchor + incomingShift }) + reach;
+            if (beatGrids()) {
+                const auto inAnchors = beatGrids()->clipAnchors(r.in);
+                if (inAnchors.valid && inAnchors.outro > newAnchor) {
+                    to = std::min(to, inAnchors.outro);
+                }
+            }
+            to = std::clamp(to, inClip.startTime, inClip.endTime);
+            if (to > inClip.startTime) {
+                replaceGain(r.in, inClip.startTime, to, { { inClip.startTime, 1.0, 0.0f }, { to, 1.0, 0.0f } }, false);
+            }
+        }
+        if (r.name == presets().front().name || !applyTransition(r.out, r.in, r.name)) {
+            applyCrossfade(r.out, r.in);
+        }
+        LOGI() << "GlideMix: " << r.name << " follows the moved anchor";
+    }
+    --m_editDepth;
+    m_zonesChanged.notify();
 }
 
 const std::vector<MixHouseTransitionPreset>& IMixHouseTransitions::presets()
@@ -599,7 +756,21 @@ bool MixHouseTransitions::writePreset(const trackedit::ClipKey& outgoing, const 
         for (const auto& m : preset.outro) {
             fadeOut.push_back({ anchor + m.offset * unit, gain(m.gainDb), m.curvature, m.eased });
         }
-        fadeOut.push_back({ outClip.endTime, gain(preset.outro.back().gainDb), 0.0f });
+        // Held at the last marker's value to the clip's end -- or, when the
+        // song ends before the transition does, at the value the line has
+        // reached there: a fade cut short used to slide to silence over the
+        // song's tail (Volume Fade with an OUT anchor near the end).
+        double endValue = gain(preset.outro.back().gainDb);
+        for (size_t i = 1; i < fadeOut.size(); ++i) {
+            const GainPoint& a = fadeOut[i - 1];
+            const GainPoint& b = fadeOut[i];
+            if (a.time <= outClip.endTime && b.time > outClip.endTime) {
+                const double u = b.time > a.time ? (outClip.endTime - a.time) / (b.time - a.time) : 1.0;
+                endValue = a.value + u * (b.value - a.value);
+                break;
+            }
+        }
+        fadeOut.push_back({ outClip.endTime, endValue, 0.0f });
         outFrom = std::max(outClip.startTime, fadeOut.front().time);
         fadeOut = clipped(fadeOut, outClip);
     }
@@ -824,7 +995,14 @@ bool MixHouseTransitions::removeCrossfade(const trackedit::ClipKey& outgoing, co
     // GlideMix: the volume only where the transition owns it -- the outgoing
     // song from the overlap on, the incoming one up to the overlap's end -- so
     // volume drawn elsewhere in the songs stays.
-    const double outFrom = std::clamp(zone.start, outClip.startTime, outClip.endTime);
+    // Linked anchors: the outgoing song's part starts at its OUT. The overlap can
+    // begin much earlier (an incoming song with a deep IN starts before it), and
+    // resetting from there wiped the outgoing song's own fade-in.
+    double outStart = zone.start;
+    if (outLinkedToIn(outgoing, incoming)) {
+        outStart = std::max(outStart, beatGrids()->clipAnchors(outgoing).outro);
+    }
+    const double outFrom = std::clamp(outStart, outClip.startTime, outClip.endTime);
     const double inTo = std::clamp(zone.end, inClip.startTime, inClip.endTime);
     const bool ok = replaceGain(outgoing, outFrom, outClip.endTime,
                                 { { outFrom, 1.0, 0.0f }, { outClip.endTime, 1.0, 0.0f } }, false)

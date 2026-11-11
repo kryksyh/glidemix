@@ -246,6 +246,20 @@ static MixHouseTransitionSpec aroundAnchor(MixHouseTransitionSpec spec)
     return spec;
 }
 
+//! MixMeister's Beatmix 8 bars, by its GlideMix name (kVolumeFadeTransition):
+//! straight lines, the outgoing song from full to half (-6 dB) and the
+//! incoming one from half to full over the same 8 bars after the anchor, then
+//! the cut. No EQ: MixMeister's presets never touch it.
+static MixHouseTransitionSpec volumeFade()
+{
+    MixHouseTransitionSpec spec = makeSpec(kVolumeFadeTransition, 32, MixHouseCurveKind::Crossfade,
+                                           MixHouseCurveKind::None, 0.5, 0);
+    spec.volume.shape = MixHouseFadeShape::Linear;
+    spec.volume.strength = 0.5;
+    spec.cutAtEnd = true;
+    return spec;
+}
+
 //! A DJ's three-band blend: the highs cross over the whole length, the bass
 //! swaps in the middle and the mids a phrase later.
 static MixHouseTransitionSpec withEq(MixHouseTransitionSpec spec)
@@ -299,6 +313,17 @@ MixHouseTransitionPreset presetFromSpec(const MixHouseTransitionSpec& spec)
             }
         }
     }
+    if (spec.cutAtEnd) {
+        // MixMeister's quarter-beat step: the outgoing song goes silent right
+        // after its last point, the incoming one is silent right before its first.
+        constexpr double kCutStepBeats = 0.25;
+        if (!preset.outro.empty()) {
+            preset.outro.push_back({ preset.outro.back().offset + kCutStepBeats, -50.0 });
+        }
+        if (!preset.intro.empty()) {
+            preset.intro.insert(preset.intro.begin(), { preset.intro.front().offset - kCutStepBeats, -50.0 });
+        }
+    }
     return preset;
 }
 
@@ -309,6 +334,7 @@ const std::vector<MixHouseTransitionSpec>& builtInTransitionSpecs()
     // over the whole length, and the bass handed over on beat 4, right in the
     // middle, when both tracks are at -3 dB and the kick can change hands.
     static const std::vector<MixHouseTransitionSpec> kSpecs = {
+        volumeFade(),
         aroundAnchor(makeSpec(kDefaultMixNowTransition, 8, K::Crossfade, K::Swap, 0.5, 0)),
         aroundAnchor(makeSpec("Quick crossfade + bass swap, 2 beats out", 8, K::Crossfade, K::Swap, 0.5, 2)),
         aroundAnchor(makeSpec("Bass swap, 8 bars", 32, K::Crossfade, K::Swap, 0.5, 0)),

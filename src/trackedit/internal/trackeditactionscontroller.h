@@ -23,6 +23,7 @@
 #include "../iselectioncontroller.h"
 #include "../itrackeditconfiguration.h"
 #include "../itrackeditinteraction.h"
+#include "../itracksinteraction.h"
 #include "itracknavigationcontroller.h"
 
 #include "deletebehavioronboardingscenario.h"
@@ -44,6 +45,7 @@ class TrackeditActionsController : public ITrackeditActionsController, public mu
     muse::ContextInject<trackedit::IProjectHistory> projectHistory { this };
     muse::ContextInject<trackedit::ISelectionController> selectionController { this };
     muse::ContextInject<trackedit::ITrackeditInteraction> trackeditInteraction { this };
+    muse::ContextInject<trackedit::ITracksInteraction> tracksInteraction { this };
     muse::ContextInject<trackedit::ITrackNavigationController> trackNavigationController { this };
     muse::ContextInject<muse::ui::INavigationController> navigationController { this };
     muse::ContextInject<spectrogram::IFrequencySelectionController> frequencySelectionController { this };
@@ -93,6 +95,7 @@ private:
     void doGlobalCopy();
     void doGlobalCut();
     void doGlobalDelete();
+    void doGlobalDeleteImpl();
     void doGlobalCancel();
     void doGlobalSplit();
     void doGlobalSplitIntoNewTrack();

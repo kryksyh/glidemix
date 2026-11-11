@@ -26,6 +26,7 @@
 #include "mixhouse/imixhouserekordboxxml.h"
 #include "mixhouse/imixhouserekordboxphrases.h"
 #include "mixhouse/imixhouselibraryconfiguration.h"
+#include "mixhouse/imixhousetransitions.h"
 #include "mixhouse/mixhousewaveform.h"
 
 namespace au::mixhouse {
@@ -42,6 +43,7 @@ class MixHouseBeatGrids : public IMixHouseBeatGrids, public muse::Contextable, p
     muse::ContextInject<IMixHouseRekordboxPhrases> rekordboxPhrases { this };
     muse::ContextInject<IMixHouseActivity> activity { this };
     muse::GlobalInject<IMixHouseLibraryConfiguration> libraryConfiguration;
+    muse::ContextInject<IMixHouseTransitions> transitions { this };
 
 public:
     explicit MixHouseBeatGrids(const muse::modularity::ContextPtr& iocCtx);
@@ -176,6 +178,7 @@ private:
         std::vector<std::pair<trackedit::ClipKey, double> > followers;   ///< and their start times
         QString filePath;                        ///< the dragged clip's song
         std::pair<double, double> anchorsBefore; ///< its anchors, source seconds
+        trackedit::ClipKey outgoing, incoming;   ///< the transition the anchor belongs to
     };
     RippleDrag m_ripple;
     //! Where a dragged song's anchors were when the drag began (project seconds).

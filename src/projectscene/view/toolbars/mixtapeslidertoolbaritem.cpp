@@ -98,25 +98,9 @@ void MixtapeSliderToolBarItem::onProjectChanged()
         vs->zoomStateChanged().onNotify(this, [this]() { updateValue(); });
     } else {
         vs->totalTrackHeight().ch.onReceive(this, [this](int) { updateValue(); });
-        // GlideMix: a new lane takes the height the slider set for the others,
-        // not the default (lanes 4-6 came in twice as tall as 1-3).
-        if (auto project = globalContext()->currentTrackeditProject()) {
-            const auto matchHeight = [this](const trackedit::Track& added) {
-                auto vs = viewState();
-                auto project = globalContext()->currentTrackeditProject();
-                if (!vs || !project) {
-                    return;
-                }
-                for (const trackedit::TrackId id : project->trackIdList()) {
-                    if (id != added.id) {
-                        vs->setTrackHeight(added.id, vs->trackHeight(id).val);
-                        return;
-                    }
-                }
-            };
-            project->trackAdded().onReceive(this, matchHeight);
-            project->trackInserted().onReceive(this, [matchHeight](const trackedit::Track& t, int) { matchHeight(t); });
-        }
+        // GlideMix: a new lane takes the height of the others -- done where
+        // its view data is made (ProjectViewState::makeTrackData), which knows
+        // its Single wave state; copying here doubled songs 2, 3, 4.
     }
     updateValue();
 }

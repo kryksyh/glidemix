@@ -491,6 +491,16 @@ Rectangle {
         id: multiClipContextMenuModel
     }
 
+    // GlideMix: right-click on an IN / OUT flag.
+    ContextMenuLoader {
+        id: anchorTransitionMenu
+        property int which: 0
+
+        onHandleMenuItem: function (itemId) {
+            waveView.handleAnchorTransitionMenu(anchorTransitionMenu.which, itemId)
+        }
+    }
+
     ContextMenuLoader {
         id: multiClipContextMenuLoader
 
@@ -1094,6 +1104,7 @@ Rectangle {
                     Item {
                         id: anchorHandle
                         readonly property real anchorX: anchorHandles.positions[index]
+                        readonly property int which: index   // 0 IN, 1 OUT (the inner Repeater has its own index)
                         readonly property bool shown: anchorX >= -30 && anchorX <= waveView.width + 30
                         property real grabOffset: 0
                         anchors.fill: parent
@@ -1120,8 +1131,15 @@ Rectangle {
                                 hoverEnabled: true
                                 preventStealing: true
                                 cursorShape: Qt.SizeHorCursor
-                                acceptedButtons: Qt.LeftButton
+                                // The IN / OUT flag also takes a right-click: the transition at that anchor.
+                                acceptedButtons: modelData.h < 0 ? Qt.LeftButton : (Qt.LeftButton | Qt.RightButton)
                                 onPressed: function(mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        const p = mapToItem(root, mouse.x, mouse.y)
+                                        anchorTransitionMenu.which = anchorHandle.which
+                                        anchorTransitionMenu.show(Qt.point(p.x, p.y), waveView.anchorTransitionMenu(anchorHandle.which))
+                                        return
+                                    }
                                     // GlideMix: a volume point or line under the anchor line wins;
                                     // the IN / OUT flag still drags the anchor.
                                     if (modelData.h < 0) {
@@ -1135,11 +1153,15 @@ Rectangle {
                                     anchorHandle.press(this, mouse)
                                 }
                                 onPositionChanged: function(mouse) {
-                                    if (pressed) {
+                                    if (pressed && (pressedButtons & Qt.LeftButton)) {
                                         anchorHandle.move(this, mouse, false)
                                     }
                                 }
-                                onReleased: function(mouse) { anchorHandle.move(this, mouse, true) }
+                                onReleased: function(mouse) {
+                                    if (mouse.button === Qt.LeftButton) {
+                                        anchorHandle.move(this, mouse, true)
+                                    }
+                                }
                                 onDoubleClicked: waveView.resetAnchors()
                             }
                         }

@@ -35,13 +35,14 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.6**\n\n"
-                      + "- Sounds like: every song now gets a small sound fingerprint when it's analysed (its tone, brightness, bass and groove).\n"
-                      + "- Related compares the song under the playhead with all the others: among the songs whose key and BPM mix, the ones that sound most alike come first. The new \"Sounds like\" column says how alike (85 % = more alike than 85 % of your library). Move the playhead to another song and the list follows.\n"
-                      + "- Songs analysed before get their fingerprint once in the background (a few hours for a big library). It waits while music plays.\n"
-                      + "- A light show above the clock: LED dots that dance with the mix. Right-click to hide it.\n"
-                      + "- Audio setup and Music library moved to the top right, beside the Workspace picker.\n"
-                      + "- Loops live under the ruler now: drag in the strip under the time numbers to loop, click the loop to turn it on or off. A click on the numbers just moves the playhead.\n"
+                text: "**GlideMix v1.2.7**\n\n"
+                      + "- Volume Fade is the new default transition (the MixMeister fade): the playing song slides to half volume over 8 bars after its OUT and cuts, the next one starts on its IN at half volume and rises to full.\n"
+                      + "- Move an OUT or IN anchor and the songs after it move along; the fade is redrawn from the new spot.\n"
+                      + "- Right-click an IN or OUT flag to switch between Volume Fade and the GlideMix transition, or turn it off.\n"
+                      + "- Before the IN and after the cut the song now shows faintly, so you see where you are when you move the IN.\n"
+                      + "- Sounds like is a column in the main library now: sort by it to find the songs that sound most like the one under the playhead.\n"
+                      + "- Del / Backspace delete a song every time and take its empty lane with it; new lanes come in at the same height.\n"
+                      + "- Picked a transition by hand before? It stays: choose Volume Fade in Preferences > Transitions.\n"
             }
         }
 

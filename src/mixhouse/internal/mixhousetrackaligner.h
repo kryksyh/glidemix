@@ -15,6 +15,7 @@
 #include "mixhouse/imixhousetrackaligner.h"
 #include "mixhouse/imixhousebeatgrids.h"
 #include "mixhouse/imixhousetempomap.h"
+#include "mixhouse/imixhousetransitions.h"
 
 namespace au::mixhouse {
 class MixHouseTrackAligner : public IMixHouseTrackAligner, public muse::Contextable
@@ -28,6 +29,7 @@ class MixHouseTrackAligner : public IMixHouseTrackAligner, public muse::Contexta
     muse::GlobalInject<IMixHouseLibraryConfiguration> libraryConfiguration;
     muse::ContextInject<IMixHouseBeatGrids> beatGrids { this };
     muse::ContextInject<IMixHouseTempoMap> tempoMap { this };
+    muse::ContextInject<IMixHouseTransitions> transitions { this };
 
 public:
     explicit MixHouseTrackAligner(const muse::modularity::ContextPtr& iocCtx);

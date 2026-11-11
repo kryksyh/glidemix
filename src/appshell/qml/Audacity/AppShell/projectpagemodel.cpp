@@ -8,6 +8,7 @@
 #include "framework/global/async/async.h"
 #include "framework/dockwindow/idockwindow.h"
 
+#include <QSettings>
 #include <QTimer>
 
 #include "internal/applicationuiactions.h"
@@ -44,6 +45,38 @@ void ProjectPageModel::init()
         globalContext()->currentTrackeditProjectChanged().onNotify(this, [this]() {
             wantLibraryTab();
         });
+
+        // GlideMix (Chris): Samples and Related are always-there tabs, in
+        // this order after Music library and Project. New layouts have them
+        // (ProjectPage.qml); a layout saved before gets them once here.
+        // Related is closed and opened again so it lands after Samples.
+        const QString onceKey = QStringLiteral("GlideMix/samplesAndRelatedTabs1");
+        if (!kSamplesTabShipped) {
+            // Not shipped yet: a Samples tab left open (a dev build's layout) closes,
+            // and the step above waits -- unmarked -- for the release that has it.
+            QTimer::singleShot(1200, this, [this]() {
+                const auto window = dockWindowProvider() ? dockWindowProvider()->window() : nullptr;
+                if (window && window->isDockOpen(MIXHOUSE_SAMPLES_PANEL_NAME)) {
+                    dispatcher()->dispatch("dock-set-open",
+                                           ActionData::make_arg2<QString, bool>(MIXHOUSE_SAMPLES_PANEL_NAME, false));
+                }
+            });
+        } else if (!QSettings().value(onceKey).toBool()) {
+            QSettings().setValue(onceKey, true);
+            QTimer::singleShot(1200, this, [this]() {
+                const auto window = dockWindowProvider() ? dockWindowProvider()->window() : nullptr;
+                if (window && window->isDockOpen(MIXHOUSE_RELATED_PANEL_NAME)) {
+                    dispatcher()->dispatch("dock-set-open", ActionData::make_arg2<QString, bool>(MIXHOUSE_RELATED_PANEL_NAME, false));
+                }
+                QTimer::singleShot(200, this, [this]() {
+                    openDock(MIXHOUSE_SAMPLES_PANEL_NAME);
+                    QTimer::singleShot(200, this, [this]() {
+                        openDock(MIXHOUSE_RELATED_PANEL_NAME);
+                        wantLibraryTab();   // the library stays in front
+                    });
+                });
+            });
+        }
 
         m_inited = true;
     }
@@ -142,8 +175,12 @@ QVariantList ProjectPageModel::closedBottomTabs() const
         { MIXHOUSE_LIBRARY_PANEL_NAME, muse::qtrc("appshell", "Music library") },
         { MIXHOUSE_PROJECT_PANEL_NAME, muse::qtrc("appshell", "Project") },
         { MIXHOUSE_RELATED_PANEL_NAME, muse::qtrc("appshell", "Related") },
+        { MIXHOUSE_SAMPLES_PANEL_NAME, muse::qtrc("appshell", "Samples") },
     };
     for (const auto& [name, title] : tabs) {
+        if (name == MIXHOUSE_SAMPLES_PANEL_NAME && !kSamplesTabShipped) {
+            continue;
+        }
         if (!window || !window->isDockOpen(name)) {
             items << QVariantMap { { "id", name }, { "title", title }, { "enabled", true } };
         }

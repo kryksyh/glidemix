@@ -40,6 +40,7 @@ private:
     std::shared_ptr<MixHouseTransitionConfiguration> m_transitionConfiguration;
     std::shared_ptr<class MixHouseHdWaveforms> m_hdWaveforms;
     std::shared_ptr<class MixHouseLicence> m_licence;
+    std::shared_ptr<class MixHouseSamples> m_samples;
 };
 
 class MixHouseModuleContext : public muse::modularity::IContextSetup

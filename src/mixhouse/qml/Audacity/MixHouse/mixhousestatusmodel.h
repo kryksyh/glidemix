@@ -18,6 +18,7 @@
 
 #include "mixhouse/imixhouseactivity.h"
 #include "mixhouse/imixhouselibrary.h"
+#include "mixhouse/imixhousesamples.h"
 #include "mixhouse/imixhouselicence.h"
 #include "playback/iplaybackcontroller.h"
 #include "mixhouse/imixhouserekordboxxml.h"
@@ -44,6 +45,7 @@ class MixHouseStatusModel : public QObject, public QQmlParserStatus, public muse
     muse::ContextInject<IMixHouseActivity> activity { this };
     muse::ContextInject<playback::IPlaybackController> playbackController { this };
     muse::GlobalInject<IMixHouseLicence> licence;
+    muse::GlobalInject<IMixHouseSamples> samples;
     muse::ContextInject<muse::update::IAppUpdateService> updateService { this };
     muse::ContextInject<muse::update::IAppUpdateScenario> updateScenario { this };
     muse::GlobalInject<muse::update::IUpdateConfiguration> updateConfiguration;

@@ -170,7 +170,7 @@ public:
                 SortAlbumArtist, SortComposer, SortGrouping, SortTrackNumber,
                 SortFileType, SortComment, SortBitrate, SortReplayGain,
                 SortTimesPlayed, SortLastPlayedAt, SortPosition,
-                SortSampleRate, SortChannels, SortAnalyzed, SortEnergy };
+                SortSampleRate, SortChannels, SortAnalyzed, SortEnergy, SortSoundsLike };
     Q_ENUM(Sort)
 
     Q_INVOKABLE void load();
@@ -681,6 +681,9 @@ public:
     Q_PROPERTY(bool matchOn READ matchOn WRITE setMatchOn NOTIFY matchChanged)
     Q_PROPERTY(int matchWidth READ matchWidth WRITE setMatchWidth NOTIFY matchChanged)
     Q_PROPERTY(bool relatedOn READ relatedOn WRITE setRelatedOn NOTIFY relatedChanged)
+    //! GlideMix: the library's Sounds like column is shown: follow the song
+    //! under the playhead and score every song against it.
+    Q_PROPERTY(bool soundsLikeOn READ soundsLikeOn WRITE setSoundsLikeOn NOTIFY soundsLikeOnChanged)
     Q_PROPERTY(bool relatedView READ relatedView WRITE setRelatedView NOTIFY relatedChanged)
     Q_PROPERTY(QString referenceText READ referenceText NOTIFY referenceChanged)
     Q_PROPERTY(QVariantList relatedSongs READ relatedSongs NOTIFY relatedChanged)
@@ -733,6 +736,8 @@ public:
     /// track and playing -- jumps there via the fork's coalesced 90ms seek.
     Q_INVOKABLE void previewTrackAt(int row, double fraction);
     Q_INVOKABLE void stopPreview();
+    //! GlideMix: one preview at a time, songs and samples (the Samples tab calls it).
+    static void stopAllPreviews();
     /// Preview from the next phrase start of this row's track: after the
     /// current position while it is previewing, otherwise from the start.
     Q_INVOKABLE void previewNextPhrase(int row);
@@ -771,6 +776,8 @@ public:
     void setMatchWidth(int width);
     bool relatedOn() const { return m_relatedOn; }
     void setRelatedOn(bool on);
+    bool soundsLikeOn() const { return m_soundsLikeOn; }
+    void setSoundsLikeOn(bool on);
     QString referenceText() const;
     QVariantList relatedSongs() const { return m_relatedSongs; }
     QVariantMap relatedRules() const;
@@ -794,6 +801,7 @@ signals:
     void rekordboxImportChanged();
     void matchChanged();
     void relatedChanged();
+    void soundsLikeOnChanged();
     void referenceChanged();
     void uiColumnCountChanged();
     void analyzingChanged();
@@ -989,13 +997,20 @@ private:
     // background fill or an analysis added some) and each related song's score.
     SoundsLikeIndex m_soundsLike;
     int m_soundsLikeLoadedCount = -1;
-    QHash<int, double> m_soundsLikeScore;
+    QHash<int, double> m_soundsLikeScore;   // Related: its songs' scores
+    QHash<int, double> m_soundsLikeAll;     // library column: every song's score
+    bool m_soundsLikeOn = false;
     void ensureSoundsLike();
+    void updateSoundsLikeAll();
+    bool followsReference() const { return m_matchOn || m_relatedOn || m_soundsLikeOn; }
+    void sortBySoundsLike(MixHouseTrackList& tracks, const QHash<int, double>& scores, bool closestFirst) const;
     void subscribeReference();
     struct MatchRules {
         bool bpmOn = true, halfDouble = true, keyOn = true, energyOn = false, genreOn = false, artistOn = false;
         bool composerOn = false, colorOn = false, yearOn = false, ratingOn = false, addedOn = false, commentOn = false;
         bool labelOn = false, remixerOn = false, formatOn = false, historyOn = false, tagOn = false;
+        bool soundsLikeOn = false;
+        int minSoundsLike = 50;   // %: songs that sound at least this alike (unmeasured ones stay)
         double bpmPercent = 5.0;
         int keyWidth = 2, yearRange = 0, minRating = 1, historyRange = 3;
         QString addedSince, commentText, tagName;
