@@ -86,6 +86,10 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseenergy.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseenergy.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousesoundslike.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousesoundslike.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousegridshifts.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhousegridshifts.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousephrasemodel.h
@@ -152,6 +156,7 @@ set(MIXHOUSE_ALIGNER_SRC
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetransitionnames.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetransitionnames.h)
 set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseprojectaligner.cpp
+                            ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.cpp
                             ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousetransitionnames.cpp
                             ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousebeatgrids.cpp
                             ${CMAKE_CURRENT_LIST_DIR}/internal/mixhouseclipcolors.cpp

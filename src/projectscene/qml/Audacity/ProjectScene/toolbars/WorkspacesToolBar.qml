@@ -59,7 +59,8 @@ StyledToolBarView {
                     spacing: 2
 
                     StyledTextLabel {
-                        x: 2
+                        width: 170   // centred over the picker (Chris)
+                        horizontalAlignment: Text.AlignHCenter
                         text: qsTrc("projectscene", "Workspace")
                         font.pixelSize: 10
                         opacity: 0.7

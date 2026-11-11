@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include "mixhouse/mixhousesoundslike.h"
 #include <optional>
 
 #include "mixhouse/mixhousehdwaveform.h"
@@ -141,7 +142,8 @@ public:
         DateAddedRole, TimesPlayedRole, LastPlayedAtRole, BpmLockedRole,
         TrackIdRole, CoverArtTypeRole, SampleRateRole,
         AnalysisProgressRole, AnalyzedRole, EnergyRole,
-        KeyMatchRole   ///< GlideMix Match: the key mixes with the song under the playhead
+        KeyMatchRole,  ///< GlideMix Match: the key mixes with the song under the playhead
+        SoundsLikeRole ///< GlideMix Related: 0-100 how alike it sounds to the reference, -1 unknown
     };
 
     /// PlaylistDAO::AutoDJSendLoc, named for QML as MixHouseTrackListModel.AutoDjTop etc.
@@ -983,6 +985,12 @@ private:
     } m_reference;
     std::vector<MixHouseTrack> m_relatedTracks;
     QVariantList m_relatedSongs;
+    // GlideMix "Sounds like": the library's fingerprints (reloaded when the
+    // background fill or an analysis added some) and each related song's score.
+    SoundsLikeIndex m_soundsLike;
+    int m_soundsLikeLoadedCount = -1;
+    QHash<int, double> m_soundsLikeScore;
+    void ensureSoundsLike();
     void subscribeReference();
     struct MatchRules {
         bool bpmOn = true, halfDouble = true, keyOn = true, energyOn = false, genreOn = false, artistOn = false;

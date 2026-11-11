@@ -191,6 +191,11 @@ public:
     /// GlideMix (Match/Related "History"): songs played within `range` places
     /// before or after `trackId` in any play-history session.
     virtual QList<int> historyNeighbours(int trackId, int range) const { (void)trackId; (void)range; return {}; }
+    /// GlideMix "Sounds like" (mixhousesoundslike.h): how many songs have a
+    /// current fingerprint (cheap, to see whether a cached set is stale), and
+    /// all of them as track id -> float32 values.
+    virtual int soundsLikeCount() const { return 0; }
+    virtual QHash<int, QByteArray> soundsLikeFingerprints() const { return {}; }
     /// GlideMix (fast library): ids of songs changed through this library
     /// since the last call (recorded by triggers on the write connection),
     /// so the song list re-reads only those rows. Empties the record.

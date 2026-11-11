@@ -35,14 +35,13 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.5**\n\n"
-                      + "- Edit like in Ableton: Z zooms to the selection, X goes back, ⌘E splits, ⌘L loops, R reverses, ⌘1–⌘4 set the grid.\n"
-                      + "- Some keys moved: Split is now ⌘E (was ⌘I), Record is F9, Rename is ⌘R.\n"
-                      + "- Tidier right-click menus, with Cut / Paste / Delete time and a Grid section.\n"
-                      + "- Thin automation lines with the value beside each point (dB, %, BPM).\n"
-                      + "- Toolbar: icons only, grouped; hover a button to see what it does.\n"
-                      + "- ⌘A selects all songs in the library, or the whole timeline.\n"
-                      + "- Fixed a crash when zoomed in very close.\n"
+                text: "**GlideMix v1.2.6**\n\n"
+                      + "- Sounds like: every song now gets a small sound fingerprint when it's analysed (its tone, brightness, bass and groove).\n"
+                      + "- Related compares the song under the playhead with all the others: among the songs whose key and BPM mix, the ones that sound most alike come first. The new \"Sounds like\" column says how alike (85 % = more alike than 85 % of your library). Move the playhead to another song and the list follows.\n"
+                      + "- Songs analysed before get their fingerprint once in the background (a few hours for a big library). It waits while music plays.\n"
+                      + "- A light show above the clock: LED dots that dance with the mix. Right-click to hide it.\n"
+                      + "- Audio setup and Music library moved to the top right, beside the Workspace picker.\n"
+                      + "- Loops live under the ruler now: drag in the strip under the time numbers to loop, click the loop to turn it on or off. A click on the numbers just moves the playhead.\n"
             }
         }
 

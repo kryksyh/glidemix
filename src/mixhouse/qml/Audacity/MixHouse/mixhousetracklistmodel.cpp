@@ -5058,6 +5058,7 @@ QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
     case YearRole:        return t.year;
     case BpmRole:         return t.bpm;
     case EnergyRole:      return t.energy;
+    case SoundsLikeRole:  return m_soundsLikeScore.value(t.id, -1.0);
     case KeyRole:         return t.key;
     case KeyIdRole:       return t.keyId;
     case DurationRole:    return t.durationSec;
@@ -5097,7 +5098,7 @@ QHash<int, QByteArray> MixHouseTrackListModel::roleNames() const
 {
     return {
         { TitleRole, "title" }, { ArtistRole, "artist" }, { AlbumRole, "album" },
-        { GenreRole, "genre" }, { YearRole, "year" }, { BpmRole, "bpm" }, { EnergyRole, "energy" },
+        { GenreRole, "genre" }, { YearRole, "year" }, { BpmRole, "bpm" }, { EnergyRole, "energy" }, { SoundsLikeRole, "soundsLike" },
         { KeyRole, "musicalKey" }, { KeyIdRole, "keyId" }, { DurationRole, "durationSec" },
         { RatingRole, "rating" }, { HasBeatgridRole, "hasBeatgrid" },
         { FilePathRole, "filePath" }, { ColorRole, "color" },
@@ -5792,10 +5793,34 @@ bool MixHouseTrackListModel::meetsRules(const MixHouseTrack& t) const
     return true;
 }
 
+void MixHouseTrackListModel::ensureSoundsLike()
+{
+    // Cheap count first: the fill adds fingerprints for hours after an update.
+    const int count = library()->soundsLikeCount();
+    if (count == m_soundsLikeLoadedCount) {
+        return;
+    }
+    QElapsedTimer took;
+    took.start();
+    const QHash<int, QByteArray> blobs = library()->soundsLikeFingerprints();
+    std::vector<std::pair<int, std::vector<float> > > fingerprints;
+    fingerprints.reserve(static_cast<size_t>(blobs.size()));
+    for (auto it = blobs.cbegin(); it != blobs.cend(); ++it) {
+        std::vector<float> values = decodeSoundsLike(it.value().constData(), static_cast<int>(it.value().size()));
+        if (!values.empty()) {
+            fingerprints.emplace_back(it.key(), std::move(values));
+        }
+    }
+    m_soundsLike.load(fingerprints);
+    m_soundsLikeLoadedCount = count;
+    LOGI() << "GlideMix sounds like: " << m_soundsLike.size() << " songs loaded in " << took.elapsed() << " ms";
+}
+
 void MixHouseTrackListModel::updateRelated()
 {
     m_relatedTracks.clear();
     m_relatedSongs.clear();
+    m_soundsLikeScore.clear();
     if (!m_relatedOn || m_reference.trackId < 0) {
         return;
     }
@@ -5807,10 +5832,40 @@ void MixHouseTrackListModel::updateRelated()
             m_relatedTracks.push_back(t);
         }
     }
-    // Closest first: the same key, then the nearest BPM.
+    // Closest first. The rules above already keep only songs whose key and
+    // BPM mix; among those, the ones that sound most alike come first, with
+    // a small step down for another (compatible) key and per % of BPM away.
+    // Songs not measured yet follow, the same key first, then nearest BPM.
     const int refKey = m_reference.keyId;
     const double refBpm = m_reference.bpm;
+    ensureSoundsLike();
+    std::vector<int> ids;
+    ids.reserve(m_relatedTracks.size());
+    for (const MixHouseTrack& t : m_relatedTracks) {
+        ids.push_back(t.id);
+    }
+    const std::vector<double> alike = m_soundsLike.percentAlike(m_reference.trackId, ids);
+    for (size_t i = 0; i < alike.size(); ++i) {
+        if (alike[i] >= 0.0) {
+            m_soundsLikeScore.insert(ids[i], alike[i]);
+        }
+    }
+    constexpr double kOtherKeyPoints = 5.0;    // a compatible but different key
+    constexpr double kPointsPerBpmPercent = 1.0;
+    const auto rank = [&](const MixHouseTrack& t) {
+        const double s = m_soundsLikeScore.value(t.id, -1.0);
+        return s - (t.keyId == refKey ? 0.0 : kOtherKeyPoints)
+               - 100.0 * kPointsPerBpmPercent * std::min(1.0, match::bpmDistance(refBpm, t.bpm));
+    };
     std::stable_sort(m_relatedTracks.begin(), m_relatedTracks.end(), [&](const MixHouseTrack& a, const MixHouseTrack& b) {
+        const bool ka = m_soundsLikeScore.contains(a.id);
+        const bool kb = m_soundsLikeScore.contains(b.id);
+        if (ka != kb) {
+            return ka;
+        }
+        if (ka) {
+            return rank(a) > rank(b);
+        }
         const bool sa = a.keyId == refKey;
         const bool sb = b.keyId == refKey;
         if (sa != sb) {
@@ -5832,6 +5887,7 @@ void MixHouseTrackListModel::updateRelated()
         row.insert(QStringLiteral("keyId"), t.keyId);
         row.insert(QStringLiteral("key"), t.keyId > 0 ? IMixHouseKeyMatch::keyText(t.keyId, notation) : t.key);
         row.insert(QStringLiteral("energy"), t.energy);
+        row.insert(QStringLiteral("soundsLike"), m_soundsLikeScore.value(t.id, -1.0));
         row.insert(QStringLiteral("genre"), t.genre);
         m_relatedSongs.append(row);
     }

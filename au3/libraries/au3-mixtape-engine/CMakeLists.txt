@@ -23,6 +23,8 @@ set( SOURCES
    MixtapeRenderedSequence.h
    MixtapeRenderer.cpp
    MixtapeRenderer.h
+   MixtapeSpectrumTap.cpp
+   MixtapeSpectrumTap.h
    MixtapeTransport.cpp
    MixtapeTransport.h
    MixtapeWorkers.cpp

@@ -211,19 +211,47 @@ DockPage {
             compactPriorityOrder: 2
 
             // GlideMix: the clocks (timecode, BPM, time signature) sit
-            // centered under Audio setup and Music library.
+            // centered under the LED meter.
             thickness: 84
 
             Column {
                 spacing: 4
 
-                ProjectToolBar {
+                // GlideMix: the LED meter -- the mix the audience hears, as a
+                // dot matrix in the LOW / MID / HIGH colours. Right-click hides
+                // or shows it. (Audio setup and Music library moved to the right,
+                // beside the Workspace picker.)
+                Item {
                     anchors.horizontalCenter: parent.horizontalCenter
+                    width: ledMeter.implicitWidth + 16
+                    height: ledMeter.implicitHeight + 2
 
-                    isCompactMode: projectToolBar.isCompact
+                    MixHouseLedMeter {
+                        id: ledMeter
+                        anchors.centerIn: parent
+                        width: implicitWidth
+                        height: implicitHeight
+                    }
 
-                    navigationPanel.section: root.topToolKeyNavSec
-                    navigationPanel.order: 2
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+                        onClicked: function (mouse) {
+                            ledMenu.show(Qt.point(mouse.x, mouse.y), [
+                                { id: "toggle", title: ledMeter.shown ? qsTrc("appshell", "Hide LED meter")
+                                                                      : qsTrc("appshell", "Show LED meter") }
+                            ])
+                        }
+                    }
+
+                    ContextMenuLoader {
+                        id: ledMenu
+                        onHandleMenuItem: function (itemId) {
+                            if (itemId === "toggle") {
+                                ledMeter.shown = !ledMeter.shown
+                            }
+                        }
+                    }
                 }
 
                 // GlideMix modern look: one capsule display -- the clocks,
@@ -285,11 +313,30 @@ DockPage {
 
             compactPriorityOrder: 1
 
-            WorkspacesToolBar {
-                isCompactMode: workspacesToolBar.isCompact
+            // GlideMix: Audio setup and Music library, left of the Workspace
+            // picker (they made way for the LED meter above the clock).
+            Row {
+                spacing: 40
 
-                navigationPanel.section: root.topToolKeyNavSec
-                navigationPanel.order: 3
+                // Level with the Workspace box (its label sits above it).
+                ProjectToolBar {
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: -2
+
+                    isCompactMode: workspacesToolBar.isCompact
+
+                    navigationPanel.section: root.topToolKeyNavSec
+                    navigationPanel.order: 2
+                }
+
+                WorkspacesToolBar {
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    isCompactMode: workspacesToolBar.isCompact
+
+                    navigationPanel.section: root.topToolKeyNavSec
+                    navigationPanel.order: 3
+                }
             }
         },
         DockToolBar {

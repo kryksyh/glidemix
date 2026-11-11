@@ -2,6 +2,7 @@
  * GlideMix -- playback engine
  */
 #include "MixtapeTransport.h"
+#include "MixtapeSpectrumTap.h"
 
 #include <algorithm>
 #include <chrono>
@@ -21,6 +22,9 @@ namespace mixtape {
 namespace {
 constexpr size_t kRenderBlock = kRenderBlockFrames;
 std::atomic<int> s_activeTransports{ 0 };
+//! GlideMix: running audience outputs (Perform); while one runs, the LED meter
+//! shows it rather than the headphone preview.
+std::atomic<int> s_activeAudienceTransports{ 0 };
 
 PaHostApiIndex FindHost(const std::string& host)
 {
@@ -174,6 +178,9 @@ bool Transport::Start(const Options& options, std::shared_ptr<const Arrangement>
     }
     mActive = true;
     ++s_activeTransports;
+    if (!mOptions.isCue) {
+        ++s_activeAudienceTransports;
+    }
     return true;
 }
 
@@ -191,6 +198,9 @@ void Transport::Stop()
     }
     if (mActive.exchange(false)) {
         --s_activeTransports;
+        if (!mOptions.isCue) {
+            --s_activeAudienceTransports;
+        }
     }
     // The renderer holds the arrangement, and with it the project's tracks and
     // sample blocks. Kept after a File > New, the old project's blocks were
@@ -341,6 +351,11 @@ void Transport::RenderLoop()
             for (size_t c = 0; c < channels; ++c) {
                 mOptions.meter->push(static_cast<uint8_t>(c), { planar[c].data(), kRenderBlock, 1, mBlockDacTime });
             }
+        }
+        if (!mOptions.isCue || s_activeAudienceTransports.load() == 0) {
+            // GlideMix: the LED meter above the clock shows what the audience
+            // hears (Perform), else the normal play (which is the cue output).
+            SpectrumTap::Instance().Write(ptrs.data(), channels, kRenderBlock, mOptions.sampleRate, mBlockDacTime);
         }
         if (!triggerFile.empty() && ++sinceCheck * kRenderBlock >= mOptions.sampleRate / 5) {
             sinceCheck = 0;

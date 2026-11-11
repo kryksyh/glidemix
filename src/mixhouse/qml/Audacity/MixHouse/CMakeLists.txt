@@ -32,6 +32,8 @@ qt_add_qml_module(mixhouse_qml
         mixhousestatusmodel.h
         mixhousenowplayingmodel.cpp
         mixhousenowplayingmodel.h
+        mixhouseledmeter.cpp
+        mixhouseledmeter.h
     QML_FILES
         MixHouseLibraryPanel.qml
         RelatedSettingsPopup.qml
@@ -60,4 +62,4 @@ qt_add_qml_module(mixhouse_qml
 # The Beatgrid editor's deck (au3-mixtape-engine) and the playback device
 # setting; au3 headers stay out of the unity build.
 target_link_libraries(mixhouse_qml PRIVATE au3-mixtape-engine)
-set_source_files_properties(mixhousegrideditormodel.cpp mixhousegrideditorwave.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+set_source_files_properties(mixhousegrideditormodel.cpp mixhousegrideditorwave.cpp mixhouseledmeter.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)

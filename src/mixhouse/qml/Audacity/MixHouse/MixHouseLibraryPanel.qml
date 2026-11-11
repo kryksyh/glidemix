@@ -169,6 +169,10 @@ Item {
         { key: "bpm",          label: qsTrc("mixhouse", "BPM"),         sort: MixHouseTrackListModel.SortBpm,              width: 80,  align: Qt.AlignRight,   visible: true },
         // GlideMix: 1-10, from the analysis (Lexicon's own for its songs).
         { key: "energy",       label: qsTrc("mixhouse", "Energy"),      sort: MixHouseTrackListModel.SortEnergy,           width: 100,  align: Qt.AlignLeft,    visible: true },
+        // GlideMix "Sounds like": how alike a song sounds to the one under the
+        // playhead (the share of the library that sounds less alike). Only in
+        // the Related tab, which is already sorted by it.
+        { key: "soundsLike",   label: qsTrc("mixhouse", "Sounds like"), sort: -1,                                          width: 100, align: Qt.AlignRight,   visible: true, relatedOnly: true },
         { key: "durationSec",  label: qsTrc("mixhouse", "Duration"),    sort: MixHouseTrackListModel.SortDuration,         width: 90,  align: Qt.AlignRight,   visible: true },
         { key: "rating",       label: qsTrc("mixhouse", "Rating"),      sort: MixHouseTrackListModel.SortRating,           width: 120, align: Qt.AlignRight,   visible: true },
         { key: "comment",      label: qsTrc("mixhouse", "Comment"),     sort: MixHouseTrackListModel.SortComment,          width: 220, align: Qt.AlignLeft,    visible: true },
@@ -780,6 +784,7 @@ Item {
         switch (key) {
         case "bpm":         return model.bpm > 0 ? model.bpm.toFixed(tracksModel.bpmPrecision) : "—"
         case "energy":      return model.energy > 0 ? String(Math.round(model.energy)) : "—"
+        case "soundsLike":  return model.soundsLike >= 0 ? Math.round(model.soundsLike) + " %" : "—"
         case "musicalKey":  return model.musicalKey.length > 0 ? model.musicalKey : "—"
         // Five stars, empty ones outlined, like rekordbox.
         case "rating":      return "★".repeat(Math.max(0, model.rating)) + "☆".repeat(5 - Math.max(0, Math.min(5, model.rating)))
@@ -893,6 +898,12 @@ Item {
 
     Component.onCompleted: {
         restoreColumnLayout()
+        // Related-only columns: always shown in the Related tab, never in the library.
+        var cols = root.columns
+        for (var ci = 0; ci < cols.length; ++ci) {
+            if (cols[ci].relatedOnly) cols[ci].visible = root.relatedMode
+        }
+        root.columns = cols
         tracksModel.uiColumnCount = root.columns.length
         if (root.relatedMode) {
             tracksModel.relatedView = true
@@ -3251,6 +3262,7 @@ Item {
                     var items = []
                     var shown = {}
                     for (var i = 0; i < root.columns.length; ++i) {
+                        if (root.columns[i].relatedOnly && !root.relatedMode) continue
                         items.push({ id: String(i), title: root.columns[i].label,
                                      checkable: true, checked: root.columns[i].visible })
                         shown[root.columns[i].key] = true

@@ -99,6 +99,10 @@ struct MixHouseAnalysisResult {
     std::vector<float> energyFeatures;
     double energy = 0.0;
 
+    /// GlideMix "Sounds like" fingerprint (mixhousesoundslike.h,
+    /// kSoundsLikeSize values); empty for silence or very short files.
+    std::vector<float> soundsLike;
+
     /// The phrase model's phrases for this grid (mixhousephrasemodel.h);
     /// empty without the model.
     std::vector<MixHousePhrase> modelPhrases;
@@ -125,6 +129,11 @@ struct MixHouseAnalysisResult {
 /// (near-silent audio, spoken word, etc.) -- that's a real result, not a
 /// failure. `onProgress` (optional) receives mixxx's AnalyzerThread-style
 /// per-track progress -- see kMixHouseAnalyzerProgress* above.
+/// GlideMix: only the "Sounds like" fingerprint of a file (one decode, no
+/// beat/key/waveform work), for songs analysed before it existed. Empty when
+/// the file can't be decoded or is silent.
+std::vector<float> analyzeSoundsLike(const QString& filePath);
+
 /// A model file shipped with the app (beat_this.onnx, the phrase model), or
 /// empty if missing. Developer builds fall back to `devPath`.
 QString mixHouseModelPath(const QString& fileName, const QString& devPath = QString());

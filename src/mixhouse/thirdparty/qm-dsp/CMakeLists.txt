@@ -19,6 +19,7 @@ add_library(mixhouse_qmdsp STATIC EXCLUDE_FROM_ALL
     dsp/chromagram/Chromagram.cpp
     dsp/chromagram/ConstantQ.cpp
     dsp/keydetection/GetKeyMode.cpp
+    dsp/mfcc/MFCC.cpp   # GlideMix: the "Sounds like" fingerprint's timbre part
     dsp/onsets/DetectionFunction.cpp
     dsp/onsets/PeakPicking.cpp
     dsp/phasevocoder/PhaseVocoder.cpp

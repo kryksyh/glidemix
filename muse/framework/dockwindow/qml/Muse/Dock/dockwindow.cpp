@@ -26,6 +26,7 @@
 #include "thirdparty/KDDockWidgets/src/LayoutSaver.h"
 #include "thirdparty/KDDockWidgets/src/private/quick/MainWindowQuick_p.h"
 #include "thirdparty/KDDockWidgets/src/private/DockRegistry_p.h"
+#include "thirdparty/KDDockWidgets/src/private/LayoutWidget_p.h"
 #include "thirdparty/KDDockWidgets/src/Config.h"
 #include "thirdparty/KDDockWidgets/src/ContextData.h"
 
@@ -100,6 +101,16 @@ public:
     void alignTopLevelToolBars()
     {
         static_cast<DockWindow*>(parent())->alignTopLevelToolBars(m_page);
+    }
+
+    //! GlideMix: a toolbar's content changed size after start-up (Audio
+    //! setup beside the Workspace picker grows once its buttons load). The
+    //! layout keeps the old widths of its neighbours until the window is
+    //! resized, and the right-hand toolbars ran off the edge: do what a
+    //! resize does.
+    void relayoutTopLevelToolBars()
+    {
+        static_cast<DockWindow*>(parent())->relayoutTopLevelToolBars(m_page);
     }
 
 private:
@@ -421,6 +432,25 @@ void DockWindow::loadPanels(const DockPageView* page)
             addDock(holder, location);
         }
     }
+}
+
+void DockWindow::relayoutTopLevelToolBars(const DockPageView* page)
+{
+    // As geometryChange(): every top toolbar back to its own width, the
+    // layout sized again (so it hands out the space anew), then aligned.
+    for (DockToolBarView* toolBar : topLevelToolBars(page)) {
+        toolBar->setMinimumWidth(toolBar->contentWidth());
+    }
+    if (m_mainWindow) {
+        if (KDDockWidgets::LayoutWidget* layout = m_mainWindow->layoutWidget()) {
+            const QSize size = layout->size();
+            if (size.width() > 1) {
+                layout->setLayoutSize(QSize(size.width() - 1, size.height()));
+                layout->setLayoutSize(size);
+            }
+        }
+    }
+    alignTopLevelToolBars(page);
 }
 
 void DockWindow::alignTopLevelToolBars(const DockPageView* page)
@@ -799,7 +829,7 @@ void DockWindow::initDocks(DockPageView* page)
                 holder, &UniqueConnectionHolder::alignTopLevelToolBars, Qt::UniqueConnection);
 
         connect(toolbar, &DockToolBarView::contentSizeChanged,
-                holder, &UniqueConnectionHolder::alignTopLevelToolBars, Qt::UniqueConnection);
+                holder, &UniqueConnectionHolder::relayoutTopLevelToolBars, Qt::UniqueConnection);
 
         connect(toolbar, &DockToolBarView::visibleChanged,
                 holder, &UniqueConnectionHolder::alignTopLevelToolBars, Qt::UniqueConnection);

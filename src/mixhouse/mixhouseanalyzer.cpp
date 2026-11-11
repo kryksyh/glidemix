@@ -10,6 +10,7 @@
 #include "mixhousephrasedetector.h"
 #include "mixhousephrasemodel.h"
 #include "mixhouseenergy.h"
+#include "mixhousesoundslike.h"
 #ifdef MIXHOUSE_HAVE_COREML
 #include "mixhousecoremlbeats.h"
 #endif
@@ -1500,6 +1501,8 @@ MixHouseAnalysisResult au::mixhouse::analyzeTrackFile(const QString& filePath,
     PhraseEnergyCollector phraseEnergy;
     phraseEnergy.initialize(info.channels, info.sampleRate);
     bands.initialize(info.frames, info.channels, info.sampleRate);
+    SoundsLikeCollector soundsLike;
+    soundsLike.initialize(info.channels, info.sampleRate);
 
 #ifdef MIXHOUSE_HAVE_BEAT_THIS
     // Whole-track mono copy for Beat This! (the model needs the full
@@ -1545,6 +1548,7 @@ MixHouseAnalysisResult au::mixhouse::analyzeTrackFile(const QString& filePath,
         envelope.processSamples(samples, frames);
         bands.processSamples(samples, frames);
         phraseEnergy.processSamples(samples, frames);
+        soundsLike.processSamples(samples, frames);
 #ifdef MIXHOUSE_HAVE_BEAT_THIS
         for (long long i = 0; !knownGrid && (kDownbeatFromBeatThis || kGridFromBeatThis) && i < frames; ++i) {
             float sum = 0.0f;
@@ -1758,6 +1762,7 @@ MixHouseAnalysisResult au::mixhouse::analyzeTrackFile(const QString& filePath,
     result.beatBandEnergy = phraseEnergy.perBeat(result.bpm, result.firstBeatSec);
     result.energyFeatures = phraseEnergy.energyFeatures(result.bpm);
     result.energy = rateEnergy(result.energyFeatures);
+    result.soundsLike = soundsLike.finalize(result.energyFeatures);
     if (!result.beatBandEnergy.empty()) {
         // The loudness detector's phrases are one of the model's inputs.
         const double downbeat = result.downbeatSec >= 0.0 ? result.downbeatSec : result.firstBeatSec;
@@ -1768,4 +1773,26 @@ MixHouseAnalysisResult au::mixhouse::analyzeTrackFile(const QString& filePath,
                                            result.durationSec, builtIn);
     }
     return result;
+}
+
+std::vector<float> au::mixhouse::analyzeSoundsLike(const QString& filePath)
+{
+    const AudioInfo info = probeAudioFile(filePath);
+    if (!info.valid || info.sampleRate <= 0 || info.channels <= 0) {
+        return {};
+    }
+    PhraseEnergyCollector phraseEnergy;
+    phraseEnergy.initialize(info.channels, info.sampleRate);
+    SoundsLikeCollector soundsLike;
+    soundsLike.initialize(info.channels, info.sampleRate);
+    const AudioInfo decodeInfo = decodeAudioFile(filePath, [&](const float* samples, long long frames) {
+        phraseEnergy.processSamples(samples, frames);
+        soundsLike.processSamples(samples, frames);
+        return true;
+    });
+    if (!decodeInfo.valid) {
+        return {};
+    }
+    // The groove values (energy features 4-9) don't depend on the tempo.
+    return soundsLike.finalize(phraseEnergy.energyFeatures(0.0));
 }

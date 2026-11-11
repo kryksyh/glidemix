@@ -68,6 +68,8 @@ public:
     int missingTrackCount() const override;
     int unanalyzedTrackCount() const override;
     QList<int> historyNeighbours(int trackId, int range) const override;
+    int soundsLikeCount() const override;
+    QHash<int, QByteArray> soundsLikeFingerprints() const override;
     QList<int> takeChangedTrackIds() override;
     void installChangeTriggers();
     int hiddenTrackCount() const override;
@@ -284,6 +286,7 @@ private:
     //! Writes the sample rate of every track missing one into the library,
     //! on its own thread, once per run (see tracks()).
     void fillMissingSampleRates();
+    void fillMissingSoundsLike();
     //! False once this instance is gone: background threads check it before
     //! calling back.
     const std::shared_ptr<std::atomic<bool> > m_alive = std::make_shared<std::atomic<bool> >(true);

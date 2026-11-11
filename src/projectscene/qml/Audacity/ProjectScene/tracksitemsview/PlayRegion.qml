@@ -15,7 +15,9 @@ Rectangle {
     property alias end: playRegionModel.end
     property alias active: playRegionModel.active
 
-    y: 0
+    // GlideMix (Chris, plan A5): the loop lives in the strip under the time
+    // numbers, next to the timeline it loops; the numbers above only seek.
+    y: parent.height / 2
     height: parent.height / 2
 
     color: ui.theme.accentColor

@@ -320,7 +320,9 @@ Rectangle {
             onPressed: function (e) {
                 let position = convertToTimelinePosition(e)
                 playRegionActivated = false
-                if (timeline.isMajorSection(position.y)) {
+                // GlideMix: loops are made and edited in the lower strip of
+                // the ruler (under the numbers); a click on the numbers seeks.
+                if (!timeline.isMajorSection(position.y)) {
                     playRegionController.startInteraction(position.x, root.ctrlPressed)
                 }
             }

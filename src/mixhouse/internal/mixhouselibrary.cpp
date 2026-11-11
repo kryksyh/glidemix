@@ -41,6 +41,8 @@
 #include "mixhouse/mixhousesearchquery.h"
 #include "mixhouse/imixhousekeymatch.h"
 #include "mixhouse/mixhouseanalyzer.h"
+#include "mixhouse/mixhousesoundslike.h"
+#include "au3-mixtape-engine/MixtapeTransport.h"
 #include "mixhouse/mixhousewaveform.h"
 #include "mixhouse/mixhousephrasedetector.h"
 #include "mixhouselibraryscanner.h"
@@ -99,6 +101,27 @@ constexpr const char* kCreateEnergyTableSql =
     "CREATE TABLE IF NOT EXISTS mixhouse_energy ("
     " track_id INTEGER PRIMARY KEY,"
     " energy REAL NOT NULL)";
+
+//! GlideMix "Sounds like" fingerprint per track (mixhousesoundslike.h):
+//! kSoundsLikeSize float32 values, NULL when the file had no usable sound.
+constexpr const char* kCreateSoundsLikeTableSql =
+    "CREATE TABLE IF NOT EXISTS mixhouse_soundslike ("
+    " track_id INTEGER PRIMARY KEY,"
+    " version INTEGER NOT NULL,"
+    " features BLOB)";
+
+QByteArray encodeSoundsLike(const std::vector<float>& features)
+{
+    if (features.size() != static_cast<size_t>(kSoundsLikeSize)) {
+        return QByteArray();
+    }
+    return QByteArray(reinterpret_cast<const char*>(features.data()),
+                      static_cast<qsizetype>(features.size() * sizeof(float)));
+}
+
+//! Background analysis batches running in any library instance: the
+//! "Sounds like" fill waits for them.
+std::atomic<int> s_analysisBatches { 0 };
 
 //! MixMeister Intro/Outro anchors moved by hand, per file.
 constexpr const char* kCreateAnchorTableSql =
@@ -237,6 +260,7 @@ const char* const kKeyIdToCamelotText[25] = {
 static const char* kConnectionName = "mixhouse_library";
 //! After the window is up: the fill reads every file missing a sample rate.
 static constexpr int kSampleRateFillDelayMs = 5000;
+static constexpr int kSoundsLikeFillDelayMs = 60000;
 
 MixHouseLibrary::~MixHouseLibrary()
 {
@@ -673,7 +697,119 @@ bool MixHouseLibrary::ensureOpen() const
             const_cast<MixHouseLibrary*>(this)->fillMissingSampleRates();
         }
     });
+    QTimer::singleShot(kSoundsLikeFillDelayMs, qApp, [this, alive = m_alive]() {
+        if (*alive) {
+            const_cast<MixHouseLibrary*>(this)->fillMissingSoundsLike();
+        }
+    });
     return true;
+}
+
+// GlideMix "Sounds like": songs analysed before the fingerprint existed (or
+// with an older version of it) get one light pass each -- a decode and the
+// fingerprint, no beats or key. One idle-priority thread, pausing while
+// anything plays or a normal analysis batch runs, so it never competes with
+// the music. Files that can't be read now (an unplugged disk) are tried
+// again next run; files with no usable sound get a NULL row so they are not.
+void MixHouseLibrary::fillMissingSoundsLike()
+{
+    static std::atomic<bool> started { false };   // one per run, like the sample rate fill
+    if (started.exchange(true) || !ensureWritable()) {
+        return;
+    }
+    QThread* thread = QThread::create([path = m_path, alive = m_alive]() {
+        QElapsedTimer timer;
+        timer.start();
+        const QString connection = QStringLiteral("mixhouse_soundslike_fill");
+        int missing = 0, measured = 0, silent = 0, unreadable = 0;
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connection);
+            db.setDatabaseName(path);
+            if (db.open()) {
+                QSqlQuery(db).exec(QStringLiteral("PRAGMA busy_timeout=5000"));
+                QSqlQuery(db).exec(QString::fromLatin1(kCreateSoundsLikeTableSql));
+                std::vector<std::pair<int, QString> > rows;
+                {
+                    QSqlQuery sel(db);
+                    sel.setForwardOnly(true);
+                    sel.prepare(QStringLiteral(
+                        "SELECT l.id, t.location FROM library l JOIN track_locations t ON t.id = l.location "
+                        "WHERE l.mixxx_deleted = 0 AND t.location IS NOT NULL "
+                        "AND EXISTS(SELECT 1 FROM track_analysis ta WHERE ta.track_id = l.id AND ta.type = 2) "
+                        "AND NOT EXISTS(SELECT 1 FROM mixhouse_soundslike s WHERE s.track_id = l.id "
+                        "AND s.version >= :version) "
+                        "ORDER BY l.datetime_added DESC"));
+                    sel.bindValue(QStringLiteral(":version"), kSoundsLikeVersion);
+                    if (sel.exec()) {
+                        while (sel.next()) {
+                            rows.emplace_back(sel.value(0).toInt(), sel.value(1).toString());
+                        }
+                    } else {
+                        LOGW() << "Sounds like fill: " << sel.lastError().text();
+                    }
+                }
+                missing = static_cast<int>(rows.size());
+                if (missing > 0) {
+                    LOGI() << "GlideMix: measuring \"Sounds like\" for " << missing << " songs in the background";
+                }
+                QSqlQuery upsert(db);
+                upsert.prepare(QStringLiteral(
+                    "INSERT OR REPLACE INTO mixhouse_soundslike (track_id, version, features) "
+                    "VALUES (:id, :version, :features)"));
+                std::vector<std::pair<int, QByteArray> > batch;
+                const auto flush = [&]() {
+                    if (batch.empty()) {
+                        return;
+                    }
+                    db.transaction();
+                    for (const auto& [id, blob] : batch) {
+                        upsert.bindValue(QStringLiteral(":id"), id);
+                        upsert.bindValue(QStringLiteral(":version"), kSoundsLikeVersion);
+                        upsert.bindValue(QStringLiteral(":features"),
+                                         blob.isEmpty() ? QVariant(QMetaType::fromType<QByteArray>()) : QVariant(blob));
+                        if (!upsert.exec()) {
+                            LOGW() << "Sounds like fill: write failed: " << upsert.lastError().text();
+                        }
+                    }
+                    db.commit();
+                    batch.clear();
+                };
+                for (const auto& [id, file] : rows) {
+                    // Wait while music plays or songs are being analysed.
+                    while (*alive && (mixtape::AnyTransportActive() || s_analysisBatches.load() > 0)) {
+                        flush();
+                        QThread::msleep(2000);
+                    }
+                    if (!*alive) {
+                        break;
+                    }
+                    if (!QFileInfo::exists(file)) {
+                        ++unreadable;   // missing or unplugged: tried again next run
+                        continue;
+                    }
+                    const std::vector<float> features = analyzeSoundsLike(file);
+                    batch.emplace_back(id, encodeSoundsLike(features));
+                    ++(features.empty() ? silent : measured);
+                    if (batch.size() >= 20) {
+                        flush();
+                    }
+                    if ((measured + silent) % 500 == 0) {
+                        LOGI() << "GlideMix: \"Sounds like\" " << (measured + silent) << " of " << missing << " songs";
+                    }
+                }
+                flush();
+                db.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(connection);
+        if (missing > 0) {
+            LOGI() << "GlideMix: \"Sounds like\" measured for " << measured << " of " << missing << " songs ("
+                   << silent << " without usable sound, " << unreadable << " not found) in "
+                   << timer.elapsed() / 1000 << " s";
+        }
+    });
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start(QThread::IdlePriority);
 }
 
 // Tracks imported from rekordbox or added by this app's scanner have a
@@ -1388,6 +1524,37 @@ QList<int> MixHouseLibrary::historyNeighbours(int trackId, int range) const
     return ids;
 }
 
+int MixHouseLibrary::soundsLikeCount() const
+{
+    if (!ensureOpen()) {
+        return 0;
+    }
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT COUNT(*) FROM mixhouse_soundslike WHERE features IS NOT NULL AND version = :version"));
+    q.bindValue(QStringLiteral(":version"), kSoundsLikeVersion);
+    return q.exec() && q.next() ? q.value(0).toInt() : 0;   // no table yet: 0
+}
+
+QHash<int, QByteArray> MixHouseLibrary::soundsLikeFingerprints() const
+{
+    QHash<int, QByteArray> out;
+    if (!ensureOpen()) {
+        return out;
+    }
+    QSqlQuery q(m_db);
+    q.setForwardOnly(true);
+    q.prepare(QStringLiteral(
+        "SELECT track_id, features FROM mixhouse_soundslike WHERE features IS NOT NULL AND version = :version"));
+    q.bindValue(QStringLiteral(":version"), kSoundsLikeVersion);
+    if (q.exec()) {
+        while (q.next()) {
+            out.insert(q.value(0).toInt(), q.value(1).toByteArray());
+        }
+    }
+    return out;
+}
+
 int MixHouseLibrary::unanalyzedTrackCount() const
 {
     if (!ensureOpen()) {
@@ -1618,6 +1785,10 @@ bool MixHouseLibrary::ensureWritable()
     QSqlQuery energyTable(m_writeDb);
     if (!energyTable.exec(QString::fromLatin1(kCreateEnergyTableSql))) {
         LOGW() << "could not create mixhouse_energy: " << energyTable.lastError().text();
+    }
+    QSqlQuery soundsLikeTable(m_writeDb);
+    if (!soundsLikeTable.exec(QString::fromLatin1(kCreateSoundsLikeTableSql))) {
+        LOGW() << "could not create mixhouse_soundslike: " << soundsLikeTable.lastError().text();
     }
     QSqlQuery anchorTable(m_writeDb);
     if (!anchorTable.exec(QString::fromLatin1(kCreateAnchorTableSql))) {
@@ -2219,6 +2390,9 @@ void MixHouseLibrary::startBackgroundAnalysis(const QList<int>& trackIds)
     m_analyzeSucceeded = 0;
     m_analyzeFailed = 0;
     m_analyzeStopRequested = false;
+    if (!m_analyzing) {
+        ++s_analysisBatches;   // the "Sounds like" fill waits
+    }
     m_analyzing = true;
 
     // Capped at m_analyzeTotal: no point starting more workers than there
@@ -2486,6 +2660,9 @@ void MixHouseLibrary::finishBatchIfAllIdle()
     const IMixHouseLibrary::AnalysisSummary summary{ m_analyzeSucceeded, m_analyzeFailed, m_analyzeTotal,
                                                      m_analyzeStopRequested };
     m_analyzeWorkers.clear();   // handles now dangle by design -- both thread and worker self-delete via the deleteLater()s connected above
+    if (m_analyzing) {
+        --s_analysisBatches;
+    }
     m_analyzing = false;
     m_analyzeStopRequested = false;
     LOGI() << "GlideMix background analysis: " << summary.succeeded << " succeeded, "
@@ -5084,6 +5261,24 @@ MixHouseAnalyzeResult au::mixhouse::writeAnalysisResult(const QString& libraryPa
         if (!energy.exec()) {
             LOGW() << "writeAnalysisResult: could not save energy for track " << trackId << ": "
                    << energy.lastError().text();
+        }
+    }
+
+    {
+        // GlideMix "Sounds like" fingerprint; NULL when the file had no usable sound.
+        QSqlQuery createTable(db);
+        createTable.exec(QString::fromLatin1(kCreateSoundsLikeTableSql));
+        QSqlQuery soundsLike(db);
+        soundsLike.prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO mixhouse_soundslike (track_id, version, features) VALUES (:id, :version, :features)"));
+        const QByteArray blob = encodeSoundsLike(analysis.soundsLike);
+        soundsLike.bindValue(QStringLiteral(":id"), trackId);
+        soundsLike.bindValue(QStringLiteral(":version"), kSoundsLikeVersion);
+        soundsLike.bindValue(QStringLiteral(":features"),
+                             blob.isEmpty() ? QVariant(QMetaType::fromType<QByteArray>()) : QVariant(blob));
+        if (!soundsLike.exec()) {
+            LOGW() << "writeAnalysisResult: could not save sounds-like for track " << trackId << ": "
+                   << soundsLike.lastError().text();
         }
     }
 
