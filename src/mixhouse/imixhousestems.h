@@ -3,7 +3,9 @@
  */
 #pragma once
 
+#include <QList>
 #include <QString>
+#include <QStringList>
 
 #include "async/channel.h"
 #include "async/notification.h"
@@ -29,6 +31,22 @@ public:
     //! Separates every clip on the track (with a progress dialog), adds four
     //! stem tracks under it and mutes it. One undo step.
     virtual void separateTrack(const trackedit::TrackId& track) = 0;
+
+    //! Samples B7: stems of project seconds [t0, t1] of one clip, as 24-bit
+    //! WAVs -- the whole clip is separated (or taken from the cache), then the
+    //! range cut out. `stems`: 0 drums, 1 bass, 2 vocals, 3 other. File names
+    //! are `namePattern` with %1 = the stem ("drums"); `keepExisting` adds
+    //! " 2", " 3"... instead of replacing a file. Returns the files
+    //! written; empty when it failed (already said) or was cancelled.
+    //! Takes stem `stem` (0 drums .. 3 other) out of project seconds [t0, t1]
+    //! of one clip, in place, with short fades at the edges. One undo step.
+    virtual bool removeStemFromRange(const trackedit::ClipKey& clip, double t0, double t1, int stem) = 0;
+    //! Moves project seconds [t0, t1] of one clip onto four stem lanes under
+    //! its lane (that part of the song goes silent). One undo step.
+    virtual bool splitRangeIntoStems(const trackedit::ClipKey& clip, double t0, double t1) = 0;
+
+    virtual QStringList saveClipStems(const trackedit::ClipKey& clip, double t0, double t1, const QList<int>& stems,
+                                      const QString& dir, const QString& namePattern, bool keepExisting) = 0;
 
     //! Bytes of separated stems kept for reuse.
     virtual qint64 cacheSize() const = 0;

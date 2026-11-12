@@ -65,4 +65,17 @@ MixHouseAlignResult alignImportedTrackToBars(const std::shared_ptr<context::IGlo
 /// the song has no jump.
 trackedit::ClipKeyList splitClipAtGridJumps(const std::shared_ptr<context::IGlobalContext>& globalContext,
                                             const trackedit::ClipKey& clip, double bpm, double barOneInFile);
+
+/// GlideMix Samples: clips just dropped on a sample line. A loop
+/// (`loopBpm` > 0) gets that tempo as its own and follows the song tempo
+/// (stretched to the project tempo, folded by halves and doubles); a
+/// one-shot (`loopBpm` 0) plays at its own speed and does not follow.
+void prepareSampleClips(const std::shared_ptr<context::IGlobalContext>& globalContext,
+                        const trackedit::ClipKeyList& clips, double loopBpm);
+
+/// GlideMix Samples (B6): writes project seconds [t0, t1] of `clip` to a 24-bit
+/// WAV at `path` -- the clip's own audio at its own speed (not stretched to
+/// the mix, no volume line or effects). `sourceSeconds` = the file's length.
+bool writeClipRangeWav(const std::shared_ptr<context::IGlobalContext>& globalContext, const trackedit::ClipKey& clip,
+                       double t0, double t1, const QString& path, double& sourceSeconds);
 }

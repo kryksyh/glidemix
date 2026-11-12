@@ -811,14 +811,43 @@ Item {
                         }
                     }
 
-                    // Double-click plays (or stops) the sample too.
-                    TapHandler {
+                    // Click selects, double-click plays (or stops) the sample,
+                    // a drag takes it out (onto a song's sample line). Under the
+                    // cells (z -1), so their play button and waveform still get
+                    // their clicks. preventStealing, like the library rows: the
+                    // list would otherwise take a sideways drag as a scroll.
+                    // The drag starts on the next event-loop turn (like the
+                    // library): the drop re-lays the panels and could destroy
+                    // this row inside its own handler.
+                    MouseArea {
+                        z: -1
+                        anchors.fill: parent
                         acceptedButtons: Qt.LeftButton
-                        onTapped: {
+                        preventStealing: true
+                        property real pressX: 0
+                        property real pressY: 0
+                        property bool dragStarted: false
+                        onPressed: function(mouse) {
+                            pressX = mouse.x
+                            pressY = mouse.y
+                            dragStarted = false
                             sampleList.currentIndex = rowItem.index
                             sampleList.forceActiveFocus()
                         }
-                        onDoubleTapped: {
+                        onPositionChanged: function(mouse) {
+                            if (dragStarted || rowItem.missing || !(mouse.buttons & Qt.LeftButton)) {
+                                return
+                            }
+                            const dx = mouse.x - pressX
+                            const dy = mouse.y - pressY
+                            const threshold = Qt.styleHints.startDragDistance
+                            if (dx * dx + dy * dy < threshold * threshold) {
+                                return
+                            }
+                            dragStarted = true
+                            Qt.callLater(samplesModel.startDrag, rowItem.index)
+                        }
+                        onDoubleClicked: {
                             if (samplesModel.previewRow() !== rowItem.index) {
                                 samplesModel.togglePreview(rowItem.index)
                             }

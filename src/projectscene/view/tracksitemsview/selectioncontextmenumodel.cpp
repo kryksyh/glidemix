@@ -86,6 +86,24 @@ MenuItemList SelectionContextMenuModel::makeItems()
         makeMenuItem("reverse"),
         makeMenuItem("silence-audio-selection",
                      muse::TranslatableString("selection", "Silence")),
+        // GlideMix Samples (B6).
+        makeMenuItem("mixhouse-save-as-sample"),
+        makeMenu(muse::TranslatableString("selection", "Stems"), {
+            makeMenuItem("mixhouse-remove-drums"),
+            makeMenuItem("mixhouse-remove-bass"),
+            makeMenuItem("mixhouse-remove-vocals"),
+            makeMenuItem("mixhouse-remove-other"),
+            makeSeparator(),
+            makeMenuItem("mixhouse-split-selection-stems"),
+        }, "menu-stems-selection"),
+        makeMenu(muse::TranslatableString("selection", "Stems as samples"), {
+            makeMenuItem("mixhouse-save-stem-drums"),
+            makeMenuItem("mixhouse-save-stem-bass"),
+            makeMenuItem("mixhouse-save-stem-vocals"),
+            makeMenuItem("mixhouse-save-stem-other"),
+            makeSeparator(),
+            makeMenuItem("mixhouse-save-stems-all"),
+        }, "menu-stems-as-samples"),
         makeSeparator(),
         // Ableton's "…Time" commands: every track, the song gets shorter or longer.
         makeMenuItem("cut-all-tracks-ripple",

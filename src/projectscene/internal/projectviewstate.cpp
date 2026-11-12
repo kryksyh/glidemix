@@ -1056,6 +1056,19 @@ muse::ValCh<bool> ProjectViewState::isSingleWave(const trackedit::TrackId& track
     return makeTrackData(trackId).isSingleWave;
 }
 
+bool ProjectViewState::isSampleLine(const trackedit::TrackId& trackId) const
+{
+    const auto* attachment = trackViewAttachment(globalContext()->currentProject(), trackId);
+    return attachment && attachment->GetSampleLine();
+}
+
+void ProjectViewState::setSampleLine(const trackedit::TrackId& trackId, bool sampleLine)
+{
+    if (auto* attachment = trackViewAttachment(globalContext()->currentProject(), trackId)) {
+        attachment->SetSampleLine(sampleLine);
+    }
+}
+
 void ProjectViewState::toggleSingleWave(const trackedit::TrackId& trackId)
 {
     const auto project = globalContext()->currentProject();

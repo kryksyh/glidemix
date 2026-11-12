@@ -845,7 +845,8 @@ DockPage {
             toolbarComponent: bottomTabsPlus
 
             // Always there (Chris): Music library, Project, Samples, Related.
-            // Hidden until Samples ships (kSamplesTabShipped, appshelltypes.h).
+            // Not open at load (a fresh install floated the library then):
+            // ProjectPageModel opens it once after start (kSamplesTabShipped).
             visible: false
 
             MixHouseSamplesPanel {

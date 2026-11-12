@@ -117,6 +117,94 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description", "Undo the last beat grid change")
              ),
+    UiAction("mixhouse-save-as-sample",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: shown as a menu item or a button label; keep it short
+             TranslatableString("action", "Save as sample…"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Save the selected part of the song as a WAV sample in the Samples tab")
+             ),
+    UiAction("mixhouse-save-stem-drums",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: a stem in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Drums"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Save the drums of the selected part as a sample")
+             ),
+    UiAction("mixhouse-save-stem-bass",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: a stem in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Bass"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Save the bass of the selected part as a sample")
+             ),
+    UiAction("mixhouse-save-stem-vocals",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: a stem in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Vocals"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Save the vocals of the selected part as a sample")
+             ),
+    UiAction("mixhouse-save-stem-other",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: a stem in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Other"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Save everything but drums, bass and vocals of the selected part as a sample")
+             ),
+    UiAction("mixhouse-save-stems-all",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: a stem in the selection's Stems submenu; keep it short
+             TranslatableString("action", "All four"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Save all four stems of the selected part as samples")
+             ),
+    UiAction("mixhouse-remove-drums",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Remove drums"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Take the drums out of the selected part of the song")
+             ),
+    UiAction("mixhouse-remove-bass",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Remove bass"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Take the bass out of the selected part of the song")
+             ),
+    UiAction("mixhouse-remove-vocals",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Remove vocals"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Take the vocals out of the selected part of the song")
+             ),
+    UiAction("mixhouse-remove-other",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Remove other"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Take everything but drums, bass and vocals out of the selected part of the song")
+             ),
+    UiAction("mixhouse-split-selection-stems",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in the selection's Stems submenu; keep it short
+             TranslatableString("action", "Split into stems"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Move the selected part of the song onto four stem lanes under it")
+             ),
     UiAction("mixhouse-split-grid-jumps",
              au::context::UiCtxProjectOpened,
              au::context::CTX_PROJECT_FOCUSED,

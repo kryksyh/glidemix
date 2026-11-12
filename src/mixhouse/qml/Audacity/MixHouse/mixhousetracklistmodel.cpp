@@ -8,6 +8,7 @@
  * this is "add it to the project as a real track", not playback.
  */
 #include "mixhousetracklistmodel.h"
+#include "mixhouse/mixhousesonglanes.h"
 #include "mixhousesamplesmodel.h"
 
 #include <map>
@@ -2791,7 +2792,7 @@ void MixHouseTrackListModel::loadTracksToProject(const QVariantList& rows)
     const bool idle = m_loadQueue.empty();
     if (idle) {
         const auto project = globalContext()->currentTrackeditProject();
-        m_loadFirstLane = project ? project->trackIdList().size() : 0;
+        m_loadFirstLane = project ? songTrackIds(*project).size() : 0;
         m_loadCount = 0;
     }
     for (const int row : sorted) {
@@ -2811,7 +2812,7 @@ void MixHouseTrackListModel::loadNextQueuedTrack()
         const auto project = globalContext()->currentTrackeditProject();
         if (project && trackAligner() && m_loadCount > 1) {
             constexpr size_t kSongsInView = 4;
-            const auto lanes = project->trackIdList();
+            const auto lanes = songTrackIds(*project);
             const size_t last = std::min(lanes.size(), m_loadFirstLane + kSongsInView);
             double start = std::numeric_limits<double>::max();
             double end = 0.0;
@@ -5534,7 +5535,7 @@ void MixHouseTrackListModel::updateReference()
         const double pos = state->playbackPosition().to_double();
         const trackedit::Clip* best = nullptr;
         trackedit::Clip bestClip;
-        for (const trackedit::TrackId trackId : project->trackIdList()) {
+        for (const trackedit::TrackId trackId : songTrackIds(*project)) {
             for (const trackedit::Clip& clip : project->clipList(trackId)) {
                 if (clip.startTime <= pos && pos < clip.endTime && (!best || clip.startTime > bestClip.startTime)) {
                     bestClip = clip;

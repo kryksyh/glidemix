@@ -70,4 +70,13 @@ struct Track {
 };
 
 using TrackList = std::vector<Track>;
+
+//! GlideMix Samples: a song's sample line always carries this name (Chris:
+//! "mandatory"). trackedit uses it to tell a sample line from a song lane.
+inline constexpr const char16_t* SAMPLE_LINE_TITLE = u"Sample line";
+
+inline bool isSampleLine(const Track& track)
+{
+    return track.title == muse::String(SAMPLE_LINE_TITLE);
+}
 }

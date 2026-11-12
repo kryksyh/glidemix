@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhousebeatgrids.h"
+#include "mixhouse/mixhousesonglanes.h"
 
 #include <QCoreApplication>
 #include <QHash>
@@ -966,7 +967,7 @@ double MixHouseBeatGrids::magneticClipStart(const trackedit::ClipKey& key, doubl
     const double outroAt = mine.outro + shift;
     double best = locked;
     double bestDistance = thresholdSec;
-    for (const trackedit::TrackId trackId : trackeditProject->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*trackeditProject)) {
         if (trackId == key.trackId) {
             continue;
         }
@@ -1185,7 +1186,7 @@ void MixHouseBeatGrids::startRipple(const trackedit::ClipKey& key, int which)
     // on this Intro, on another clip.
     std::optional<trackedit::ClipKey> partner;
     std::vector<trackedit::Clip> all;
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             all.push_back(clip);
             if (clip.key == key || partner) {
@@ -1354,7 +1355,10 @@ void MixHouseBeatGrids::tidyRowsAfterMove(const trackedit::ClipKey& key)
     }
     // The row it left, now empty, goes (it held only this song).
     const std::vector<trackedit::Track> tracks = project->trackList();
-    const bool exists = std::any_of(tracks.begin(), tracks.end(), [&](const trackedit::Track& t) { return t.id == from; });
+    // A sample line stays when its last sample leaves (its song still has it).
+    const bool exists = std::any_of(tracks.begin(), tracks.end(), [&](const trackedit::Track& t) {
+        return t.id == from && !trackedit::isSampleLine(t);
+    });
     if (exists && project->clipList(from).empty()) {
         changed |= tracksInteraction()->deleteTracks({ from });
     }
@@ -1380,6 +1384,9 @@ au::trackedit::TrackId MixHouseBeatGrids::clearRow(trackedit::TrackId preferred,
     const auto isClear = [&](const trackedit::Track& track) {
         if (track.type != trackedit::TrackType::Mono && track.type != trackedit::TrackType::Stereo) {
             return false;
+        }
+        if (trackedit::isSampleLine(track)) {
+            return false;   // a song never goes onto a sample line
         }
         if (std::find(taken.begin(), taken.end(), track.id) != taken.end()) {
             return false;
@@ -1446,7 +1453,7 @@ void MixHouseBeatGrids::insertAtTransition(const trackedit::ClipKey& key, bool r
     // IN, they were pushed a whole song's length down the row.
     trackedit::ClipKeyList pieces;
     const QString myName = clipName(key);
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             if (clip.key == key) {
                 continue;

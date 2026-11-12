@@ -87,6 +87,8 @@ protected:
     void saveAutomationLanes(trackedit::TrackId trackId) override;
 public:
     void toggleSingleWave(const trackedit::TrackId& trackId) override;
+    bool isSampleLine(const trackedit::TrackId& trackId) const override;
+    void setSampleLine(const trackedit::TrackId& trackId, bool sampleLine) override;
 
     muse::ValCh<trackedit::TrackViewType> trackViewType(const trackedit::TrackId& trackId) const override;
     void setTrackViewType(const trackedit::TrackId& trackId, trackedit::TrackViewType viewType) override;

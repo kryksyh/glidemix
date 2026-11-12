@@ -186,6 +186,41 @@ void ClipContextMenuModel::load()
         }, "menu-beat-grid"),
     };
 
+    // GlideMix Samples (B2/B3, Chris): a sample on a song's sample line gets
+    // its own short menu -- edit, split, loop, reverse and "Follow song
+    // tempo" (the clip's stretch-with-tempo switch). The song-only items
+    // (library, anchors, beat grid, phrases, key) don't apply to a sample.
+    {
+        const auto p = globalContext()->currentProject();
+        if (p && p->viewState() && p->viewState()->isSampleLine(m_clipKey.trackId())) {
+            enableStretchItem->setTitle(muse::TranslatableString("clip", "Follow song tempo"));
+            MenuItemList sampleItems {
+                makeItemWithArg("action://trackedit/cut"),
+                makeItemWithArg("action://trackedit/copy"),
+                makeItemWithArg("duplicate"),
+                makeItemWithArg("action://trackedit/delete"),
+                makeSeparator(),
+                enableStretchItem,
+                makeSeparator(),
+                makeItemWithArg("rename-item", muse::TranslatableString("clip", "Rename sample")),
+                makeItemWithArg("split"),
+                makeMenuItem("set-loop-region-to-selection", muse::TranslatableString("clip", "Loop sample")),
+                makeMenuItem("reverse"),
+                makeSeparator(),
+                makeItemWithArg("clip-pitch-speed-open"),
+                resetPitchSpeedItem,
+                renderPitchSpeedItem,
+                makeSeparator(),
+                makeMenu(muse::TranslatableString("clip", "Color"), {
+                    makeClipColorPickerItem(this),
+                    makeColorIntensityItem(),
+                }, "menu-clip-color"),
+            };
+            setItems(sampleItems);
+            return;
+        }
+    }
+
     // GlideMix: the phrase ribbon (rekordbox's phrase analysis), all clips.
     {
         auto* item = new MenuItem(this);

@@ -1,10 +1,17 @@
 #include "dropcontroller.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QRegularExpression>
 
 #include "mixhouse/mixhousefiletags.h"
+#include "mixhouse/mixhousesamplename.h"
+#include "translation.h"
+#include "projectscene/iprojectviewstate.h"
+#include "project/iaudacityproject.h"
 
 #include <algorithm>
+#include <cmath>
 
 using namespace au::projectscene;
 
@@ -336,10 +343,137 @@ QVariantList DropController::lastDropFocusRange() const
     return { m_focusStart, m_focusEnd };
 }
 
+bool DropController::isSampleLine(trackedit::TrackId trackId) const
+{
+    const auto prj = globalContext()->currentProject();
+    const auto vs = prj ? prj->viewState() : nullptr;
+    return vs && vs->isSampleLine(trackId);
+}
+
+DropController::SampleDrop DropController::describeSample(const au::importexport::FileInfo& info) const
+{
+    SampleDrop out;
+    const QString path = info.path.toQString();
+    if (samples()) {
+        for (const mixhouse::MixHouseSample& s : samples()->samples()) {
+            if (s.path == path) {
+                out.known = true;
+                out.loopBpm = s.loop ? s.bpm : 0.0;
+                return out;
+            }
+        }
+    }
+    // Not in the Samples tab (dragged from Finder): what its name says.
+    const QFileInfo fi(path);
+    const mixhouse::SampleNameInfo named = mixhouse::parseSampleName(fi.dir().dirName() + QStringLiteral("/") + fi.fileName());
+    mixhouse::SampleNameInfo::Type type = named.type;
+    if (type == mixhouse::SampleNameInfo::Type::Unknown) {
+        type = named.bpm > 0.0 ? mixhouse::guessTypeFromLength(info.duration, named.bpm) : mixhouse::SampleNameInfo::Type::OneShot;
+    }
+    out.loopBpm = type == mixhouse::SampleNameInfo::Type::Loop ? named.bpm : 0.0;
+    return out;
+}
+
+void DropController::dropOnSampleLine(trackedit::TrackId sampleLine, double startTime)
+{
+    project::IAudacityProjectPtr prj = globalContext()->currentProject();
+    const auto editPrj = globalContext()->currentTrackeditProject();
+    if (!prj || !editPrj) {
+        return;
+    }
+    const trackedit::TimeSignature ts = editPrj->timeSignature();
+    const double tempo = ts.tempo > 0.0 ? ts.tempo : 120.0;
+    const double bar = 60.0 / tempo * (4.0 / std::max(1, ts.lower)) * std::max(1, ts.upper);
+
+    trackedit::ClipKeyList dropped;
+    double at = std::max(0.0, startTime);
+    for (const auto& info : m_lastDraggedFilesInfo) {
+        const SampleDrop sample = describeSample(info);
+        const bool loop = sample.loopBpm > 0.0;
+        // Its length once placed: a loop is stretched to the song tempo,
+        // folded by halves and doubles (as the aligner does).
+        double length = info.duration;
+        if (loop) {
+            double raw = sample.loopBpm, best = raw, bestError = std::abs(tempo / raw - 1.0);
+            for (double candidate : { raw * 2.0, raw / 2.0 }) {
+                const double error = std::abs(tempo / candidate - 1.0);
+                if (error < bestError) {
+                    best = candidate;
+                    bestError = error;
+                }
+            }
+            length = info.duration * best / tempo;
+        }
+        double start = loop ? std::max(0.0, std::round(at / bar) * bar) : at;
+        // An import cuts whatever it lands on: start after any sample in the way.
+        for (bool moved = true; moved;) {
+            moved = false;
+            for (const trackedit::Clip& clip : editPrj->clipList(sampleLine)) {
+                if (clip.startTime < start + length - 1e-3 && clip.endTime > start + 1e-3) {
+                    start = loop ? std::ceil(clip.endTime / bar - 1e-3) * bar : double(clip.endTime);
+                    moved = true;
+                }
+            }
+        }
+
+        std::vector<trackedit::ClipKey> before;
+        for (const trackedit::Clip& clip : editPrj->clipList(sampleLine)) {
+            before.push_back(clip.key);
+        }
+        prj->importIntoTracks({ info.path }, { sampleLine }, start, { false });
+        trackedit::ClipKeyList created;
+        for (const trackedit::Clip& clip : editPrj->clipList(sampleLine)) {
+            if (std::find_if(before.begin(), before.end(), [&](const trackedit::ClipKey& k) {
+                return k.itemId == clip.key.itemId;
+            }) == before.end()) {
+                created.push_back(clip.key);
+            }
+        }
+        if (created.empty()) {
+            continue;
+        }
+        if (mixhouseAligner()) {
+            mixhouseAligner()->prepareSampleClips(created, sample.loopBpm);
+        }
+        double end = start;
+        for (const trackedit::ClipKey& key : created) {
+            end = std::max(end, double(editPrj->clip(key).endTime));
+        }
+        at = end;
+        dropped.insert(dropped.end(), created.begin(), created.end());
+    }
+    if (dropped.empty()) {
+        return;
+    }
+    if (projectHistory()) {
+        projectHistory()->modifyState();
+    }
+    if (selectionController()) {
+        selectionController()->setSelectedClips(dropped, true);
+    }
+    m_focusTrack = static_cast<int>(sampleLine);
+}
+
 void DropController::handleDroppedFiles(const std::vector<trackedit::TrackId>& trackIds, double startTime)
 {
     m_focusStart = m_focusEnd = 0.0;
     m_focusTrack = -1;
+
+    // GlideMix Samples: the sample line takes every dropped file as a
+    // sample. A sample from the Samples tab belongs on a sample line only:
+    // dropped on a song or an empty place, it is refused with a hint.
+    if (!trackIds.empty() && isSampleLine(trackIds.front())) {
+        dropOnSampleLine(trackIds.front(), startTime);
+        return;
+    }
+    for (const auto& info : m_lastDraggedFilesInfo) {
+        if (describeSample(info).known) {
+            if (activity()) {
+                activity()->post(muse::qtrc("projectscene", "Samples go on a song's sample line: press SAMPLES on the song, then drop it there"));
+            }
+            return;
+        }
+    }
     std::vector<muse::io::path_t> localPaths;
 
     // NOTE: importer only needs the first trackId (out of many) for multichannel files

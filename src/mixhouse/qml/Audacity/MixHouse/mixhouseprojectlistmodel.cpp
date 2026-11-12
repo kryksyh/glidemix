@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhouseprojectlistmodel.h"
+#include "mixhouse/mixhousesonglanes.h"
 
 #include "mixhouse/mixhousewaveform.h"
 
@@ -141,7 +142,7 @@ std::vector<MixHouseProjectListModel::Song> MixHouseProjectListModel::buildSongs
         IMixHouseBeatGrids::Anchors anchors;
     };
     std::vector<Anchored> anchored;
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             const auto anchors = beatGrids()->clipAnchors(clip.key);
             if (anchors.valid) {

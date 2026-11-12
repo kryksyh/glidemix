@@ -30,6 +30,9 @@ public:
     const std::string& GetAutomationLanes() const { return mAutomationLanes; }
     void SetAutomationLanes(std::string json) { mAutomationLanes = std::move(json); }
     void SetSingleWave(bool single) { mSingleWave = single; }
+    //! GlideMix Samples (B2): this track is the sample line of the song above it.
+    bool GetSampleLine() const { return mSampleLine; }
+    void SetSampleLine(bool sampleLine) { mSampleLine = sampleLine; }
 
 private:
     std::weak_ptr<Au3Track> mTrack;
@@ -38,5 +41,6 @@ private:
     // waveform in half the height, more songs on screen.
     bool mSingleWave = true;
     std::string mAutomationLanes;
+    bool mSampleLine = false;
 };
 }

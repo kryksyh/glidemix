@@ -13,6 +13,8 @@
 #include "trackedit/iselectioncontroller.h"
 #include "mixhouse/imixhousetrackaligner.h"
 #include "mixhouse/imixhousebeatgrids.h"
+#include "mixhouse/imixhousesamples.h"
+#include "mixhouse/imixhouseactivity.h"
 
 namespace au::projectscene {
 class DropController : public QObject, public muse::Contextable, public muse::async::Asyncable
@@ -25,6 +27,8 @@ class DropController : public QObject, public muse::Contextable, public muse::as
     muse::ContextInject<mixhouse::IMixHouseTrackAligner> mixhouseAligner{ this };   // MixHouse: beat-to-bar alignment of library tracks
     muse::ContextInject<mixhouse::IMixHouseBeatGrids> beatGrids{ this };
     muse::ContextInject<trackedit::IProjectHistory> projectHistory{ this };
+    muse::ContextInject<mixhouse::IMixHouseActivity> activity{ this };   // GlideMix: the status line (a refused drop says why)
+    muse::GlobalInject<mixhouse::IMixHouseSamples> samples;              // GlideMix Samples: is a dropped file a sample, and its tempo
     muse::ContextInject<trackedit::ISelectionController> selectionController{ this };   // GlideMix: the dropped song alone is selected   // GlideMix: a clear row for each dropped song
 
 public:
@@ -57,6 +61,19 @@ signals:
     void viewFitRequested(double start, double end, int trackId);
 
 private:
+    //! GlideMix Samples: what a dropped file is as a sample -- its loop
+    //! tempo (0 = a one-shot) and whether the Samples tab knows it.
+    struct SampleDrop {
+        bool known = false;
+        double loopBpm = 0.0;
+    };
+    SampleDrop describeSample(const au::importexport::FileInfo& info) const;
+    bool isSampleLine(trackedit::TrackId trackId) const;
+    //! Every dropped file onto the sample line, one after another from
+    //! `startTime`: loops on a bar, following the song tempo; one-shots
+    //! where they land, at their own speed. Nothing already there is cut.
+    void dropOnSampleLine(trackedit::TrackId sampleLine, double startTime);
+
     std::vector<au::importexport::FileInfo> m_lastDraggedFilesInfo;
     QStringList m_lastDraggedUrls;
     QStringList m_lastDraggedTitles;

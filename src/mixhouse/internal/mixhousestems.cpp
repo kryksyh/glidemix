@@ -217,6 +217,380 @@ void MixHouseStems::trimCache(const QString& keep) const
     }
 }
 
+bool MixHouseStems::separateClip(const WaveClip& clip, const Launch& launch, au::au3::ProgressDialog& progress, size_t index,
+                                 size_t count, std::vector<std::vector<std::vector<float> > >& out)
+{
+    const bool high = configuration() && configuration()->stemsHighQuality();
+    const QString model = high ? QStringLiteral("htdemucs_ft") : QStringLiteral("htdemucs");
+    const int bars = high ? 4 : 1;   // htdemucs_ft is a bag of four models, one progress bar each
+    const MixHouseStemsDevice deviceSetting = configuration() ? configuration()->stemsDevice() : MixHouseStemsDevice::Automatic;
+    const QString temp = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                         + QStringLiteral("/glidemix-stem-source-%1.wav").arg(QCoreApplication::applicationPid());
+    sf_count_t frames = 0;
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(QByteArray::number(clip.GetRate()) + "/" + QByteArray::number(qulonglong(clip.NChannels())));
+    if (!writeClipSource(clip, temp, &frames, &hash)) {
+        interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
+                                 muse::trc("mixhouse", "Could not prepare the audio."));
+        return false;
+    }
+    // The song's stems are kept by what they were made from: the audio
+    // itself, and (in the folder below) the model.
+    const QString songDir = cacheRoot() + QLatin1Char('/') + QString::fromLatin1(hash.result().toHex().left(20));
+    const QString stemDir = songDir + QLatin1Char('/') + model;
+    const auto haveAll = [&]() {
+        return std::all_of(std::begin(kStems), std::end(kStems), [&](const StemInfo& s) {
+            return QFileInfo::exists(stemDir + QLatin1Char('/') + QLatin1String(s.file) + QStringLiteral(".wav"));
+        });
+    };
+
+    const QString clipLabel = muse::qtrc("mixhouse", "Separating %1 of %2").arg(index + 1).arg(count);
+    if (!haveAll()) {
+        QDir().mkpath(songDir);
+        const auto run = [&](const QString& device) -> bool {
+            QProcess process;
+            process.setProcessChannelMode(QProcess::MergedChannels);
+            QStringList args = launch.prefixArgs;
+            args << QStringLiteral("-n") << model << QStringLiteral("-d") << device << QStringLiteral("--float32")
+                 << QStringLiteral("-o") << songDir << QStringLiteral("--filename") << QStringLiteral("{stem}.{ext}") << temp;
+            // The model lives in the engine's own folder (installed there),
+            // so Uninstall removes it too.
+            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+            env.insert(QStringLiteral("TORCH_HOME"), helpersEngineDir() + QStringLiteral("/models"));
+            env.insert(QStringLiteral("HF_HOME"), helpersEngineDir() + QStringLiteral("/models"));
+            env.insert(QStringLiteral("HF_HUB_DISABLE_TELEMETRY"), QStringLiteral("1"));
+            process.setProcessEnvironment(env);
+            process.start(launch.program, args);
+            if (!process.waitForStarted(15000)) {
+                return false;
+            }
+            static const QRegularExpression percent(QStringLiteral("(\\d+)%\\|"));
+            int bar = 0;
+            int last = 0;
+            QByteArray pending;
+            while (process.state() != QProcess::NotRunning) {
+                process.waitForReadyRead(100);
+                pending += process.readAll();
+                auto it = percent.globalMatch(QString::fromUtf8(pending));
+                while (it.hasNext()) {
+                    const int value = it.next().captured(1).toInt();
+                    if (value < last && bar + 1 < bars) {
+                        ++bar;   // the next model of the bag started
+                    }
+                    last = value;
+                }
+                if (pending.size() > 4096) {
+                    pending = pending.right(512);
+                }
+                const unsigned long long done = static_cast<unsigned long long>(bar * 100 + last);
+                if (progress.Poll(index * 100ull * bars + done, count * 100ull * bars,
+                                  Verbatim(wxString::FromUTF8(clipLabel.toStdString()))) == ProgressResult::Cancelled) {
+                    process.kill();
+                    process.waitForFinished(3000);
+                    return false;
+                }
+            }
+            return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+        };
+        bool ok = false;
+        if (deviceSetting == MixHouseStemsDevice::Cpu) {
+            ok = run(QStringLiteral("cpu"));
+        } else {
+#ifdef Q_OS_WIN
+            // NVIDIA GPUs. The installer's torch is PyPI's, CPU-only on
+            // Windows, so Automatic falls back to the CPU until a CUDA
+            // build of torch is installed instead.
+            ok = run(QStringLiteral("cuda"));
+#else
+            ok = run(QStringLiteral("mps"));
+#endif
+            // Any GPU failure falls back to the CPU, also when GPU was
+            // chosen: on Windows the installed engine is CPU-only, so an
+            // old "GPU" setting would otherwise never separate anything.
+            if (!ok && !progress.Cancelled()) {
+                LOGW() << "GlideMix stems: GPU separation failed, trying the CPU";
+                ok = run(QStringLiteral("cpu"));
+            }
+        }
+        if (!ok || !haveAll()) {
+            QFile::remove(temp);
+            if (!progress.Cancelled()) {
+                interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
+                                         muse::trc("mixhouse", "The stems engine could not separate this track."));
+            }
+            return false;
+        }
+    }
+    QFile::remove(temp);
+
+    out.resize(std::size(kStems));
+    for (size_t s = 0; s < std::size(kStems); ++s) {
+        const QString path = stemDir + QLatin1Char('/') + QLatin1String(kStems[s].file) + QStringLiteral(".wav");
+        if (!readStem(path, clip.NChannels(), frames, &out[s])) {
+            interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
+                                     muse::trc("mixhouse", "Could not read the separated stems."));
+            return false;
+        }
+    }
+    // Touch the song so the cache keeps recently used songs longest.
+    QFile(songDir).setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime);
+    trimCache(songDir);
+    return true;
+}
+
+bool MixHouseStems::stemsOfRange(const trackedit::ClipKey& key, double t0, double t1, RangeStems& out)
+{
+    const auto project = globalContext() ? globalContext()->currentProject() : nullptr;
+    if (!project) {
+        return false;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    out.track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(key.trackId));
+    out.clip = out.track ? au::au3::DomAccessor::findWaveClip(out.track, key.itemId) : nullptr;
+    if (!out.clip) {
+        return false;
+    }
+    const std::optional<Launch> launch = findDemucs();
+    if (!launch) {
+        interactive()->errorSync(muse::trc("mixhouse", "Stem separation is not installed"),
+                                 muse::trc("mixhouse", "Install the stems engine in Preferences > Stems first."));
+        return false;
+    }
+    {
+        au::au3::ProgressDialog progress(iocContext(), muse::trc("mixhouse", "Separating stems"));
+        if (!separateClip(*out.clip, *launch, progress, 0, 1, out.stems)) {
+            return false;
+        }
+    }
+    out.start = std::max(t0, out.clip->GetPlayStartTime());
+    out.end = std::min(t1, out.clip->GetPlayEndTime());
+    out.offset = out.clip->TimeToSamples(out.start - out.clip->GetPlayStartTime()).as_long_long();
+    out.first = out.offset + out.clip->TimeToSamples(out.clip->GetTrimLeft()).as_long_long();
+    out.count = out.clip->TimeToSamples(out.end - out.start).as_long_long();
+    return out.count > 0 && out.first >= 0 && out.stems.size() == std::size(kStems);
+}
+
+namespace {
+//! 0 at the range's edges, 1 inside, over ~10 ms: no click where a change starts or ends.
+float edgeFade(long long i, long long count, int rate)
+{
+    const long long fade = std::max<long long>(1, std::min<long long>(rate / 100, count / 4));
+    const long long d = std::min(i, count - 1 - i);
+    return d >= fade ? 1.0f : float(d) / float(fade);
+}
+}
+
+bool MixHouseStems::removeStemFromRange(const trackedit::ClipKey& key, double t0, double t1, int stem)
+{
+    if (stem < 0 || stem >= int(std::size(kStems))) {
+        return false;
+    }
+    RangeStems r;
+    if (!stemsOfRange(key, t0, t1, r)) {
+        return false;
+    }
+    const auto prj = globalContext()->currentTrackeditProject();
+    const int rate = r.clip->GetRate();
+    std::vector<float> buffer(size_t(r.count));
+    for (size_t ch = 0; ch < r.clip->NChannels(); ++ch) {
+        r.clip->GetSamples(ch, reinterpret_cast<samplePtr>(buffer.data()), floatSample, sampleCount(r.offset), buffer.size(), false);
+        const auto& plane = r.stems[size_t(stem)][std::min(ch, r.stems[size_t(stem)].size() - 1)];
+        for (long long i = 0; i < r.count; ++i) {
+            const size_t at = size_t(r.first + i);
+            if (at < plane.size()) {
+                buffer[size_t(i)] -= edgeFade(i, r.count, rate) * plane[at];
+            }
+        }
+        r.clip->SetSamples(ch, reinterpret_cast<constSamplePtr>(buffer.data()), floatSample, sampleCount(r.offset),
+                           buffer.size(), floatSample);
+    }
+    if (prj) {
+        prj->notifyAboutClipChanged(au::au3::DomConverter::clip(r.track, r.clip.get()));
+    }
+    const QString word = muse::qtrc("mixhouse", kStems[stem].title);
+    if (projectHistory()) {
+        const std::string text = muse::qtrc("mixhouse", "Removed %1 from the selection").arg(word.toLower()).toStdString();
+        projectHistory()->pushHistoryState(text, text);
+    }
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "Removed %1 from the selection").arg(word.toLower()));
+    }
+    LOGI() << "GlideMix stems: removed " << kStems[stem].file << " from " << r.start << ".." << r.end;
+    return true;
+}
+
+bool MixHouseStems::splitRangeIntoStems(const trackedit::ClipKey& key, double t0, double t1)
+{
+    RangeStems r;
+    if (!stemsOfRange(key, t0, t1, r)) {
+        return false;
+    }
+    const auto project = globalContext()->currentProject();
+    const auto prj = globalContext()->currentTrackeditProject();
+    if (!project || !prj) {
+        return false;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    // Which of the lane's clips it is: the copies keep the same order.
+    size_t index = 0;
+    for (const auto& c : r.track->Intervals()) {
+        if (c == r.clip) {
+            break;
+        }
+        ++index;
+    }
+
+    auto& tracks = TrackList::Get(*au3Project);
+    auto next = tracks.Find(r.track);
+    ++next;
+    // Under the song's sample line, which stays right under the song.
+    if (next != tracks.end() && (*next)->GetName() == wxString::FromUTF8("Sample line")) {
+        ++next;
+    }
+    const Track* before = next != tracks.end() ? *next : nullptr;
+    std::vector<trackedit::TrackId> added;
+    for (size_t s = 0; s < std::size(kStems); ++s) {
+        auto copy = std::static_pointer_cast<WaveTrack>(r.track->Duplicate());
+        TrackList::AssignUniqueId(copy);
+        copy->SetName(wxString::FromUTF8(kStems[s].title) + wxString::FromUTF8(" \xE2\x80\x94 ") + r.track->GetName());
+        copy->SetMute(false);
+        au::au3::TrackColor::Get(copy.get()).SetColorIndex(kStems[s].colorIndex);
+        // Only the selected part of this one clip stays on the stem lane.
+        std::vector<std::shared_ptr<WaveClip> > others;
+        std::shared_ptr<WaveClip> mine;
+        size_t i = 0;
+        for (const auto& c : copy->Intervals()) {
+            (i++ == index ? mine : others.emplace_back()) = c;
+        }
+        for (const auto& c : others) {
+            copy->RemoveInterval(c);
+        }
+        if (!mine) {
+            continue;
+        }
+        mine->SetColorIndex(0);
+        const sampleCount trimLeft = mine->TimeToSamples(mine->GetTrimLeft());
+        for (size_t ch = 0; ch < mine->NChannels(); ++ch) {
+            const auto& plane = r.stems[s][std::min(ch, r.stems[s].size() - 1)];
+            mine->SetSamples(ch, reinterpret_cast<constSamplePtr>(plane.data()), floatSample,
+                             sampleCount(0) - trimLeft, plane.size(), floatSample);
+        }
+        mine->TrimLeftTo(r.start);
+        mine->TrimRightTo(r.end);
+        tracks.Insert(before, copy, true);
+        prj->notifyAboutTrackInserted(au::au3::DomConverter::track(copy.get()),
+                                      static_cast<int>(std::distance(tracks.begin(), tracks.Find(copy.get()))));
+        for (const auto& clip : prj->clipList(copy->GetId())) {
+            prj->notifyAboutClipAdded(clip);
+        }
+        added.push_back(copy->GetId());
+    }
+
+    // The song goes silent there: that part now plays from the stem lanes.
+    const int rate = r.clip->GetRate();
+    std::vector<float> buffer(size_t(r.count));
+    for (size_t ch = 0; ch < r.clip->NChannels(); ++ch) {
+        r.clip->GetSamples(ch, reinterpret_cast<samplePtr>(buffer.data()), floatSample, sampleCount(r.offset), buffer.size(), false);
+        for (long long i = 0; i < r.count; ++i) {
+            buffer[size_t(i)] *= 1.0f - edgeFade(i, r.count, rate);
+        }
+        r.clip->SetSamples(ch, reinterpret_cast<constSamplePtr>(buffer.data()), floatSample, sampleCount(r.offset),
+                           buffer.size(), floatSample);
+    }
+    prj->notifyAboutClipChanged(au::au3::DomConverter::clip(r.track, r.clip.get()));
+    if (projectHistory()) {
+        projectHistory()->pushHistoryState(muse::trc("mixhouse", "Split the selection into stems"),
+                                           muse::trc("mixhouse", "Split the selection into stems"));
+    }
+    if (clipColors()) {
+        for (const auto& id : added) {
+            clipColors()->setColorByKey(id, false);
+        }
+    }
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "Selection split into stems"));
+    }
+    LOGI() << "GlideMix stems: split " << r.start << ".." << r.end << " into " << added.size() << " stem lanes";
+    return !added.empty();
+}
+
+QStringList MixHouseStems::saveClipStems(const trackedit::ClipKey& key, double t0, double t1, const QList<int>& which,
+                                         const QString& dir, const QString& namePattern, bool keepExisting)
+{
+    const auto project = globalContext() ? globalContext()->currentProject() : nullptr;
+    if (!project || which.isEmpty()) {
+        return {};
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    WaveTrack* track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(key.trackId));
+    const auto clip = track ? au::au3::DomAccessor::findWaveClip(track, key.itemId) : nullptr;
+    if (!clip) {
+        return {};
+    }
+    const std::optional<Launch> launch = findDemucs();
+    if (!launch) {
+        interactive()->errorSync(muse::trc("mixhouse", "Stem separation is not installed"),
+                                 muse::trc("mixhouse", "Install the stems engine in Preferences > Stems first."));
+        return {};
+    }
+    std::vector<std::vector<std::vector<float> > > stems;
+    {
+        au::au3::ProgressDialog progress(iocContext(), muse::trc("mixhouse", "Separating stems"));
+        if (!separateClip(*clip, *launch, progress, 0, 1, stems)) {
+            return {};
+        }
+    }
+    // The range in the stems' frames: they start at the clip's whole source,
+    // trimmed part included.
+    const double start = std::max(t0, clip->GetPlayStartTime());
+    const double end = std::min(t1, clip->GetPlayEndTime());
+    const long long first = (clip->TimeToSamples(start - clip->GetPlayStartTime())
+                             + clip->TimeToSamples(clip->GetTrimLeft())).as_long_long();
+    const long long count = clip->TimeToSamples(end - start).as_long_long();
+    const int channels = static_cast<int>(clip->NChannels());
+    if (count <= 0 || first < 0) {
+        return {};
+    }
+    QDir().mkpath(dir);
+    QStringList written;
+    for (const int s : which) {
+        if (s < 0 || s >= int(std::size(kStems)) || size_t(s) >= stems.size()) {
+            continue;
+        }
+        const auto& planes = stems[size_t(s)];
+        const QString base = namePattern.contains(QStringLiteral("%1")) ? namePattern.arg(QLatin1String(kStems[s].file)) : namePattern;
+        QString path = dir + QLatin1Char('/') + base + QStringLiteral(".wav");
+        for (int n = 2; keepExisting && QFileInfo::exists(path); ++n) {
+            path = dir + QLatin1Char('/') + base + QStringLiteral(" %1.wav").arg(n);
+        }
+        SF_INFO info {};
+        info.samplerate = clip->GetRate();
+        info.channels = channels;
+        info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_24;
+        SNDFILE* file = au::mixhouse::openSndfile(path, SFM_WRITE, &info);
+        if (!file) {
+            continue;
+        }
+        std::vector<float> interleaved;
+        constexpr long long kBlock = 65536;
+        for (long long pos = 0; pos < count; pos += kBlock) {
+            const long long len = std::min(kBlock, count - pos);
+            interleaved.assign(size_t(len) * channels, 0.0f);
+            for (long long i = 0; i < len; ++i) {
+                for (int ch = 0; ch < channels && size_t(ch) < planes.size(); ++ch) {
+                    const size_t at = size_t(first + pos + i);
+                    interleaved[size_t(i) * channels + ch] = at < planes[ch].size() ? planes[ch][at] : 0.0f;
+                }
+            }
+            sf_writef_float(file, interleaved.data(), len);
+        }
+        sf_close(file);
+        written << path;
+    }
+    LOGI() << "GlideMix stems: saved " << written.size() << " stem samples of clip " << key.trackId << "/" << key.itemId;
+    return written;
+}
+
 void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
 {
     const auto project = globalContext() ? globalContext()->currentProject() : nullptr;
@@ -238,8 +612,6 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
 
     const bool high = configuration() && configuration()->stemsHighQuality();
     const QString model = high ? QStringLiteral("htdemucs_ft") : QStringLiteral("htdemucs");
-    const int bars = high ? 4 : 1;   // htdemucs_ft is a bag of four models, one progress bar each
-    const MixHouseStemsDevice deviceSetting = configuration() ? configuration()->stemsDevice() : MixHouseStemsDevice::Automatic;
 
     std::vector<std::shared_ptr<WaveClip> > clips;
     for (const auto& clip : track->Intervals()) {
@@ -251,118 +623,9 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
     std::vector<std::vector<std::vector<std::vector<float> > > > stems(clips.size());
 
     for (size_t c = 0; c < clips.size(); ++c) {
-        const WaveClip& clip = *clips[c];
-        const QString temp = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-                             + QStringLiteral("/glidemix-stem-source-%1.wav").arg(QCoreApplication::applicationPid());
-        sf_count_t frames = 0;
-        QCryptographicHash hash(QCryptographicHash::Sha1);
-        hash.addData(QByteArray::number(clip.GetRate()) + "/" + QByteArray::number(qulonglong(clip.NChannels())));
-        if (!writeClipSource(clip, temp, &frames, &hash)) {
-            interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
-                                     muse::trc("mixhouse", "Could not prepare the audio."));
+        if (!separateClip(*clips[c], *launch, progress, c, clips.size(), stems[c])) {
             return;
         }
-        // The song's stems are kept by what they were made from: the audio
-        // itself, and (in the folder below) the model.
-        const QString songDir = cacheRoot() + QLatin1Char('/') + QString::fromLatin1(hash.result().toHex().left(20));
-        const QString stemDir = songDir + QLatin1Char('/') + model;
-        const auto haveAll = [&]() {
-            return std::all_of(std::begin(kStems), std::end(kStems), [&](const StemInfo& s) {
-                return QFileInfo::exists(stemDir + QLatin1Char('/') + QLatin1String(s.file) + QStringLiteral(".wav"));
-            });
-        };
-
-        const QString clipLabel = muse::qtrc("mixhouse", "Separating %1 of %2").arg(c + 1).arg(clips.size());
-        if (!haveAll()) {
-            QDir().mkpath(songDir);
-            const auto run = [&](const QString& device) -> bool {
-                QProcess process;
-                process.setProcessChannelMode(QProcess::MergedChannels);
-                QStringList args = launch->prefixArgs;
-                args << QStringLiteral("-n") << model << QStringLiteral("-d") << device << QStringLiteral("--float32")
-                     << QStringLiteral("-o") << songDir << QStringLiteral("--filename") << QStringLiteral("{stem}.{ext}") << temp;
-                // The model lives in the engine's own folder (installed there),
-                // so Uninstall removes it too.
-                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-                env.insert(QStringLiteral("TORCH_HOME"), helpersEngineDir() + QStringLiteral("/models"));
-                env.insert(QStringLiteral("HF_HOME"), helpersEngineDir() + QStringLiteral("/models"));
-                env.insert(QStringLiteral("HF_HUB_DISABLE_TELEMETRY"), QStringLiteral("1"));
-                process.setProcessEnvironment(env);
-                process.start(launch->program, args);
-                if (!process.waitForStarted(15000)) {
-                    return false;
-                }
-                static const QRegularExpression percent(QStringLiteral("(\\d+)%\\|"));
-                int bar = 0;
-                int last = 0;
-                QByteArray pending;
-                while (process.state() != QProcess::NotRunning) {
-                    process.waitForReadyRead(100);
-                    pending += process.readAll();
-                    auto it = percent.globalMatch(QString::fromUtf8(pending));
-                    while (it.hasNext()) {
-                        const int value = it.next().captured(1).toInt();
-                        if (value < last && bar + 1 < bars) {
-                            ++bar;   // the next model of the bag started
-                        }
-                        last = value;
-                    }
-                    if (pending.size() > 4096) {
-                        pending = pending.right(512);
-                    }
-                    const unsigned long long done = static_cast<unsigned long long>(bar * 100 + last);
-                    if (progress.Poll(c * 100ull * bars + done, clips.size() * 100ull * bars,
-                                      Verbatim(wxString::FromUTF8(clipLabel.toStdString()))) == ProgressResult::Cancelled) {
-                        process.kill();
-                        process.waitForFinished(3000);
-                        return false;
-                    }
-                }
-                return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
-            };
-            bool ok = false;
-            if (deviceSetting == MixHouseStemsDevice::Cpu) {
-                ok = run(QStringLiteral("cpu"));
-            } else {
-#ifdef Q_OS_WIN
-                // NVIDIA GPUs. The installer's torch is PyPI's, CPU-only on
-                // Windows, so Automatic falls back to the CPU until a CUDA
-                // build of torch is installed instead.
-                ok = run(QStringLiteral("cuda"));
-#else
-                ok = run(QStringLiteral("mps"));
-#endif
-                // Any GPU failure falls back to the CPU, also when GPU was
-                // chosen: on Windows the installed engine is CPU-only, so an
-                // old "GPU" setting would otherwise never separate anything.
-                if (!ok && !progress.Cancelled()) {
-                    LOGW() << "GlideMix stems: GPU separation failed, trying the CPU";
-                    ok = run(QStringLiteral("cpu"));
-                }
-            }
-            if (!ok || !haveAll()) {
-                QFile::remove(temp);
-                if (!progress.Cancelled()) {
-                    interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
-                                             muse::trc("mixhouse", "The stems engine could not separate this track."));
-                }
-                return;
-            }
-        }
-        QFile::remove(temp);
-
-        stems[c].resize(std::size(kStems));
-        for (size_t s = 0; s < std::size(kStems); ++s) {
-            const QString path = stemDir + QLatin1Char('/') + QLatin1String(kStems[s].file) + QStringLiteral(".wav");
-            if (!readStem(path, clip.NChannels(), frames, &stems[c][s])) {
-                interactive()->errorSync(muse::trc("mixhouse", "Stem separation failed"),
-                                         muse::trc("mixhouse", "Could not read the separated stems."));
-                return;
-            }
-        }
-        // Touch the song so the cache keeps recently used songs longest.
-        QFile(songDir).setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime);
-        trimCache(songDir);
     }
 
     // Each stem track is a copy of the original -- same clips, positions,
@@ -371,6 +634,10 @@ void MixHouseStems::separateTrack(const trackedit::TrackId& trackId)
     auto& tracks = TrackList::Get(*au3Project);
     auto next = tracks.Find(track);
     ++next;
+    // Under the song's sample line, which stays right under the song.
+    if (next != tracks.end() && (*next)->GetName() == wxString::FromUTF8("Sample line")) {
+        ++next;
+    }
     const Track* before = next != tracks.end() ? *next : nullptr;
     std::vector<trackedit::TrackId> added;
     for (size_t s = 0; s < std::size(kStems); ++s) {

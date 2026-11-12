@@ -18,6 +18,12 @@
 #include "playback/iperformance.h"
 #include "automation/iclipgaininteraction.h"
 #include "trackedit/iprojecthistory.h"
+#include "trackedit/iselectioncontroller.h"
+#include "project/iprojectconfiguration.h"
+#include "mixhouse/imixhousesamples.h"
+#include "mixhouse/imixhouseactivity.h"
+#include "mixhouse/imixhousestems.h"
+#include <optional>
 #include "async/asyncable.h"
 
 #include <functional>
@@ -45,6 +51,11 @@ class MixHouseActionsController : public muse::actions::Actionable, public muse:
     muse::ContextInject<playback::IPerformance> performance { this };
     muse::ContextInject<automation::IClipGainInteraction> clipGain { this };
     muse::ContextInject<trackedit::IProjectHistory> projectHistory { this };
+    muse::ContextInject<trackedit::ISelectionController> selectionController { this };
+    muse::GlobalInject<project::IProjectConfiguration> projectConfiguration;
+    muse::GlobalInject<IMixHouseSamples> samples;
+    muse::ContextInject<IMixHouseActivity> activity { this };
+    muse::ContextInject<IMixHouseStems> stems { this };
 
 public:
     //! Told whether any automation line is overridden (lights the Re-enable button).
@@ -59,6 +70,23 @@ private:
     void addFolderToLibrary();
     void importFromRekordboxXml();
     void importFromItunesXml();
+    /// Samples B6: the selected part of one song, as a WAV in the Samples tab.
+    void saveSelectionAsSample();
+    /// Samples B7: stems of the selection (0 drums .. 3 other) saved as samples.
+    void saveSelectionStems(const QList<int>& which);
+    bool stemsReady();   ///< says how to install the engine when it is missing
+    /// The selected part of one song and its name parts; says why when there is none.
+    struct SampleTarget {
+        trackedit::ClipKey clip;
+        double t0 = 0.0;
+        double t1 = 0.0;
+        QString title;    ///< the song's name, safe for a file name
+        QString suffix;   ///< " 8 bars 128 Am"
+    };
+    std::optional<SampleTarget> selectedSampleTarget();
+    QString samplesRoot() const;
+    QString sampleSaveFolder() const;
+    void samplesSavedIn(const QString& dir);
 
     /// Shared by both XML importers: reports the real MixHouseImportResult
     /// via IInteractive, in the spirit of mixxx's own scan-summary dialogs.

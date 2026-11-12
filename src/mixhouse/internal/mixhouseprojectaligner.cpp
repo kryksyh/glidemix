@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QFile>
+
 #include "au3-wave-track/WaveClip.h"
 #include "au3-wave-track/WaveTrack.h"
 #include "au3wrap/internal/domaccessor.h"
@@ -308,5 +310,125 @@ trackedit::ClipKeyList splitClipAtGridJumps(const std::shared_ptr<context::IGlob
         trackeditProject->notifyAboutClipChanged(au::au3::DomConverter::clip(track, clip.get()));
     }
     return added;
+}
+
+void prepareSampleClips(const std::shared_ptr<context::IGlobalContext>& globalContext,
+                        const trackedit::ClipKeyList& clips, double loopBpm)
+{
+    const auto project = globalContext ? globalContext->currentProject() : nullptr;
+    const auto trackeditProject = globalContext ? globalContext->currentTrackeditProject() : nullptr;
+    if (!project || !trackeditProject) {
+        return;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    const double projectTempo = trackeditProject->timeSignature().tempo;
+    for (const trackedit::ClipKey& key : clips) {
+        WaveTrack* track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(key.trackId));
+        auto clip = track ? au::au3::DomAccessor::findWaveClip(track, key.itemId) : nullptr;
+        if (!clip) {
+            continue;
+        }
+        if (loopBpm > 0.0 && projectTempo > 0.0) {
+            clip->SetRawAudioTempo(compatibleTrackBpm(loopBpm, projectTempo));
+            clip->SetStretchToMatchProjectTempo(true);
+            clip->OnProjectTempoChange(std::nullopt, projectTempo);
+        } else {
+            // Its own speed: raw tempo = project tempo means no stretch, and
+            // turning Follow song tempo on later starts from there.
+            if (projectTempo > 0.0) {
+                clip->SetRawAudioTempo(projectTempo);
+                clip->OnProjectTempoChange(std::nullopt, projectTempo);
+            }
+            clip->SetStretchToMatchProjectTempo(false);
+        }
+        LOGI() << "GlideMix sample drop: stretch " << clip->GetStretchRatio()
+               << " " << clip->GetPlayStartTime() << ".." << clip->GetPlayEndTime();
+        trackeditProject->notifyAboutClipChanged(au::au3::DomConverter::clip(track, clip.get()));
+    }
+}
+
+bool writeClipRangeWav(const std::shared_ptr<context::IGlobalContext>& globalContext, const trackedit::ClipKey& key,
+                       double t0, double t1, const QString& path, double& sourceSeconds)
+{
+    sourceSeconds = 0.0;
+    const auto project = globalContext ? globalContext->currentProject() : nullptr;
+    if (!project) {
+        return false;
+    }
+    auto* au3Project = reinterpret_cast<AudacityProject*>(project->au3ProjectPtr());
+    WaveTrack* track = au::au3::DomAccessor::findWaveTrack(*au3Project, ::TrackId(key.trackId));
+    auto clip = track ? au::au3::DomAccessor::findWaveClip(track, key.itemId) : nullptr;
+    if (!clip) {
+        return false;
+    }
+    const double start = std::max(t0, clip->GetPlayStartTime());
+    const double end = std::min(t1, clip->GetPlayEndTime());
+    if (end <= start) {
+        return false;
+    }
+    const sampleCount first = clip->TimeToSamples(start - clip->GetPlayStartTime());
+    const sampleCount count = clip->TimeToSamples(end - start);
+    const int channels = static_cast<int>(clip->NChannels());
+    const int rate = clip->GetRate();
+    if (count <= 0 || channels <= 0 || rate <= 0) {
+        return false;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    const auto le32 = [](QByteArray& b, quint32 v) {
+        for (int i = 0; i < 4; ++i) {
+            b.append(char((v >> (8 * i)) & 0xFF));
+        }
+    };
+    const auto le16 = [](QByteArray& b, quint16 v) {
+        b.append(char(v & 0xFF));
+        b.append(char((v >> 8) & 0xFF));
+    };
+    const quint64 frames = static_cast<quint64>(count.as_long_long());
+    const quint32 dataBytes = static_cast<quint32>(std::min<quint64>(frames * channels * 3, 0xFFFFFFF0u));
+    QByteArray header;
+    header.append("RIFF");
+    le32(header, 36 + dataBytes);
+    header.append("WAVEfmt ");
+    le32(header, 16);
+    le16(header, 1);                       // PCM
+    le16(header, quint16(channels));
+    le32(header, quint32(rate));
+    le32(header, quint32(rate * channels * 3));
+    le16(header, quint16(channels * 3));
+    le16(header, 24);
+    header.append("data");
+    le32(header, dataBytes);
+    file.write(header);
+
+    constexpr size_t kBlock = 65536;
+    std::vector<std::vector<float> > buffers(static_cast<size_t>(channels), std::vector<float>(kBlock));
+    QByteArray out;
+    for (sampleCount done = 0; done < count;) {
+        const size_t n = static_cast<size_t>(std::min<long long>(kBlock, (count - done).as_long_long()));
+        for (int ch = 0; ch < channels; ++ch) {
+            clip->GetSamples(static_cast<size_t>(ch), reinterpret_cast<samplePtr>(buffers[ch].data()), floatSample,
+                             first + done, n, false);
+        }
+        out.resize(static_cast<qsizetype>(n * channels * 3));
+        char* w = out.data();
+        for (size_t i = 0; i < n; ++i) {
+            for (int ch = 0; ch < channels; ++ch) {
+                const double v = std::clamp(double(buffers[ch][i]), -1.0, 1.0);
+                const qint32 s24 = static_cast<qint32>(std::lround(v * 8388607.0));
+                *w++ = char(s24 & 0xFF);
+                *w++ = char((s24 >> 8) & 0xFF);
+                *w++ = char((s24 >> 16) & 0xFF);
+            }
+        }
+        file.write(out);
+        done += n;
+    }
+    file.close();
+    sourceSeconds = double(frames) / rate;
+    return true;
 }
 }

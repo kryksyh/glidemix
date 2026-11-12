@@ -52,10 +52,23 @@ void TrackViewStateModel::init()
 
             m_isTrackCollapsed.val = v;
             emit isTrackCollapsedChanged();
+            emit sampleLineChanged();   // a sample line's own hide button
         }, muse::async::Asyncable::Mode::SetReplace);
 
         vs->automationLanesChanged().onNotify(this, [this]() { emit automationLanesChanged(); },
                                               muse::async::Asyncable::Mode::SetReplace);
+        // GlideMix Samples: the Samples button lights while the line below is
+        // shown; a fold or unfold anywhere changes the total height.
+        vs->totalTrackHeight().ch.onReceive(this, [this](int) { emit sampleLineChanged(); },
+                                            muse::async::Asyncable::Mode::SetReplace);
+        if (const auto prj = globalContext()->currentTrackeditProject()) {
+            prj->tracksChanged().onReceive(this, [this](const std::vector<trackedit::Track>&) { emit sampleLineChanged(); },
+                                           muse::async::Asyncable::Mode::SetReplace);
+            prj->trackAdded().onReceive(this, [this](const trackedit::Track&) { emit sampleLineChanged(); },
+                                        muse::async::Asyncable::Mode::SetReplace);
+            prj->trackRemoved().onReceive(this, [this](const trackedit::Track&) { emit sampleLineChanged(); },
+                                          muse::async::Asyncable::Mode::SetReplace);
+        }
         m_isSingleWave = vs->isSingleWave(m_trackId);
         m_isSingleWave.ch.onReceive(this, [this](bool v) {
             m_isSingleWave.val = v;
@@ -187,6 +200,106 @@ bool TrackViewStateModel::isRecording() const
 au::playback::PlaybackMeterModel* TrackViewStateModel::meterModel() const
 {
     return m_meterModel;
+}
+
+bool TrackViewStateModel::isSampleLine() const
+{
+    const IProjectViewStatePtr vs = viewState();
+    return vs && m_trackId != -1 && vs->isSampleLine(m_trackId);
+}
+
+namespace {
+// The track right under `trackId`, or -1.
+au::trackedit::TrackId trackBelow(const au::trackedit::ITrackeditProjectPtr& prj, au::trackedit::TrackId trackId)
+{
+    if (!prj) {
+        return -1;
+    }
+    const auto ids = prj->trackIdList();
+    for (size_t i = 0; i + 1 < ids.size(); ++i) {
+        if (ids[i] == trackId) {
+            return ids[i + 1];
+        }
+    }
+    return -1;
+}
+}
+
+bool TrackViewStateModel::hasSampleLine() const
+{
+    const IProjectViewStatePtr vs = viewState();
+    if (!vs || m_trackId == -1 || isSampleLine()) {
+        return false;
+    }
+    const auto below = trackBelow(globalContext()->currentTrackeditProject(), m_trackId);
+    return below != -1 && vs->isSampleLine(below);
+}
+
+namespace {
+// GlideMix Samples: a sample line shows at its own height (not the song's,
+// which new lanes copy since 1.2.7) and folds to the collapsed strip, where
+// its samples still show as blocks and keep playing.
+constexpr int kSampleLineHeight = 110;
+constexpr int kSampleLineFolded = 44;
+}
+
+bool TrackViewStateModel::sampleLineShown() const
+{
+    const IProjectViewStatePtr vs = viewState();
+    if (!vs || m_trackId == -1) {
+        return false;
+    }
+    if (isSampleLine()) {
+        return !vs->isTrackCollapsed(m_trackId).val;
+    }
+    const auto below = trackBelow(globalContext()->currentTrackeditProject(), m_trackId);
+    return below != -1 && vs->isSampleLine(below) && !vs->isTrackCollapsed(below).val;
+}
+
+void TrackViewStateModel::toggleSampleLine()
+{
+    const IProjectViewStatePtr vs = viewState();
+    const auto prj = globalContext()->currentTrackeditProject();
+    if (!vs || !prj || !trackeditInteraction() || m_trackId == -1) {
+        return;
+    }
+    // On the sample line itself: its hide button folds and unfolds it.
+    if (isSampleLine()) {
+        vs->setTrackHeight(m_trackId, vs->isTrackCollapsed(m_trackId).val ? kSampleLineHeight : kSampleLineFolded);
+        emit sampleLineChanged();
+        return;
+    }
+    const auto below = trackBelow(prj, m_trackId);
+    if (below != -1 && vs->isSampleLine(below)) {
+        // The song's SAMPLES button: shows or hides (folds) its line. Never
+        // deletes it -- the line's own menu does that, like any lane.
+        vs->setTrackHeight(below, vs->isTrackCollapsed(below).val ? kSampleLineHeight : kSampleLineFolded);
+        emit sampleLineChanged();
+        return;
+    }
+    // A new stereo track, moved right under the song, named and marked.
+    const auto before = prj->trackIdList();
+    if (!trackeditInteraction()->newStereoTrack()) {
+        return;
+    }
+    trackedit::TrackId added = -1;
+    for (const auto id : prj->trackIdList()) {
+        if (std::find(before.begin(), before.end(), id) == before.end()) {
+            added = id;
+        }
+    }
+    if (added == -1) {
+        return;
+    }
+    vs->setSampleLine(added, true);
+    trackeditInteraction()->changeTrackTitle(added, muse::String(trackedit::SAMPLE_LINE_TITLE));
+    const auto ids = prj->trackIdList();
+    const auto at = std::find(ids.begin(), ids.end(), m_trackId);
+    if (at != ids.end()) {
+        trackeditInteraction()->moveTracksTo({ added }, static_cast<int>(std::distance(ids.begin(), at)) + 1);
+    }
+    vs->setTrackHeight(added, kSampleLineHeight);
+    emit sampleLineChanged();
 }
 
 QVariantList TrackViewStateModel::automationLanes() const

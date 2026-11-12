@@ -35,14 +35,12 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.7**\n\n"
-                      + "- Volume Fade is the new default transition (the MixMeister fade): the playing song slides to half volume over 8 bars after its OUT and cuts, the next one starts on its IN at half volume and rises to full.\n"
-                      + "- Move an OUT or IN anchor and the songs after it move along; the fade is redrawn from the new spot.\n"
-                      + "- Right-click an IN or OUT flag to switch between Volume Fade and the GlideMix transition, or turn it off.\n"
-                      + "- Before the IN and after the cut the song now shows faintly, so you see where you are when you move the IN.\n"
-                      + "- Sounds like is a column in the main library now: sort by it to find the songs that sound most like the one under the playhead.\n"
-                      + "- Del / Backspace delete a song every time and take its empty lane with it; new lanes come in at the same height.\n"
-                      + "- Picked a transition by hand before? It stays: choose Volume Fade in Preferences > Transitions.\n"
+                text: "**GlideMix v1.2.8**\n\n"
+                      + "- Samples tab: add your sample folders, find samples by category, pack, BPM and key, and preview loops at the tempo of your mix.\n"
+                      + "- SAMPLES button on every song: opens a sample line right under it. Drag samples onto it: loops land on the bar and follow the song tempo, one-shots land where you drop them.\n"
+                      + "- Select part of a song and right-click: Save as sample, Stems as samples (drums, bass, vocals, other or all four).\n"
+                      + "- Right-click a selection > Stems: Remove drums, bass, vocals or other from just that part, or Split it into stem lanes.\n"
+                      + "- Stem lanes are part of their song: the SONG counter no longer counts them.\n"
             }
         }
 

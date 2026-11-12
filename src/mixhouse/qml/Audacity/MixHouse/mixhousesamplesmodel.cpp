@@ -14,7 +14,19 @@
 #include <cmath>
 #include <thread>
 #include <QCoreApplication>
+#include <QCursor>
+#include <QDrag>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QMimeData>
+#include <QMouseEvent>
+#include <QWindow>
 #include <map>
+#if defined(Q_OS_MACOS)
+#include <ApplicationServices/ApplicationServices.h>
+#elif defined(Q_OS_WIN)
+#include <windows.h>
+#endif
 
 #include "mixhouse/imixhousekeymatch.h"
 #include "mixhouse/internal/mixhousepreviewplayer.h"
@@ -539,6 +551,42 @@ QString MixHouseSamplesModel::pathAt(int row) const
         return QString();
     }
     return samples()->samples()[static_cast<size_t>(m_rows[static_cast<size_t>(row)])].path;
+}
+
+void MixHouseSamplesModel::startDrag(int row)
+{
+    const QString path = pathAt(row);
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        return;   // its disk is not connected
+    }
+    // Only while the button is really still held (the library's lesson: a
+    // drag started after the release stuck to the mouse).
+#if defined(Q_OS_MACOS)
+    const bool held = CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft);
+#elif defined(Q_OS_WIN)
+    const bool held = (GetAsyncKeyState(GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) & 0x8000) != 0;
+#else
+    const bool held = true;
+#endif
+    if (!held) {
+        return;
+    }
+    stopPreview();
+    auto* mime = new QMimeData();
+    mime->setUrls({ QUrl::fromLocalFile(path) });
+    mime->setText(QStringLiteral("samples"));
+    QDrag* drag = new QDrag(this);
+    drag->setMimeData(mime);
+    drag->exec(Qt::CopyAction);
+    // The OS drag swallowed the release: hand it to the window, or the row
+    // keeps the mouse grab and the next press finishes a stale drag.
+    if (QWindow* window = QGuiApplication::topLevelAt(QCursor::pos()) ? QGuiApplication::topLevelAt(QCursor::pos())
+                                                                        : QGuiApplication::focusWindow()) {
+        const QPointF local = window->mapFromGlobal(QCursor::pos());
+        QMouseEvent release(QEvent::MouseButtonRelease, local, local, QCursor::pos(), Qt::LeftButton,
+                            Qt::NoButton, QGuiApplication::keyboardModifiers());
+        QCoreApplication::sendEvent(window, &release);
+    }
 }
 
 void MixHouseSamplesModel::revealInFileBrowser(int row) const

@@ -100,6 +100,8 @@ public:
     Q_INVOKABLE void rescan();
     Q_INVOKABLE void revealInFileBrowser(int row) const;
     Q_INVOKABLE QString pathAt(int row) const;
+    //! Drags the sample out (onto a song's sample line, or another app).
+    Q_INVOKABLE void startDrag(int row);
     //! Play button: plays the sample (a loop at the mix's tempo, over and
     //! over; a one-shot once, at its own speed), or stops it.
     Q_INVOKABLE void togglePreview(int row);

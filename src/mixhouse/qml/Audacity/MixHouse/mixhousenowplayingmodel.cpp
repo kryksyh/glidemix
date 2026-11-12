@@ -1,4 +1,5 @@
 #include "mixhousenowplayingmodel.h"
+#include "mixhouse/mixhousesonglanes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -144,7 +145,7 @@ void MixHouseNowPlayingModel::update()
         // Every song in the mix by start time; the one under the playhead is
         // the latest to start (the incoming one in a transition).
         std::vector<trackedit::Clip> clips;
-        for (const trackedit::TrackId trackId : project->trackIdList()) {
+        for (const trackedit::TrackId trackId : countedSongTrackIds(*project)) {
             for (const trackedit::Clip& clip : project->clipList(trackId)) {
                 clips.push_back(clip);
             }

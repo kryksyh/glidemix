@@ -1,0 +1,141 @@
+GLIDEMIX 1.2.8 - SAMPLES AND STEMS: HOW TO
+==========================================
+
+New in 1.2.8: your own samples and sound effects inside GlideMix, a sample
+line under every song, and stems of any part of a song - saved as samples or
+changed right in the mix.
+
+
+1. THE SAMPLES TAB
+------------------
+
+The Samples tab sits next to Music library at the bottom of the window.
+
+Add your samples
+  - Click "Add sample folder…" and choose the folder that holds your samples
+    and sound effects (for example your sample-pack drive).
+  - GlideMix reads every audio file in it, in the background. A big drive
+    (40,000 samples) takes a few minutes the first time and seconds after
+    that. The status line counts your samples next to your songs.
+  - The first folder level becomes the categories (Kicks, Loops, Risers,
+    FX…), the second level the packs. Nothing is moved or renamed.
+  - "Folders" lists the folders you added: remove one there, or scan all of
+    them again after you added new packs. Removing a folder never deletes
+    files.
+  - A folder on a disk that is not plugged in keeps its samples; they show
+    dimmed until the disk is back.
+
+Find a sample
+  - Click a category tile at the top, pick a pack, or type in Search.
+  - Left and Right arrows switch between the categories.
+  - Click a column header to sort (BPM, Key, Bars, Length, Date Added…).
+    Drag a header to put the columns in your own order.
+  - BPM, key, loop or one-shot and the number of bars are read from the file
+    names, the way sample packs name them ("Top Loop 128 Am", "Kick 04").
+
+Listen
+  - Click the play button on a row, or double-click the row.
+  - A loop plays at the tempo of your mix, over and over, at its own pitch.
+    A one-shot plays once, at its own speed.
+  - Click the small waveform of the selected sample to play it from there.
+  - "Preview every sample you select": while it is on, Up and Down play each
+    sample as you reach it. Space switches it on and off.
+  - The Preview volume slider is the same one as in the Music library.
+  - Right-click a sample: Show in Finder (Show in Explorer on Windows).
+
+
+2. THE SAMPLE LINE UNDER A SONG
+-------------------------------
+
+Every song lane has a SAMPLES button (make the lane a bit taller if you don't
+see it).
+
+  - Press SAMPLES: a lane called "Sample line" opens right under the song.
+    That is where the samples for this song go.
+  - Press SAMPLES again, or the eye button on the sample line, to fold it
+    away and bring it back. The samples on it keep playing when folded.
+  - The sample line stays when you take its last sample off it.
+  - It is saved with your project.
+
+
+3. PUT SAMPLES IN THE MIX
+-------------------------
+
+  - Drag a sample from the Samples tab (or a file from Finder / Explorer)
+    onto a song's sample line.
+  - A LOOP lands on the nearest bar and follows the song tempo: a 128 BPM
+    loop in a 124 BPM mix plays at 124, in time. A 70 BPM loop in a 140 mix
+    plays half-time, at its own speed.
+  - A ONE-SHOT (a hit, a riser, a vocal shout) lands exactly where you drop
+    it and plays at its own speed.
+  - Drop the same loop again on the same spot and it goes right after the
+    first one, on the next bar - nothing already there gets cut. Drop
+    several files at once and they line up one after another.
+  - Samples go on sample lines only: a sample dropped on a song lane is
+    refused, and the status line tells you to press SAMPLES first.
+  - Right-click a sample on the sample line for its own menu: Follow song
+    tempo on or off, rename, loop, split, reverse, pitch and speed, colour.
+  - Samples never count as songs: not in the SONG counter, not in
+    transitions, not in the tempo line.
+
+
+4. SAVE PART OF A SONG AS A SAMPLE
+----------------------------------
+
+Grab 8 bars of a groove, a vocal line or a break from any song in your mix.
+
+  1. Select part of one song on the timeline (drag across it).
+  2. Right-click the selection: "Save as sample…".
+  3. The save window opens with a name ready, for example
+     "Song name 8 bars 128 Am" (bars, BPM and key, so the Samples tab
+     knows them). Change it if you like.
+  4. Choose the folder. The first time it is the Samples folder inside your
+     GlideMix Projects folder; after that, the folder you used last time.
+     Any folder works.
+  5. Save. The sample is in the Samples tab at once, ready to drag onto any
+     sample line.
+
+The sample is the song's own audio, clean: at its own speed, without your
+volume line or effects.
+
+
+5. STEMS OF A SELECTION
+-----------------------
+
+You need the stems engine for this (Preferences > Stems > Install, once).
+
+Right-click a selection inside one song. Two menus:
+
+STEMS AS SAMPLES - save stems of the selected part as samples
+  - Drums, Bass, Vocals or Other: saves that stem of the selected part.
+    Example: the drums of 8 bars from one song, to loop under another song.
+  - All four: saves the four stems at once; you choose the folder.
+  - Names like "Song name drums 8 bars 128 Am". They show in the Samples tab
+    straight away.
+
+STEMS - change the selected part right in the mix
+  - Remove drums / Remove bass / Remove vocals / Remove other: takes that
+    stem out of the selected part only. The rest of the song stays as it
+    was. Great for an acapella moment, a drum break or a breakdown without
+    the vocal. Short fades at the edges, so there is no click.
+  - Split into stems: the selected part moves onto four stem lanes under
+    the song (Drums, Bass, Vocals, Other), and the song goes quiet there.
+    Then mute, fade or move each stem on its own for that part.
+  - Undo (Cmd+Z / Ctrl+Z) brings the song back exactly as it was.
+
+How long does it take?
+  GlideMix separates the whole song once, then cuts out your selection - it
+  sounds better at the edges than separating a short piece. The first time
+  takes about half a minute for a song (a progress window shows it, with
+  Cancel). After that the song's stems are kept, so every other selection of
+  the same song is instant.
+
+
+6. GOOD TO KNOW
+---------------
+
+  - Your samples are only read, never changed. GlideMix keeps its own list
+    of them next to your music library.
+  - Samples you save from your songs are for your own mixes: respect the
+    rights of the original music when you publish.
+  - Questions or ideas: the GlideMix Discord.

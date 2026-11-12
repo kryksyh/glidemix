@@ -35,6 +35,11 @@ bool MixHouseTrackAligner::knowsTempo(const muse::io::path_t& filePath) const
     return !found.empty() && found.front().bpm > 0.0;
 }
 
+void MixHouseTrackAligner::prepareSampleClips(const trackedit::ClipKeyList& clips, double loopBpm)
+{
+    au::mixhouse::prepareSampleClips(globalContext(), clips, loopBpm);
+}
+
 void MixHouseTrackAligner::alignDroppedFiles(const std::vector<muse::io::path_t>& filePaths,
                                              const std::vector<trackedit::ClipKeyList>& newClipsPerFile,
                                              bool projectWasEmpty, double pxPerSec)

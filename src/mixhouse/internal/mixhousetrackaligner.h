@@ -38,6 +38,7 @@ public:
                            const std::vector<trackedit::ClipKeyList>& newClipsPerFile,
                            bool projectWasEmpty, double pxPerSec = 0.0) override;
     bool knowsTempo(const muse::io::path_t& filePath) const override;
+    void prepareSampleClips(const trackedit::ClipKeyList& clips, double loopBpm) override;
     void requestViewFocus(double start, double end, trackedit::TrackId track) override;
     muse::async::Channel<double, double, trackedit::TrackId> viewFocusRequested() const override;
     void requestViewFit(double start, double end, trackedit::TrackId track) override;

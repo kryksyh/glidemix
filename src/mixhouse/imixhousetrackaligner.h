@@ -35,6 +35,11 @@ public:
     /// own tempo detection, whose guess this aligner would overwrite anyway.
     virtual bool knowsTempo(const muse::io::path_t& filePath) const = 0;
 
+    /// GlideMix Samples: clips just dropped on a sample line. A loop
+    /// (`loopBpm` > 0) follows the song tempo at that BPM; a one-shot
+    /// (`loopBpm` 0) keeps its own speed.
+    virtual void prepareSampleClips(const trackedit::ClipKeyList& clips, double loopBpm) = 0;
+
     /// GlideMix: a song placed without a drop (double-click in the library)
     /// asks the timeline to show it the way a drop does: `start`..`end` in
     /// view, and its lane.

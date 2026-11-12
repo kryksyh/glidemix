@@ -61,8 +61,8 @@ std::string MixHouseTracklist::write(const std::string& audioPath, double t0, do
     static const QRegularExpression kNumber(QStringLiteral("^\\s*\\d{1,4}\\s*[-.)_]\\s*"));
     std::vector<Entry> entries;
     for (const auto& track : project->trackList()) {
-        if (track.mute) {
-            continue;
+        if (track.mute || trackedit::isSampleLine(track)) {
+            continue;   // a sample is not a song in the tracklist
         }
         for (const auto& clip : project->clipList(track.id)) {
             if (clip.endTime <= t0 || clip.startTime >= t1 || clip.title.empty()) {

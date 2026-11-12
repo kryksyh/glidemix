@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhousetempomap.h"
+#include "mixhouse/mixhousesonglanes.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -385,7 +386,7 @@ std::vector<IMixHouseTempoMap::Handover> MixHouseTempoMap::handovers() const
         return out;
     }
     std::vector<Handover> clips;   // here: each clip's start and end
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             if (clip.endTime > clip.startTime) {
                 clips.push_back({ clip.startTime, clip.endTime });
@@ -445,7 +446,7 @@ void MixHouseTempoMap::followTracksNow(bool force)
     };
     // Real BPMs: 0.1 of detection noise between two tracks is no tempo change.
     const double sameBpm = realTempos ? kRealTempoSameBpm : kSameBpm;
-    for (const trackedit::TrackId trackId : trackeditProject->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*trackeditProject)) {
         for (const trackedit::Clip& clip : trackeditProject->clipList(trackId)) {
             const double bpm = lineBpm(beatGrids()->clipBpm(clip.key));
             signature += QStringLiteral("%1:%2:%3;").arg(clip.startTime, 0, 'f', 4).arg(clip.endTime, 0, 'f', 4).arg(bpm, 0, 'f', 3);

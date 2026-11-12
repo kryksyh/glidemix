@@ -144,6 +144,9 @@ public:
     //! GlideMix: a stereo track drawn as one waveform in half the height.
     virtual muse::ValCh<bool> isSingleWave(const trackedit::TrackId& trackId) const = 0;
     virtual void toggleSingleWave(const trackedit::TrackId& trackId) = 0;
+    //! GlideMix Samples (B2): the track is a song's sample line (saved with the project).
+    virtual bool isSampleLine(const trackedit::TrackId& trackId) const { (void)trackId; return false; }
+    virtual void setSampleLine(const trackedit::TrackId& trackId, bool sampleLine) { (void)trackId; (void)sampleLine; }
 
     virtual muse::ValCh<trackedit::TrackViewType> trackViewType(const trackedit::TrackId& trackId) const = 0;
     virtual void setTrackViewType(const trackedit::TrackId& trackId, trackedit::TrackViewType viewType) = 0;

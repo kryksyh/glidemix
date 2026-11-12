@@ -43,6 +43,12 @@ const char* kSchema[] = {
     "CREATE INDEX IF NOT EXISTS samples_folder ON samples(folder)",
 };
 
+// A samples.sqlite made before a column existed gets it here (CREATE TABLE IF
+// NOT EXISTS leaves an old table as it is). A column already there is fine.
+const char* kAddedColumns[] = {
+    "ALTER TABLE samples ADD COLUMN rules INTEGER NOT NULL DEFAULT 0",
+};
+
 bool isAudioFile(const QString& suffix)
 {
     static const QSet<QString> audio = { QStringLiteral("wav"), QStringLiteral("wave"), QStringLiteral("aif"),
@@ -67,6 +73,9 @@ bool openDb(QSqlDatabase& db, const QString& connection, const QString& path)
         if (!q.exec(QString::fromLatin1(sql))) {
             LOGW() << "GlideMix samples: " << q.lastError().text();
         }
+    }
+    for (const char* sql : kAddedColumns) {
+        QSqlQuery(db).exec(QString::fromLatin1(sql));   // "duplicate column" when it is already there
     }
     return true;
 }
@@ -349,6 +358,26 @@ void MixHouseSamples::addFolder(const QString& path)
     const QString folder = QDir::cleanPath(QDir::fromNativeSeparators(path));
     if (folder.isEmpty() || !ensureOpen()) {
         return;
+    }
+    // The same folder under another spelling (a link, /tmp and /private/tmp),
+    // or a folder inside one already scanned, would list its samples twice.
+    const auto real = [](const QString& p) {
+        const QString canonical = QFileInfo(p).canonicalFilePath();
+        return canonical.isEmpty() ? p : canonical;
+    };
+    const QString realNew = real(folder);
+    if (!m_loaded) {
+        reload();   // m_folders from the database
+    }
+    for (const QString& existing : QStringList(m_folders)) {
+        const QString realOld = real(existing);
+        if (realNew == realOld || realNew.startsWith(realOld + QLatin1Char('/'))) {
+            rescan();   // already covered: just look again
+            return;
+        }
+        if (realOld.startsWith(realNew + QLatin1Char('/'))) {
+            removeFolder(existing);   // the new folder holds it: scanned again under the new one
+        }
     }
     m_loaded = true;
     QSqlQuery q(m_db);

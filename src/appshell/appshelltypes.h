@@ -38,10 +38,10 @@ static const DockName MIXHOUSE_PROJECT_PANEL_NAME("mixHouseProjectPanel");
 // GlideMix: the Related tab (songs that go with the song under the playhead).
 static const DockName MIXHOUSE_RELATED_PANEL_NAME("mixHouseRelatedPanel");
 static const DockName MIXHOUSE_SAMPLES_PANEL_NAME("mixHouseSamplesPanel");
-//! GlideMix: the Samples tab is still being built (B2-B7 to do). Off for the
-//! 1.2.7 release (Chris, 2026-11-11); set to true when it ships, together with
-//! `visible: true` on mixHouseSamplesPanel in ProjectPage.qml.
-static constexpr bool kSamplesTabShipped = false;
+//! GlideMix: the Samples tab (off for 1.2.7, on from 1.2.8). The panel stays
+//! `visible: false` in ProjectPage.qml -- open from the start, a fresh install
+//! floated the library -- and ProjectPageModel opens it once, after start.
+static constexpr bool kSamplesTabShipped = true;   // 1.2.8: Samples ships
 static const DockName PLAYBACK_METER_PANEL_NAME("playbackMeterPanel");
 
 // Toolbars:

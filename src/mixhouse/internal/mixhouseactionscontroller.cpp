@@ -7,6 +7,12 @@
 #include "mixhouseactionscontroller.h"
 
 #include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <cmath>
+#include <optional>
+#include <QSettings>
+#include "mixhouseprojectaligner.h"
 #include <QStandardPaths>
 
 #include "translation.h"
@@ -61,6 +67,32 @@ void MixHouseActionsController::init()
     dispatcher()->reg(this, "mixhouse-grid-slower", [this]() { beatGrids()->adjustSelectedClips(Adjust::Slower); });
     dispatcher()->reg(this, "mixhouse-grid-undo", [this]() { beatGrids()->adjustSelectedClips(Adjust::Undo); });
     // Split by hand only: a song added to the mix is never split by itself.
+    dispatcher()->reg(this, "mixhouse-save-as-sample", this, &MixHouseActionsController::saveSelectionAsSample);
+    dispatcher()->reg(this, "mixhouse-save-stem-drums", [this]() { saveSelectionStems({ 0 }); });
+    dispatcher()->reg(this, "mixhouse-save-stem-bass", [this]() { saveSelectionStems({ 1 }); });
+    dispatcher()->reg(this, "mixhouse-save-stem-vocals", [this]() { saveSelectionStems({ 2 }); });
+    dispatcher()->reg(this, "mixhouse-save-stem-other", [this]() { saveSelectionStems({ 3 }); });
+    dispatcher()->reg(this, "mixhouse-save-stems-all", [this]() { saveSelectionStems({ 0, 1, 2, 3 }); });
+    // The selected part itself: one stem out, or all four onto stem lanes.
+    const char* removeCodes[] = { "mixhouse-remove-drums", "mixhouse-remove-bass", "mixhouse-remove-vocals", "mixhouse-remove-other" };
+    for (int stem = 0; stem < 4; ++stem) {
+        dispatcher()->reg(this, removeCodes[stem], [this, stem]() {
+            if (!stemsReady()) {
+                return;
+            }
+            if (const auto target = selectedSampleTarget()) {
+                stems()->removeStemFromRange(target->clip, target->t0, target->t1, stem);
+            }
+        });
+    }
+    dispatcher()->reg(this, "mixhouse-split-selection-stems", [this]() {
+        if (!stemsReady()) {
+            return;
+        }
+        if (const auto target = selectedSampleTarget()) {
+            stems()->splitRangeIntoStems(target->clip, target->t0, target->t1);
+        }
+    });
     dispatcher()->reg(this, "mixhouse-split-grid-jumps", [this]() {
         const int cuts = beatGrids()->splitSelectedAtGridJumps();
         if (cuts > 0) {
@@ -261,4 +293,218 @@ void MixHouseActionsController::importFromItunesXml()
         return;
     }
     reportImportResult(QStringLiteral("iTunes/Apple Music"), library()->importFromItunesXml(file.toQString()));
+}
+
+namespace {
+QString keyName(int keyId)
+{
+    static const char* kNames[] = { "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+    if (keyId >= 1 && keyId <= 12) {
+        return QString::fromLatin1(kNames[keyId - 1]);
+    }
+    if (keyId >= 13 && keyId <= 24) {
+        return QString::fromLatin1(kNames[keyId - 13]) + QStringLiteral("m");
+    }
+    return {};
+}
+}
+
+std::optional<MixHouseActionsController::SampleTarget> MixHouseActionsController::selectedSampleTarget()
+{
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project || !selectionController() || !interactive()) {
+        return std::nullopt;
+    }
+    SampleTarget target;
+    target.t0 = selectionController()->dataSelectedStartTime();
+    target.t1 = selectionController()->dataSelectedEndTime();
+    const trackedit::TrackIdList tracks = selectionController()->selectedTracks();
+    bool found = false;
+    if (tracks.size() == 1 && target.t1 > target.t0) {
+        for (const trackedit::Clip& c : project->clipList(tracks.front())) {
+            if (c.startTime <= target.t0 + 1e-6 && c.endTime >= target.t1 - 1e-6) {
+                target.clip = c.key;
+                target.title = c.title.toQString().trimmed();
+                found = true;
+            }
+        }
+    }
+    if (!found) {
+        interactive()->info(muse::trc("mixhouse", "Select part of a song"),
+                            muse::trc("mixhouse", "Select part of one song first: one lane, inside one song."));
+        return std::nullopt;
+    }
+    if (target.title.isEmpty()) {
+        target.title = muse::qtrc("mixhouse", "Sample");
+    }
+
+    // " 8 bars 128 Am": the Samples tab reads tempo and key from the name.
+    const double bpm = beatGrids() ? beatGrids()->clipBpm(target.clip) : 0.0;
+    double ratio = 1.0;
+    IMixHouseBeatGrids::ClipFile file;
+    if (beatGrids() && beatGrids()->clipFile(target.clip, file) && file.ratio > 0.0) {
+        ratio = file.ratio;
+    }
+    QString keyText;
+    const int libraryId = beatGrids() ? beatGrids()->clipLibraryTrackId(target.clip) : -1;
+    if (libraryId >= 0 && library()) {
+        IMixHouseLibrary::TrackQuery query;
+        query.trackIds = { libraryId };
+        const MixHouseTrackList tracksFound = library()->tracks(query);
+        if (!tracksFound.empty()) {
+            keyText = keyName(tracksFound.front().keyId);
+        }
+    }
+    if (bpm > 0.0) {
+        const double bars = (target.t1 - target.t0) / ratio * bpm / 240.0;
+        const double whole = std::round(bars);
+        if (whole >= 1.0 && std::abs(bars - whole) <= 0.03 * whole) {
+            target.suffix += QStringLiteral(" %1 %2").arg(int(whole)).arg(whole == 1.0 ? QStringLiteral("bar") : QStringLiteral("bars"));
+        }
+        target.suffix += QStringLiteral(" ") + (std::abs(bpm - std::round(bpm)) < 0.05 ? QString::number(int(std::round(bpm)))
+                                                                                       : QString::number(bpm, 'f', 1));
+    }
+    if (!keyText.isEmpty()) {
+        target.suffix += QStringLiteral(" ") + keyText;
+    }
+    static const QRegularExpression kBad(QStringLiteral("[\\\\/:*?\"<>|%]"));
+    target.title.replace(kBad, QStringLiteral(" "));
+    return target;
+}
+
+QString MixHouseActionsController::samplesRoot() const
+{
+    // Next to the projects (Chris): the Projects folder's Samples folder.
+    return (projectConfiguration() ? projectConfiguration()->userProjectsPath().toQString()
+            : QDir::homePath() + QStringLiteral("/Music/Glidemix/Projects")) + QStringLiteral("/Samples");
+}
+
+QString MixHouseActionsController::sampleSaveFolder() const
+{
+    // The folder picked last time, else the Samples folder. The save window is
+    // the system's own, so any other folder can be picked there.
+    QString dir = QSettings().value(QStringLiteral("GlideMix/saveSampleFolder")).toString();
+    if (dir.isEmpty() || !QFileInfo(dir).isDir()) {
+        dir = samplesRoot();
+    }
+    QDir().mkpath(dir);
+    return dir;
+}
+
+void MixHouseActionsController::samplesSavedIn(const QString& savedDir)
+{
+    QSettings().setValue(QStringLiteral("GlideMix/saveSampleFolder"), savedDir);
+    // Into the Samples tab: a folder it already scans picks the files up on a
+    // rescan; else the Samples folder (or the chosen folder) is added.
+    if (!samples()) {
+        return;
+    }
+    const auto real = [](const QString& p) {
+        const QString canonical = QFileInfo(p).canonicalFilePath();
+        return canonical.isEmpty() ? p : canonical;
+    };
+    const QString saved = real(savedDir);
+    const QString root = real(samplesRoot());
+    // addFolder() just rescans when the folder is already covered.
+    samples()->addFolder(saved == root || saved.startsWith(root + QStringLiteral("/")) ? samplesRoot() : savedDir);
+}
+
+void MixHouseActionsController::saveSelectionAsSample()
+{
+    const std::optional<SampleTarget> target = selectedSampleTarget();
+    if (!target) {
+        return;
+    }
+    const QString dir = sampleSaveFolder();
+    const QString name = target->title + target->suffix;
+    QString proposed = dir + QStringLiteral("/") + name + QStringLiteral(".wav");
+    for (int n = 2; QFileInfo::exists(proposed); ++n) {
+        proposed = dir + QStringLiteral("/") + name + QStringLiteral(" %1.wav").arg(n);
+    }
+    const muse::io::path_t chosen = interactive()->selectSavingFileSync(muse::trc("mixhouse", "Save as sample"),
+                                                                        muse::io::path_t(proposed),
+                                                                        { muse::trc("mixhouse", "WAV audio") + " (*.wav)" });
+    if (chosen.empty()) {
+        return;
+    }
+    QString path = chosen.toQString();
+    if (!path.endsWith(QStringLiteral(".wav"), Qt::CaseInsensitive)) {
+        path += QStringLiteral(".wav");
+    }
+    double seconds = 0.0;
+    if (!writeClipRangeWav(globalContext(), target->clip, target->t0, target->t1, path, seconds)) {
+        interactive()->error(muse::trc("mixhouse", "Save as sample"),
+                             muse::qtrc("mixhouse", "Could not write %1.").arg(path).toStdString());
+        return;
+    }
+    samplesSavedIn(QFileInfo(path).absolutePath());
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "Saved as sample: %1").arg(QFileInfo(path).completeBaseName()));
+    }
+    LOGI() << "GlideMix save as sample: " << path << " (" << seconds << " s)";
+}
+
+bool MixHouseActionsController::stemsReady()
+{
+    if (stems() && stems()->available()) {
+        return true;
+    }
+    if (interactive()) {
+        interactive()->info(muse::trc("mixhouse", "Stems"),
+                            muse::trc("mixhouse", "Install the stems engine in Preferences > Stems first."));
+    }
+    return false;
+}
+
+void MixHouseActionsController::saveSelectionStems(const QList<int>& which)
+{
+    if (!stemsReady()) {
+        return;
+    }
+    const std::optional<SampleTarget> target = selectedSampleTarget();
+    if (!target) {
+        return;
+    }
+    // One stem: the save window with its name; all four: a folder.
+    QString dir;
+    QString pattern = target->title + QStringLiteral(" %1") + target->suffix;
+    if (which.size() == 1) {
+        static const char* kWords[] = { "drums", "bass", "vocals", "other" };
+        const QString name = pattern.arg(QLatin1String(kWords[std::clamp(which.front(), 0, 3)]));
+        const QString folder = sampleSaveFolder();
+        QString proposed = folder + QStringLiteral("/") + name + QStringLiteral(".wav");
+        for (int n = 2; QFileInfo::exists(proposed); ++n) {
+            proposed = folder + QStringLiteral("/") + name + QStringLiteral(" %1.wav").arg(n);
+        }
+        const muse::io::path_t chosen = interactive()->selectSavingFileSync(
+            muse::trc("mixhouse", "Save stem as sample"), muse::io::path_t(proposed),
+            { muse::trc("mixhouse", "WAV audio") + " (*.wav)" });
+        if (chosen.empty()) {
+            return;
+        }
+        const QFileInfo fi(chosen.toQString());
+        dir = fi.absolutePath();
+        // The name typed there, with the stem word kept where it was.
+        // Exactly the name chosen there (the window already asked about
+        // replacing a file).
+        pattern = fi.completeBaseName().replace(QStringLiteral("%"), QStringLiteral(" "));
+    } else {
+        const muse::io::path_t chosen = interactive()->selectDirectory(muse::trc("mixhouse", "Save the stems as samples in"),
+                                                                       muse::io::path_t(sampleSaveFolder()));
+        if (chosen.empty()) {
+            return;
+        }
+        dir = chosen.toQString();
+    }
+    const QStringList written = stems()->saveClipStems(target->clip, target->t0, target->t1, which, dir, pattern,
+                                                       which.size() > 1);
+    if (written.isEmpty()) {
+        return;
+    }
+    samplesSavedIn(dir);
+    if (activity()) {
+        activity()->post(written.size() == 1
+                         ? muse::qtrc("mixhouse", "Saved as sample: %1").arg(QFileInfo(written.front()).completeBaseName())
+                         : muse::qtrc("mixhouse", "Saved %1 stems as samples").arg(written.size()));
+    }
 }

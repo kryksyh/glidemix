@@ -2,6 +2,7 @@
  * GlideMix
  */
 #include "mixhousetransitions.h"
+#include "mixhouse/mixhousesonglanes.h"
 
 #include <optional>
 
@@ -212,7 +213,7 @@ std::vector<au::trackedit::ClipKey> MixHouseTransitions::layersOf(const trackedi
     std::vector<trackedit::Clip> clips;
     std::map<trackedit::TrackId, size_t> lane;
     std::optional<trackedit::Clip> self;
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         lane.emplace(trackId, lane.size());
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             if (clip.key == key) {
@@ -277,7 +278,7 @@ std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
     }
 
     std::vector<trackedit::Clip> clips;
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             clips.push_back(clip);
         }
@@ -286,7 +287,7 @@ std::vector<IMixHouseTransitions::Zone> MixHouseTransitions::zones() const
     // A clip laid under one on a higher lane (a stem under its song) gets no
     // pill of its own: the song's pill is the transition for all its layers.
     std::map<trackedit::TrackId, size_t> lane;
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         lane.emplace(trackId, lane.size());
     }
     std::vector<bool> under(clips.size(), false);
@@ -1023,7 +1024,7 @@ std::string MixHouseTransitions::mixNow(double playhead)
         IMixHouseBeatGrids::Anchors anchors;
     };
     std::vector<Item> items;
-    for (const trackedit::TrackId trackId : project->trackIdList()) {
+    for (const trackedit::TrackId trackId : songTrackIds(*project)) {
         for (const trackedit::Clip& clip : project->clipList(trackId)) {
             const auto anchors = beatGrids()->clipAnchors(clip.key);
             if (anchors.valid) {

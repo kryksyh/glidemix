@@ -13,6 +13,7 @@
 #include "playback/iplaybackcontroller.h"
 #include "playback/iplaybackconfiguration.h"
 #include "record/irecordcontroller.h"
+#include "trackedit/itrackeditinteraction.h"
 
 #include "playback/view/common/playbackmetermodel.h"
 #include "types/val.h"
@@ -38,12 +39,19 @@ class TrackViewStateModel : public QObject, public muse::Contextable, public mus
     Q_PROPERTY(bool isRecording READ isRecording NOTIFY isRecordingChanged FINAL)
 
     Q_PROPERTY(playback::PlaybackMeterModel * meterModel READ meterModel NOTIFY meterModelChanged FINAL)
+    //! GlideMix Samples (B2): this track is a song's sample line / the song's
+    //! sample line is open right under it.
+    Q_PROPERTY(bool isSampleLine READ isSampleLine NOTIFY sampleLineChanged FINAL)
+    Q_PROPERTY(bool hasSampleLine READ hasSampleLine NOTIFY sampleLineChanged FINAL)
+    //! The song's sample line is open and not folded (on a sample line: itself).
+    Q_PROPERTY(bool sampleLineShown READ sampleLineShown NOTIFY sampleLineChanged FINAL)
 
     muse::GlobalInject<playback::IPlaybackConfiguration> playbackConfiguration;
 
     muse::ContextInject<context::IGlobalContext> globalContext{ this };
     muse::ContextInject<playback::IPlaybackController> playbackController{ this };
     muse::ContextInject<record::IRecordController> recordController{ this };
+    muse::ContextInject<trackedit::ITrackeditInteraction> trackeditInteraction{ this };
 
 public:
     TrackViewStateModel(QObject* parent = nullptr);
@@ -73,6 +81,14 @@ public:
     bool isPlaying() const;
     bool isRecording() const;
 
+    bool isSampleLine() const;
+    bool hasSampleLine() const;
+    bool sampleLineShown() const;
+    //! The SAMPLES button: opens the song's sample line right under it (a
+    //! track named "Sample line"), then shows / hides (folds) it. On a sample
+    //! line: its own hide button.
+    Q_INVOKABLE void toggleSampleLine();
+
 signals:
     void trackIdChanged();
     void trackHeightChanged();
@@ -85,6 +101,7 @@ signals:
     void isRecordingChanged();
     void displayBoundsChanged();
     void isLinearChanged();
+    void sampleLineChanged();
 
 private:
     IProjectViewStatePtr viewState() const;

@@ -647,6 +647,11 @@ void TrackeditActionsController::doGlobalDelete()
     TrackIdList emptied;
     for (const TrackId id : hadClips) {
         if (std::find(now.begin(), now.end(), id) != now.end() && after->clipList(id).empty()) {
+            // A song's sample line stays open when its last sample goes.
+            const auto track = after->track(id);
+            if (track && track->title == muse::String(SAMPLE_LINE_TITLE)) {
+                continue;
+            }
             emptied.push_back(id);
         }
     }

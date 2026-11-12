@@ -13,6 +13,7 @@ static const AttachedTrackObjects::RegisteredFactory keyTrackViewType{
 static constexpr auto TrackViewTypeAttr = "trackViewType";
 static constexpr auto SingleWaveAttr = "singleWave";
 static constexpr auto AutomationLanesAttr = "automationLanes";
+static constexpr auto SampleLineAttr = "sampleLine";
 
 TrackViewTypeAttachment& TrackViewTypeAttachment::Get(Au3Track* track)
 {
@@ -30,6 +31,7 @@ void TrackViewTypeAttachment::CopyTo(Au3Track& track) const
     attachment.SetTrackViewType(mTrackViewType);
     attachment.SetSingleWave(mSingleWave);
     attachment.SetAutomationLanes(mAutomationLanes);
+    attachment.SetSampleLine(mSampleLine);
 }
 
 TrackViewTypeAttachment::TrackViewTypeAttachment(Au3Track& track)
@@ -51,6 +53,9 @@ void TrackViewTypeAttachment::WriteXMLAttributes(XMLWriter& writer) const
     if (!mAutomationLanes.empty()) {
         writer.WriteAttr(AutomationLanesAttr, wxString::FromUTF8(mAutomationLanes));
     }
+    if (mSampleLine) {
+        writer.WriteAttr(SampleLineAttr, 1);
+    }
 }
 
 bool TrackViewTypeAttachment::HandleXMLAttribute(const std::string_view& attr, const XMLAttributeValueView& valueView)
@@ -66,6 +71,10 @@ bool TrackViewTypeAttachment::HandleXMLAttribute(const std::string_view& attr, c
     }
     if (attr == SingleWaveAttr && valueView.TryGet(nValue)) {
         mSingleWave = nValue != 0;
+        return true;
+    }
+    if (attr == SampleLineAttr && valueView.TryGet(nValue)) {
+        mSampleLine = nValue != 0;
         return true;
     }
     return false;
