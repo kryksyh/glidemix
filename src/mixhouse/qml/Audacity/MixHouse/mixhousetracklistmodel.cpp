@@ -5102,6 +5102,22 @@ QVariant MixHouseTrackListModel::data(const QModelIndex& index, int role) const
     case SampleRateRole:  return t.sampleRate;
     case AnalysisProgressRole: return m_analysisProgressByTrack.value(t.id, -1);
     case AnalyzedRole:    return t.analyzed;
+    case RemixerRole:     return t.remixer;
+    case MixRole:         return t.mix;
+    case LabelRole:       return t.label;
+    case ProducerRole:    return t.producer;
+    case LyricistRole:    return t.lyricist;
+    case Extra1Role:      return t.extra1;
+    case Extra2Role:      return t.extra2;
+    case DateModifiedRole:
+        // The library's own date (Lexicon), else the file's on the drive.
+        return t.dateModified.isEmpty() ? mixhouseFileInfo(t.filePath).modified : t.dateModified;
+    case SizeRole:        return t.sizeBytes > 0 ? t.sizeBytes : mixhouseFileInfo(t.filePath).size;
+    case FileModifiedRole: return mixhouseFileInfo(t.filePath).modified;
+    case FileCreatedRole: return mixhouseFileInfo(t.filePath).created;
+    case DanceabilityRole: return t.danceability;
+    case PopularityRole:  return t.popularity;
+    case HappinessRole:   return t.happiness;
     default:              return QVariant();
     }
 }
@@ -5124,7 +5140,12 @@ QHash<int, QByteArray> MixHouseTrackListModel::roleNames() const
         { LastPlayedAtRole, "lastPlayedAt" }, { BpmLockedRole, "bpmLocked" },
         { TrackIdRole, "trackId" }, { CoverArtTypeRole, "coverArtType" },
         { SampleRateRole, "sampleRate" },
-        { AnalysisProgressRole, "analysisProgress" }, { AnalyzedRole, "analyzed" }
+        { AnalysisProgressRole, "analysisProgress" }, { AnalyzedRole, "analyzed" },
+        { RemixerRole, "remixer" }, { MixRole, "mix" }, { LabelRole, "label" }, { ProducerRole, "producer" },
+        { LyricistRole, "lyricist" }, { Extra1Role, "extra1" }, { Extra2Role, "extra2" },
+        { DateModifiedRole, "dateModified" }, { SizeRole, "sizeBytes" }, { FileModifiedRole, "fileModified" },
+        { FileCreatedRole, "fileCreated" }, { DanceabilityRole, "danceability" }, { PopularityRole, "popularity" },
+        { HappinessRole, "happiness" }
     };
 }
 
@@ -5356,6 +5377,11 @@ MixHouseTrackList MixHouseTrackListModel::indexedTracks()
     // GlideMix: Sounds like is not in the database; first click = closest first.
     if (key == SortKey::SoundsLike) {
         sortBySoundsLike(out, m_soundsLikeAll, m_query.ascending);
+    }
+    if (key >= SortKey::Remixer) {
+        IMixHouseLibrary::TrackQuery q = m_query;
+        q.limit = 0;
+        sortAndLimitTracks(out, q, false);
     }
     const bool textSort = key == SortKey::Title || key == SortKey::Artist || key == SortKey::Album
                           || key == SortKey::Genre || key == SortKey::AlbumArtist || key == SortKey::Composer

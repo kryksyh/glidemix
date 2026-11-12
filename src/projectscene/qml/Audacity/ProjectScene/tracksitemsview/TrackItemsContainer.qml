@@ -67,6 +67,8 @@ Item {
     property Component contentComponent: null
 
     height: trackViewState.trackHeight
+    // GlideMix Samples: a hidden sample line (1 px) shows nothing.
+    visible: trackViewState.trackHeight > 1
 
     property TrackViewStateModel trackViewState: TrackViewStateModel {
         trackId: root.trackId

@@ -28,6 +28,8 @@ struct Clip {
     bool optimizeForVoice = false;
 
     bool stretchToMatchTempo = false;
+    //! GlideMix: Disable on the clip menu -- stays on the timeline, plays silent.
+    bool disabled = false;
 
     inline bool isValid() const { return key.isValid(); }
 };

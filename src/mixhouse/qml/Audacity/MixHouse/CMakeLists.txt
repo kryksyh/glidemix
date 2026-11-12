@@ -36,6 +36,8 @@ qt_add_qml_module(mixhouse_qml
         mixhouseledmeter.h
         mixhousesamplesmodel.cpp
         mixhousesamplesmodel.h
+        mixhousebeatmodel.cpp
+        mixhousebeatmodel.h
     QML_FILES
         MixHouseLibraryPanel.qml
         RelatedSettingsPopup.qml
@@ -46,6 +48,7 @@ qt_add_qml_module(mixhouse_qml
         MixHouseStatusLine.qml
         MixHouseNowPlaying.qml
         MixHouseSamplesPanel.qml
+        MixHouseBeatWindow.qml
     RESOURCES
         icons/ic_broadcast.svg
         icons/ic_library_tracks.svg

@@ -25,6 +25,8 @@ Rectangle {
     required property bool isSpectrogramViewVisible
     property int pitch: 0
     property bool isPitchModified: false
+    //! GlideMix: Disable on the clip menu -- faded like a muted track's clips.
+    property bool clipDisabled: false
     property int speedPercentage: 0
     property bool isSpeedModified: false
     property bool showChannelSplitter: false
@@ -118,7 +120,7 @@ Rectangle {
     radius: 4
     color: clipSelected ? clipSelectedColor : clipColor
     border.color: ui.theme.extra["black_color"]
-    opacity: root.moveActive && (clipSelected || clipIntersectsSelection) ? 0.5 : isAudible ? 1.0 : 0.3
+    opacity: root.moveActive && (clipSelected || clipIntersectsSelection) ? 0.5 : (isAudible && !clipDisabled) ? 1.0 : 0.3
 
     onMoveActiveChanged: {
         root.parent.z = moveActive && (clipSelected || clipIntersectsSelection) ? 1 : 0

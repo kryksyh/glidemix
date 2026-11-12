@@ -36,6 +36,8 @@ class MixHouseSamplesModel : public QAbstractListModel, public QQmlParserStatus,
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY filterChanged)
     Q_PROPERTY(QString pack READ pack WRITE setPack NOTIFY filterChanged)
     Q_PROPERTY(QString search READ search WRITE setSearch NOTIFY filterChanged)
+    //! "Show similar sounds" from a clip: the sample the list is ranked against ("" = off).
+    Q_PROPERTY(QString similarName READ similarName NOTIFY filterChanged)
     Q_PROPERTY(QString sortKey READ sortKey NOTIFY sortChanged)
     Q_PROPERTY(bool ascending READ ascending NOTIFY sortChanged)
     Q_PROPERTY(int totalCount READ totalCount NOTIFY samplesChanged)
@@ -82,6 +84,8 @@ public:
     QString pack() const { return m_pack; }
     void setPack(const QString& pack);
     QString search() const { return m_search; }
+    QString similarName() const;
+    Q_INVOKABLE void clearSimilar();
     void setSearch(const QString& search);
     QString sortKey() const { return m_sortKey; }
     bool ascending() const { return m_ascending; }
@@ -119,6 +123,8 @@ public:
     Q_INVOKABLE int previewRow() const;
 
 signals:
+    //! A clip asked for this tab: the panel brings its tab to the front.
+    void raiseRequested();
     void filterChanged();
     void sortChanged();
     void samplesChanged();
@@ -131,6 +137,11 @@ signals:
 private:
     void rebuild();
     void updatePacks();
+    void takeShowRequest();
+    bool applyShow();
+    QString m_similarTo;     ///< path; the list holds the sounds most like it
+    QString m_showPending;   ///< asked for before the scan found the file
+    bool m_showPendingSimilar = false;
 
     std::vector<int> m_rows;   ///< indexes into samples()->samples(), filtered and sorted
     QString m_category;

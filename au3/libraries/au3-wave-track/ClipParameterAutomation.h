@@ -22,6 +22,10 @@ inline constexpr const char* kMixtapeLowBandParameter = "low";
 //! The mids and highs of the transition EQ, the same way.
 inline constexpr const char* kMixtapeMidBandParameter = "mid";
 inline constexpr const char* kMixtapeHighBandParameter = "high";
+//! GlideMix: the clip's Disable switch (Ableton's Deactivate, Vibseek's
+//! Disable): an enabled curve with this id = the clip stays on the timeline
+//! but plays and exports silent.
+inline constexpr const char* kMixtapeDisabledParameter = "disabled";
 }
 
 //! Project data only. Mutate on the main thread and snapshot for audio processing.
@@ -54,6 +58,17 @@ public:
     const std::vector<Curve>& Curves() const noexcept { return mCurves; }
     bool Empty() const noexcept { return mCurves.empty(); }
     bool HasLoadError() const noexcept { return mLoadError; }
+    //! GlideMix: the clip's Disable switch is on.
+    bool IsClipDisabled() const noexcept
+    {
+        for (const auto& curve : mCurves) {
+            if (curve.enabled && curve.effectInstanceId == clipautomation::kMixtapeBuiltinInstanceId
+                && curve.parameterId == clipautomation::kMixtapeDisabledParameter) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     //! Bind by persistent instance identity plus parameter, never by chain slot.
     //! Returns null for malformed/duplicate bindings. No plugin loading occurs.

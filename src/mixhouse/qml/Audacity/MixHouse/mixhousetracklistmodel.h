@@ -143,7 +143,11 @@ public:
         TrackIdRole, CoverArtTypeRole, SampleRateRole,
         AnalysisProgressRole, AnalyzedRole, EnergyRole,
         KeyMatchRole,  ///< GlideMix Match: the key mixes with the song under the playhead
-        SoundsLikeRole ///< GlideMix Related: 0-100 how alike it sounds to the reference, -1 unknown
+        SoundsLikeRole, ///< GlideMix Related: 0-100 how alike it sounds to the reference, -1 unknown
+        // GlideMix: Lexicon's extra columns, and the file's own dates and size on the drive.
+        RemixerRole, MixRole, LabelRole, ProducerRole, LyricistRole, Extra1Role, Extra2Role,
+        DateModifiedRole, SizeRole, FileModifiedRole, FileCreatedRole,
+        DanceabilityRole, PopularityRole, HappinessRole
     };
 
     /// PlaylistDAO::AutoDJSendLoc, named for QML as MixHouseTrackListModel.AutoDjTop etc.
@@ -170,7 +174,10 @@ public:
                 SortAlbumArtist, SortComposer, SortGrouping, SortTrackNumber,
                 SortFileType, SortComment, SortBitrate, SortReplayGain,
                 SortTimesPlayed, SortLastPlayedAt, SortPosition,
-                SortSampleRate, SortChannels, SortAnalyzed, SortEnergy, SortSoundsLike };
+                SortSampleRate, SortChannels, SortAnalyzed, SortEnergy, SortSoundsLike,
+                SortRemixer, SortMix, SortLabel, SortProducer, SortLyricist, SortSize, SortDateModified,
+                SortFileModified, SortFileCreated, SortExtra1, SortExtra2, SortDanceability, SortPopularity,
+                SortHappiness };
     Q_ENUM(Sort)
 
     Q_INVOKABLE void load();

@@ -197,7 +197,23 @@ Item {
         // in this schema, same as real mixxx's own "Not yet supported" cell
         // (basetracktablemodel.cpp:794-797) -- always blank, not a regression.
         { key: "sampleRate",   label: qsTrc("mixhouse", "Samplerate"),  sort: MixHouseTrackListModel.SortSampleRate,       width: 90,  align: Qt.AlignRight,   visible: false },
-        { key: "channels",     label: qsTrc("mixhouse", "Channels"),    sort: MixHouseTrackListModel.SortChannels,         width: 70,  align: Qt.AlignRight,   visible: false }
+        { key: "channels",     label: qsTrc("mixhouse", "Channels"),    sort: MixHouseTrackListModel.SortChannels,         width: 70,  align: Qt.AlignRight,   visible: false },
+        // GlideMix: the rest of Lexicon's columns (read from its database;
+        // empty for songs from elsewhere), and the file itself on the drive.
+        { key: "remixer",      label: qsTrc("mixhouse", "Remixer"),     sort: MixHouseTrackListModel.SortRemixer,          width: 160, align: Qt.AlignLeft,    visible: false },
+        { key: "mix",          label: qsTrc("mixhouse", "Mix"),         sort: MixHouseTrackListModel.SortMix,              width: 140, align: Qt.AlignLeft,    visible: false },
+        { key: "label",        label: qsTrc("mixhouse", "Label"),       sort: MixHouseTrackListModel.SortLabel,            width: 160, align: Qt.AlignLeft,    visible: false },
+        { key: "producer",     label: qsTrc("mixhouse", "Producer"),    sort: MixHouseTrackListModel.SortProducer,         width: 160, align: Qt.AlignLeft,    visible: false },
+        { key: "lyricist",     label: qsTrc("mixhouse", "Lyricist"),    sort: MixHouseTrackListModel.SortLyricist,         width: 160, align: Qt.AlignLeft,    visible: false },
+        { key: "danceability", label: qsTrc("mixhouse", "Danceability"), sort: MixHouseTrackListModel.SortDanceability,    width: 100, align: Qt.AlignRight,   visible: false },
+        { key: "popularity",   label: qsTrc("mixhouse", "Popularity"),  sort: MixHouseTrackListModel.SortPopularity,       width: 90,  align: Qt.AlignRight,   visible: false },
+        { key: "happiness",    label: qsTrc("mixhouse", "Happiness"),   sort: MixHouseTrackListModel.SortHappiness,        width: 90,  align: Qt.AlignRight,   visible: false },
+        { key: "dateModified", label: qsTrc("mixhouse", "Date Modified"), sort: MixHouseTrackListModel.SortDateModified,   width: 150, align: Qt.AlignLeft,    visible: false },
+        { key: "fileModified", label: qsTrc("mixhouse", "File Modified (drive)"), headerLabel: qsTrc("mixhouse", "File Modified"), sort: MixHouseTrackListModel.SortFileModified, width: 150, align: Qt.AlignLeft, visible: false },
+        { key: "fileCreated",  label: qsTrc("mixhouse", "File Created (drive)"), headerLabel: qsTrc("mixhouse", "File Created"), sort: MixHouseTrackListModel.SortFileCreated, width: 150, align: Qt.AlignLeft, visible: false },
+        { key: "sizeBytes",    label: qsTrc("mixhouse", "Size"),        sort: MixHouseTrackListModel.SortSize,             width: 90,  align: Qt.AlignRight,   visible: false },
+        { key: "extra1",       label: qsTrc("mixhouse", "Extra 1"),     sort: MixHouseTrackListModel.SortExtra1,           width: 140, align: Qt.AlignLeft,    visible: false },
+        { key: "extra2",       label: qsTrc("mixhouse", "Extra 2"),     sort: MixHouseTrackListModel.SortExtra2,           width: 140, align: Qt.AlignLeft,    visible: false }
     ]
 
     // The 8 track colors of rekordbox (and Lexicon), the ones DJs know. The
@@ -832,6 +848,13 @@ Item {
             return (db > 0 ? "+" : "") + db.toFixed(2) + " dB"
         case "dateAdded":    return model.dateAdded ? model.dateAdded.split(" ")[0] : "—"
         case "lastPlayedAt": return model.lastPlayedAt ? model.lastPlayedAt.split(" ")[0] : "—"
+        case "dateModified": return model.dateModified ? model.dateModified.split(" ")[0] : "—"
+        case "fileModified": return model.fileModified ? model.fileModified.split(" ")[0] : "—"
+        case "fileCreated":  return model.fileCreated ? model.fileCreated.split(" ")[0] : "—"
+        case "sizeBytes":    return model.sizeBytes > 0 ? (model.sizeBytes / 1048576).toFixed(1) + " MB" : "—"
+        case "danceability": return model.danceability > 0 ? String(model.danceability) : ""
+        case "popularity":   return model.popularity > 0 ? String(model.popularity) : ""
+        case "happiness":    return model.happiness > 0 ? String(model.happiness) : ""
         case "timesPlayed":  return String(model.timesPlayed)
         case "trackNumber":  return (model.inProject ? "\u25CF " : "") + (model.trackNumber ? model.trackNumber : "")
         // Rendered as their own item in the row delegate, not as text.
@@ -3286,11 +3309,32 @@ Item {
                 function open(pos) {
                     var items = []
                     var shown = {}
+                    // GlideMix: the less used columns sit in submenus, so the
+                    // list fits a laptop screen (Lexicon shows two columns).
+                    var groupOf = {
+                        albumArtist: "credits", composer: "credits", grouping: "credits", remixer: "credits",
+                        mix: "credits", label: "credits", producer: "credits", lyricist: "credits",
+                        extra1: "credits", extra2: "credits",
+                        danceability: "ratings", popularity: "ratings", happiness: "ratings",
+                        bitrate: "file", replaygain: "file", fileType: "file", filePath: "file", sampleRate: "file",
+                        channels: "file", dateModified: "file", fileModified: "file", fileCreated: "file", sizeBytes: "file"
+                    }
+                    var groups = { credits: [], ratings: [], file: [] }
                     for (var i = 0; i < root.columns.length; ++i) {
-                        items.push({ id: String(i), title: root.columns[i].label,
-                                     checkable: true, checked: root.columns[i].visible })
+                        var entry = { id: String(i), title: root.columns[i].label,
+                                      checkable: true, checked: root.columns[i].visible }
+                        var g = groupOf[root.columns[i].key]
+                        if (g) {
+                            groups[g].push(entry)
+                        } else {
+                            items.push(entry)
+                        }
                         shown[root.columns[i].key] = true
                     }
+                    items.push({})
+                    items.push({ id: "group-credits", title: qsTrc("mixhouse", "Credits and extras"), subitems: groups.credits })
+                    items.push({ id: "group-ratings", title: qsTrc("mixhouse", "Danceability, popularity, happiness (Lexicon)"), subitems: groups.ratings })
+                    items.push({ id: "group-file", title: qsTrc("mixhouse", "File and dates on the drive"), subitems: groups.file })
                     // GlideMix (Marc Mont): the files' own tags, as columns.
                     var tagItems = []
                     var names = tracksModel.customTagNames()
@@ -3309,7 +3353,7 @@ Item {
                 onHandleMenuItem: function(itemId) {
                     if (itemId.indexOf("tag:") === 0) {
                         root.addTagColumn(itemId.slice(4))
-                    } else if (itemId !== "tag-none" && itemId !== "tag-columns") {
+                    } else if (itemId !== "tag-none" && itemId !== "tag-columns" && itemId.indexOf("group-") !== 0) {
                         root.toggleColumn(parseInt(itemId))
                     }
                 }

@@ -107,6 +107,7 @@ au::trackedit::Clip DomConverter::clip(const Au3WaveTrack* waveTrack, const Au3W
     clip.optimizeForVoice = au3clip->GetPitchAndSpeedPreset() == PitchAndSpeedPreset::OptimizeForVoice;
 
     clip.stretchToMatchTempo = au3clip->GetStretchToMatchProjectTempo();
+    clip.disabled = au3clip->GetParameterAutomation().IsClipDisabled();
 
     return clip;
 }

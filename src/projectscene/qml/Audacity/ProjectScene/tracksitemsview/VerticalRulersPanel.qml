@@ -82,6 +82,7 @@ Rectangle {
         delegate: Loader {
             width: root.width
             height: trackViewState.trackHeight
+            visible: trackViewState.trackHeight > 1
 
             sourceComponent: model.trackType !== TrackType.LABEL ? waveComp : emptyComp
 

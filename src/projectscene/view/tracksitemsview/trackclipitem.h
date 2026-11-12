@@ -23,6 +23,8 @@ class TrackClipItem : public ViewTrackItem
     Q_PROPERTY(bool isSpeedModified READ isSpeedModified NOTIFY speedPercentageChanged FINAL)
     //! GlideMix: the track's colour intensity (0..1), see IMixHouseClipColors.
     Q_PROPERTY(double colorIntensity READ colorIntensity NOTIFY colorChanged FINAL)
+    //! GlideMix: Disable on the clip menu (drawn faded, plays silent).
+    Q_PROPERTY(bool clipDisabled READ clipDisabled NOTIFY contentChanged FINAL)
     // Q_PROPERTY(QObject * envelopeModel READ envelopeModel NOTIFY envelopeModelChanged)
 
 public:
@@ -34,6 +36,7 @@ public:
     double colorIntensity() const { return m_colorIntensity; }
 
     bool isGrouped() const;
+    bool clipDisabled() const { return m_disabled; }
 
     int pitch() const;
     int speedPercentage() const;
@@ -49,6 +52,7 @@ signals:
 
 private:
     int m_groupId = -1;
+    bool m_disabled = false;
     int m_pitch = 0;
     double m_speed = 1.0;
     QColor m_keyColor;

@@ -36,6 +36,8 @@ public:
     bool endClipGainPointDrag(const trackedit::ClipKey& clip, bool commit) override;
     muse::async::Channel<trackedit::ClipKey, bool> clipGainChanged() const override;
 
+    bool clipDisabled(const trackedit::ClipKey& key) const override;
+    bool setClipDisabled(const trackedit::ClipKey& key, bool disabled) override;
     AutomationPoints clipBassPoints(const trackedit::ClipKey& key) const override;
     bool setClipBassPoints(const trackedit::ClipKey& key, const AutomationPoints& points) override;
     AutomationPoints clipBandPoints(const trackedit::ClipKey& key, int band) const override;

@@ -205,6 +205,45 @@ AutomationPoints Au3ClipGainInteraction::clipBassPoints(const trackedit::ClipKey
     return clipBandPoints(clipKey, 0);
 }
 
+bool Au3ClipGainInteraction::clipDisabled(const trackedit::ClipKey& clipKey) const
+{
+    Au3WaveTrack* waveTrack = DomAccessor::findWaveTrack(projectRef(), Au3TrackId(clipKey.trackId));
+    const std::shared_ptr<Au3WaveClip> clip = waveTrack ? DomAccessor::findWaveClip(waveTrack, clipKey.itemId) : nullptr;
+    return clip && clip->GetParameterAutomation().IsClipDisabled();
+}
+
+bool Au3ClipGainInteraction::setClipDisabled(const trackedit::ClipKey& clipKey, bool disabled)
+{
+    Au3WaveTrack* waveTrack = DomAccessor::findWaveTrack(projectRef(), Au3TrackId(clipKey.trackId));
+    const std::shared_ptr<Au3WaveClip> clip = waveTrack ? DomAccessor::findWaveClip(waveTrack, clipKey.itemId) : nullptr;
+    if (!clip) {
+        return false;
+    }
+    // A stepped switch in the clip's own curve store, so it follows the clip
+    // through moves, copies, undo and saving (like the transition EQ lines).
+    auto data = clip->GetParameterAutomation();
+    const double offset = clip->GetSequenceStartTime();
+    data.SetOffset(offset);
+    data.SetTrackLen(clip->GetSequenceEndTime() - offset, 1.0 / clip->GetRate());
+    auto* curve = data.FindCurve(clipautomation::kMixtapeBuiltinInstanceId, clipautomation::kMixtapeDisabledParameter);
+    if (!curve && !disabled) {
+        return true;
+    }
+    if (!curve) {
+        curve = data.AddCurve(clipautomation::kMixtapeBuiltinInstanceId, clipautomation::kMixtapeBuiltinPluginId,
+                              clipautomation::kMixtapeDisabledParameter, 1.0);
+    }
+    if (!curve) {
+        return false;
+    }
+    curve->enabled = disabled;
+    curve->stepped = true;
+    curve->bezier = {};
+    curve->envelope.Flatten(1.0);
+    clip->GetParameterAutomation() = std::move(data);
+    return true;
+}
+
 bool Au3ClipGainInteraction::setClipBassPoints(const trackedit::ClipKey& clipKey, const AutomationPoints& points)
 {
     return setClipBandPoints(clipKey, 0, points);

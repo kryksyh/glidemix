@@ -3201,6 +3201,10 @@ void WaveTrack::GetEnvelopeValues(
             // Samples are obtained for the purpose of rendering a wave track,
             // so quantize time
             clip->GetEnvelope().GetValues(rbuf, rlen, rt0, tstep);
+            // GlideMix: a disabled clip is silent on every mixing path.
+            if (clip->GetParameterAutomation().IsClipDisabled()) {
+                std::fill(rbuf, rbuf + rlen, 0.0);
+            }
         }
     }
     if (backwards) {

@@ -116,7 +116,7 @@ TrackItem {
                 // short for even the smallest hides them.
                 readonly property real room: root.height - 76
                 readonly property real dot: Math.max(14, Math.min(24, room - 2))
-                visible: !root.collapsed && room >= 14
+                visible: !root.collapsed && (room >= 14 || root.trackViewState.isSampleLine)
                 property int shown: automationViewState.shownBandLine(root.trackViewState.trackId)
                 Connections {
                     target: automationViewState
@@ -167,7 +167,9 @@ TrackItem {
                     Layout.preferredHeight: 20
                     Layout.alignment: Qt.AlignVCenter
                     orientation: Qt.Horizontal
-                    icon: IconCode.WAVEFORM
+                    // The eye is part of the capsule: open = the line shows, closed = hidden.
+                    icon: !root.trackViewState.hasSampleLine ? IconCode.WAVEFORM
+                          : (shown ? IconCode.EYE_OPEN : IconCode.EYE_CLOSED)
                     text: qsTrc("projectscene", "SAMPLES")
                     textFont: ui.theme.bodyBoldFont
                     accentButton: shown
@@ -175,8 +177,22 @@ TrackItem {
                                   : (shown ? qsTrc("projectscene", "Hide the sample line") : qsTrc("projectscene", "Show the sample line"))
                     toolTipDescription: !root.trackViewState.hasSampleLine
                         ? qsTrc("projectscene", "Opens a line under this song for your own samples: drop them from the Samples tab or Finder.")
-                        : qsTrc("projectscene", "Hidden, the line folds to a thin strip: its samples stay and keep playing.")
+                        : qsTrc("projectscene", "Hidden, the line takes no room: its samples stay and keep playing.")
                     onClicked: root.trackViewState.toggleSampleLine()
+                }
+
+                // GlideMix Samples B8: on a sample line, BEAT sits on this row under
+                // FX / M / S (it no longer squeezes the volume fader).
+                Item { Layout.fillWidth: true; visible: root.trackViewState.isSampleLine }
+                FlatButton {
+                    visible: root.trackViewState.isSampleLine
+                    Layout.preferredHeight: 20
+                    Layout.alignment: Qt.AlignVCenter
+                    text: qsTrc("projectscene", "BEAT")
+                    textFont: ui.theme.bodyBoldFont
+                    toolTipTitle: qsTrc("projectscene", "Make a beat")
+                    toolTipDescription: qsTrc("projectscene", "A step sequencer with your own one-shots; the beat lands on this sample line as one loop.")
+                    onClicked: api.launcher.open("audacity://mixhouse/beat?sampleLine=" + root.trackViewState.trackId)
                 }
             }
         }
@@ -295,19 +311,6 @@ TrackItem {
 
         RowLayout {
             spacing: 4
-
-            // GlideMix Samples: a sample line's hide button (folds it to a thin
-            // strip; the song's SAMPLES button shows it again).
-            FlatButton {
-                visible: root.trackViewState.isSampleLine
-                Layout.preferredWidth: 20
-                Layout.preferredHeight: 20
-                icon: root.trackViewState.sampleLineShown ? IconCode.EYE_OPEN : IconCode.EYE_CLOSED
-                toolTipTitle: root.trackViewState.sampleLineShown ? qsTrc("projectscene", "Hide the sample line")
-                                                                  : qsTrc("projectscene", "Show the sample line")
-                toolTipDescription: qsTrc("projectscene", "Hidden, it folds to a thin strip: its samples stay and keep playing.")
-                onClicked: root.trackViewState.toggleSampleLine()
-            }
 
             // GlideMix: the effects panel, as a small button with the others
             // (it used to be a full-width bar of its own).

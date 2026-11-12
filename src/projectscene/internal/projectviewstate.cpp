@@ -395,12 +395,10 @@ ProjectViewState::TrackData& ProjectViewState::makeTrackData(const trackedit::Tr
         if (track) {
             d.channelHeightRatio.val = track->type == trackedit::TrackType::Stereo && !d.isSingleWave.val ? 0.5 : 1.0;
             int defaultHeight = track->type == trackedit::TrackType::Label ? TRACK_LABEL_DEFAULT_HEIGHT : TRACK_DEFAULT_HEIGHT;
-            // GlideMix: a new stereo track opens in Single wave, at the height
-            // the Single wave toggle gives it (half, not below the collapse
-            // height, so its header keeps the knob and fader).
-            if (track->type == trackedit::TrackType::Stereo && d.isSingleWave.val) {
-                defaultHeight = std::max(TRACK_DEFAULT_HEIGHT / 2, TRACK_COLLAPSE_HEIGHT);
-            }
+            // GlideMix (Chris, 2026-11-12): a new song lane opens tall enough for
+            // its whole header -- knob, fader, LOW / MID / HIGH / COLOR and
+            // SAMPLES -- also in Single wave (it used to open at half height,
+            // 72 px, with only the knob and fader).
 
             int height = defaultHeight;
 
@@ -429,7 +427,7 @@ ProjectViewState::TrackData& ProjectViewState::makeTrackData(const trackedit::Tr
                     }
                 }
                 savedHeight = savedHeight <= 0 ? defaultHeight : savedHeight;
-                height = std::max(savedHeight, TRACK_MIN_HEIGHT);
+                height = (savedHeight == 1 && isSampleLine(trackId)) ? 1 : std::max(savedHeight, TRACK_MIN_HEIGHT);
             }
             // GlideMix: the same rule as setTrackHeight(). With <= here, a
             // track saved at 72 px (the track-height slider's lowest step)
@@ -655,7 +653,9 @@ void ProjectViewState::setTrackHeight(const trackedit::TrackId& trackId, int hei
         d = &makeTrackData(trackId);
     }
 
-    int newHeight = std::max(height, TRACK_MIN_HEIGHT);
+    // GlideMix Samples: a hidden sample line is 1 px tall (it takes no room;
+    // the song's SAMPLES button shows it again). Saved as 1 with the project.
+    int newHeight = (height <= 1 && isSampleLine(trackId)) ? 1 : std::max(height, TRACK_MIN_HEIGHT);
     d->height.set(newHeight);
     d->collapsed.set(height < TRACK_COLLAPSE_HEIGHT);
 

@@ -66,6 +66,8 @@ ListItemBlank {
     }
 
     height: trackViewState.trackHeight
+    // GlideMix Samples: a hidden sample line (1 px) shows nothing.
+    visible: trackViewState.trackHeight > 1
     opacity: dragged ? 0.5 : 1
 
     focusBorder.anchors.leftMargin: spacer.width + 2

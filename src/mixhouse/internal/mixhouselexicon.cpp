@@ -210,7 +210,9 @@ MixHouseTrackList MixHouseLexicon::readTracks(int playlistId, const IMixHouseLib
         "  t.lastPlayed, t.sampleRate, %1, "
         "  (SELECT m.startTime FROM Tempomarker m WHERE m.trackId = t.id ORDER BY m.startTime LIMIT 1), "
         "  (SELECT m.bpm FROM Tempomarker m WHERE m.trackId = t.id ORDER BY m.startTime LIMIT 1), "
-        "  (SELECT COUNT(*) FROM Tempomarker m WHERE m.trackId = t.id), t.energy "
+        "  (SELECT COUNT(*) FROM Tempomarker m WHERE m.trackId = t.id), t.energy, "
+        "  t.remixer, t.mix, t.label, t.producer, t.lyricist, t.extra1, t.extra2, t.dateModified, t.sizeBytes, "
+        "  t.danceability, t.popularity, t.happiness "
         "FROM %2 WHERE t.archived = 0")
                   .arg(inPlaylist ? QStringLiteral("l.position") : QStringLiteral("-1"),
                        inPlaylist ? QStringLiteral("LinkTrackPlaylist l JOIN Track t ON t.id = l.trackId")
@@ -310,6 +312,18 @@ MixHouseTrackList MixHouseLexicon::readTracks(int playlistId, const IMixHouseLib
         }
         t.analyzed = t.beats.valid;
         t.energy = q.value(24).toDouble();   // Lexicon's own 1-10, 0 = not rated
+        t.remixer = q.value(25).toString();
+        t.mix = q.value(26).toString();
+        t.label = q.value(27).toString();
+        t.producer = q.value(28).toString();
+        t.lyricist = q.value(29).toString();
+        t.extra1 = q.value(30).toString();
+        t.extra2 = q.value(31).toString();
+        t.dateModified = q.value(32).toString().left(19).replace(u'T', u' ');
+        t.sizeBytes = q.value(33).toLongLong();
+        t.danceability = q.value(34).toInt();
+        t.popularity = q.value(35).toInt();
+        t.happiness = q.value(36).toInt();
         result.push_back(std::move(t));
     }
     return result;

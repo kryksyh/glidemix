@@ -18,6 +18,7 @@
 #include "playback/iperformance.h"
 #include "automation/iclipgaininteraction.h"
 #include "trackedit/iprojecthistory.h"
+#include "trackedit/itrackeditinteraction.h"
 #include "trackedit/iselectioncontroller.h"
 #include "project/iprojectconfiguration.h"
 #include "mixhouse/imixhousesamples.h"
@@ -56,6 +57,7 @@ class MixHouseActionsController : public muse::actions::Actionable, public muse:
     muse::GlobalInject<IMixHouseSamples> samples;
     muse::ContextInject<IMixHouseActivity> activity { this };
     muse::ContextInject<IMixHouseStems> stems { this };
+    muse::ContextInject<trackedit::ITrackeditInteraction> trackeditInteraction { this };
 
 public:
     //! Told whether any automation line is overridden (lights the Re-enable button).
@@ -75,6 +77,20 @@ private:
     /// Samples B7: stems of the selection (0 drums .. 3 other) saved as samples.
     void saveSelectionStems(const QList<int>& which);
     bool stemsReady();   ///< says how to install the engine when it is missing
+    QString clipSourcePath(const trackedit::ClipKey& key) const;
+    void clipShowInFinder(const trackedit::ClipKey& key);
+    void clipExport(const trackedit::ClipKey& key);
+    // Vibseek's clip menu, our own code (2026-11-12).
+    void clipShowInSamplesTab(const trackedit::ClipKey& key, bool similar);
+    void clipResample(const trackedit::ClipKey& key);
+    void clipVariations(const trackedit::ClipKey& key);
+    void clipSendToBeat(const trackedit::ClipKey& key);
+    void clipAddCompatible(const trackedit::ClipKey& key);
+    void addToSamplesTab(const QString& dir);
+    void openSamplesTab(const QString& path, bool similar);
+    QString renderClipToFolder(const trackedit::ClipKey& key, const QString& dir, const QString& suffix);
+    trackedit::TrackId sampleLineFor(const trackedit::ClipKey& key);
+    const MixHouseSample* sampleForClip(const trackedit::ClipKey& key) const;
     /// The selected part of one song and its name parts; says why when there is none.
     struct SampleTarget {
         trackedit::ClipKey clip;

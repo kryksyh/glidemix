@@ -851,6 +851,7 @@ DockPage {
 
             MixHouseSamplesPanel {
                 navigationSection: mixHouseSamplesPanel.navigationSection
+                onRaiseRequested: mixHouseSamplesPanel.raiseTab()
             }
         },
 

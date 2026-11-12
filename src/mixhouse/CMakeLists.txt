@@ -91,6 +91,10 @@ set(MODULE_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mixhouseledspectrum.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesamplename.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousebeat.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousebeat.h
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousevariations.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mixhousevariations.h
     ${CMAKE_CURRENT_LIST_DIR}/mixhousesamplename.h
     ${CMAKE_CURRENT_LIST_DIR}/imixhousesamples.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/mixhousesamples.cpp

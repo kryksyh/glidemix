@@ -5,9 +5,45 @@
 
 #include <algorithm>
 
+#include <QDateTime>
+#include <QFileInfo>
+#include <QHash>
+#include <QMutex>
+
 #include "mixhouse/imixhousekeymatch.h"
 
 namespace au::mixhouse {
+MixHouseFileInfo mixhouseFileInfo(const QString& path)
+{
+    static QMutex mutex;
+    static QHash<QString, MixHouseFileInfo> cache;
+    if (path.isEmpty()) {
+        return {};
+    }
+    {
+        QMutexLocker lock(&mutex);
+        const auto it = cache.constFind(path);
+        if (it != cache.constEnd()) {
+            return *it;
+        }
+    }
+    MixHouseFileInfo info;
+    const QFileInfo fi(path);
+    if (fi.exists()) {
+        const QString format = QStringLiteral("yyyy-MM-dd HH:mm:ss");
+        info.modified = fi.lastModified().toString(format);
+        QDateTime born = fi.birthTime();
+        if (!born.isValid()) {
+            born = fi.metadataChangeTime();   // file systems without a creation date
+        }
+        info.created = born.toString(format);
+        info.size = fi.size();
+    }
+    QMutexLocker lock(&mutex);
+    cache.insert(path, info);
+    return info;
+}
+
 int keyIdForCamelot(const QString& text)
 {
     for (int keyId = 1; keyId <= 24 && !text.isEmpty(); ++keyId) {
@@ -44,6 +80,26 @@ void sortAndLimitTracks(MixHouseTrackList& tracks, const IMixHouseLibrary::Track
             case K::LastPlayedAt: return text(a.lastPlayedAt, b.lastPlayedAt);
             case K::SampleRate: return a.sampleRate - b.sampleRate;
             case K::Position: return a.playlistPosition - b.playlistPosition;
+            case K::Remixer: return text(a.remixer, b.remixer);
+            case K::Mix: return text(a.mix, b.mix);
+            case K::Label: return text(a.label, b.label);
+            case K::Producer: return text(a.producer, b.producer);
+            case K::Lyricist: return text(a.lyricist, b.lyricist);
+            case K::Extra1: return text(a.extra1, b.extra1);
+            case K::Extra2: return text(a.extra2, b.extra2);
+            case K::Danceability: return a.danceability - b.danceability;
+            case K::Popularity: return a.popularity - b.popularity;
+            case K::Happiness: return a.happiness - b.happiness;
+            case K::Size: {
+                const qint64 sa = a.sizeBytes > 0 ? a.sizeBytes : mixhouseFileInfo(a.filePath).size;
+                const qint64 sb = b.sizeBytes > 0 ? b.sizeBytes : mixhouseFileInfo(b.filePath).size;
+                return sa < sb ? -1 : sa > sb ? 1 : 0;
+            }
+            case K::DateModified:
+                return text(a.dateModified.isEmpty() ? mixhouseFileInfo(a.filePath).modified : a.dateModified,
+                            b.dateModified.isEmpty() ? mixhouseFileInfo(b.filePath).modified : b.dateModified);
+            case K::FileModified: return text(mixhouseFileInfo(a.filePath).modified, mixhouseFileInfo(b.filePath).modified);
+            case K::FileCreated: return text(mixhouseFileInfo(a.filePath).created, mixhouseFileInfo(b.filePath).created);
             default: return text(a.dateAdded, b.dateAdded);
             }
         };

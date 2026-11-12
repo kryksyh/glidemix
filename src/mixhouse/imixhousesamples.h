@@ -67,5 +67,12 @@ public:
     virtual const std::vector<MixHouseSample>& samples() const = 0;
     /// The list or the folders changed (scan finished, folder added/removed).
     virtual muse::async::Notification samplesChanged() const = 0;
+
+    /// GlideMix: a clip's right-click asks the Samples tab to show a file:
+    /// its pack (`similar` false) or the sounds most like it. Kept until the
+    /// tab takes it, so a tab opened just now still gets it.
+    virtual void showInSamplesTab(const QString& path, bool similar) = 0;
+    virtual bool takeShowRequest(QString& path, bool& similar) = 0;
+    virtual muse::async::Notification showRequested() const = 0;
 };
 }

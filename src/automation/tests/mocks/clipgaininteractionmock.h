@@ -22,6 +22,8 @@ public:
     MOCK_METHOD(bool, updateClipGainPointDrag, (const trackedit::ClipKey&, double, double), (override));
     MOCK_METHOD(bool, endClipGainPointDrag, (const trackedit::ClipKey&, bool), (override));
     MOCK_METHOD((muse::async::Channel<trackedit::ClipKey, bool>), clipGainChanged, (), (const, override));
+    MOCK_METHOD(bool, clipDisabled, (const trackedit::ClipKey&), (const, override));
+    MOCK_METHOD(bool, setClipDisabled, (const trackedit::ClipKey&, bool), (override));
     MOCK_METHOD(AutomationPoints, clipBassPoints, (const trackedit::ClipKey&), (const, override));
     MOCK_METHOD(bool, setClipBassPoints, (const trackedit::ClipKey&, const AutomationPoints&), (override));
     MOCK_METHOD(AutomationPoints, clipBandPoints, (const trackedit::ClipKey&, int), (const, override));

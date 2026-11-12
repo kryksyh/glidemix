@@ -7,12 +7,19 @@
 #include "mixhouseactionscontroller.h"
 
 #include <QDir>
+#include <QProcess>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <cmath>
 #include <optional>
 #include <QSettings>
 #include "mixhouseprojectaligner.h"
+#include "trackedit/dom/track.h"
+#include "mixhouse/imixhousekeymatch.h"
+#include "mixhouse/mixhousesamplename.h"
+#include "mixhouse/mixhousebeat.h"
+#include "mixhouse/mixhousevariations.h"
+#include <QRandomGenerator>
 #include <QStandardPaths>
 
 #include "translation.h"
@@ -68,6 +75,95 @@ void MixHouseActionsController::init()
     dispatcher()->reg(this, "mixhouse-grid-undo", [this]() { beatGrids()->adjustSelectedClips(Adjust::Undo); });
     // Split by hand only: a song added to the mix is never split by itself.
     dispatcher()->reg(this, "mixhouse-save-as-sample", this, &MixHouseActionsController::saveSelectionAsSample);
+    // A clip's own right-click menu (songs and samples on the timeline).
+    dispatcher()->reg(this, "mixhouse-clip-show-in-finder", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            clipShowInFinder(args.arg<trackedit::ClipKey>(0));
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-export", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            clipExport(args.arg<trackedit::ClipKey>(0));
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-similar", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            clipShowInSamplesTab(key, true);
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-view-pack", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            clipShowInSamplesTab(key, false);
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-resample", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            clipResample(key);
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-variations", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            clipVariations(key);
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-send-to-beat", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            clipSendToBeat(key);
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-add-compatible", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            clipAddCompatible(key);
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-disable", [this](const muse::actions::ActionData& args) {
+        if (args.count() != 1 || !clipGain()) {
+            return;
+        }
+        const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+        // The selected clips go with the one clicked (Ableton's Deactivate on a selection).
+        std::vector<trackedit::ClipKey> keys { key };
+        if (selectionController()) {
+            const trackedit::ClipKeyList selected = selectionController()->selectedClips();
+            const auto same = [&](const trackedit::ClipKey& a, const trackedit::ClipKey& b) {
+                return a.trackId == b.trackId && a.itemId == b.itemId;
+            };
+            if (std::any_of(selected.begin(), selected.end(), [&](const trackedit::ClipKey& k) { return same(k, key); })) {
+                for (const trackedit::ClipKey& k : selected) {
+                    if (!same(k, key)) {
+                        keys.push_back(k);
+                    }
+                }
+            }
+        }
+        const bool disable = !clipGain()->clipDisabled(key);
+        const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+        for (const trackedit::ClipKey& k : keys) {
+            if (clipGain()->setClipDisabled(k, disable) && project) {
+                project->notifyAboutClipChanged(project->clip(k));
+            }
+        }
+        if (projectHistory()) {
+            projectHistory()->pushHistoryState(disable ? "Disabled clip" : "Enabled clip",
+                                               disable ? "Disable" : "Enable");
+        }
+    });
+    dispatcher()->reg(this, "mixhouse-clip-stems", [this](const muse::actions::ActionData& args) {
+        if (args.count() == 1 && stemsReady()) {
+            const trackedit::ClipKey key = args.arg<trackedit::ClipKey>(0);
+            const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+            if (project) {
+                const trackedit::Clip clip = project->clip(key);
+                stems()->splitRangeIntoStems(key, clip.startTime, clip.endTime);
+            }
+        }
+    });
     dispatcher()->reg(this, "mixhouse-save-stem-drums", [this]() { saveSelectionStems({ 0 }); });
     dispatcher()->reg(this, "mixhouse-save-stem-bass", [this]() { saveSelectionStems({ 1 }); });
     dispatcher()->reg(this, "mixhouse-save-stem-vocals", [this]() { saveSelectionStems({ 2 }); });
@@ -394,6 +490,11 @@ QString MixHouseActionsController::sampleSaveFolder() const
 void MixHouseActionsController::samplesSavedIn(const QString& savedDir)
 {
     QSettings().setValue(QStringLiteral("GlideMix/saveSampleFolder"), savedDir);
+    addToSamplesTab(savedDir);
+}
+
+void MixHouseActionsController::addToSamplesTab(const QString& savedDir)
+{
     // Into the Samples tab: a folder it already scans picks the files up on a
     // rescan; else the Samples folder (or the chosen folder) is added.
     if (!samples()) {
@@ -508,3 +609,374 @@ void MixHouseActionsController::saveSelectionStems(const QList<int>& which)
                          : muse::qtrc("mixhouse", "Saved %1 stems as samples").arg(written.size()));
     }
 }
+
+QString MixHouseActionsController::clipSourcePath(const trackedit::ClipKey& key) const
+{
+    // A library song: its file. A sample: the Samples tab entry of that name,
+    // then the beats and saved samples next to the projects.
+    IMixHouseBeatGrids::ClipFile file;
+    if (beatGrids() && beatGrids()->clipFile(key, file) && QFileInfo::exists(file.path)) {
+        return file.path;
+    }
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project) {
+        return {};
+    }
+    const QString title = project->clip(key).title.toQString();
+    if (samples()) {
+        for (const MixHouseSample& s : samples()->samples()) {
+            if (s.name == title && QFileInfo::exists(s.path)) {
+                return s.path;
+            }
+        }
+    }
+    for (const QString& dir : { samplesRoot() + QStringLiteral("/Beats"), samplesRoot() }) {
+        for (const QString& ext : { QStringLiteral(".wav"), QStringLiteral(".aif"), QStringLiteral(".mp3") }) {
+            const QString p = dir + QStringLiteral("/") + title + ext;
+            if (QFileInfo::exists(p)) {
+                return p;
+            }
+        }
+    }
+    return {};
+}
+
+void MixHouseActionsController::clipShowInFinder(const trackedit::ClipKey& key)
+{
+    const QString path = clipSourcePath(key);
+    if (path.isEmpty()) {
+        if (interactive()) {
+            interactive()->info(muse::trc("mixhouse", "Show in Finder"),
+                                muse::trc("mixhouse", "GlideMix doesn't know which file this clip came from (it may have been recorded or edited)."));
+        }
+        return;
+    }
+#ifdef Q_OS_WIN
+    QProcess::startDetached(QStringLiteral("explorer.exe"), { QStringLiteral("/select,"), QDir::toNativeSeparators(path) });
+#else
+    QProcess::startDetached(QStringLiteral("/usr/bin/open"), { QStringLiteral("-R"), path });
+#endif
+}
+
+void MixHouseActionsController::clipExport(const trackedit::ClipKey& key)
+{
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project || !interactive()) {
+        return;
+    }
+    // The clip as trimmed on the timeline, at its own speed, as a WAV.
+    const trackedit::Clip clip = project->clip(key);
+    QString name = clip.title.toQString().trimmed();
+    static const QRegularExpression kBad(QStringLiteral("[\\\\/:*?\"<>|]"));
+    name.replace(kBad, QStringLiteral(" "));
+    if (name.isEmpty()) {
+        name = muse::qtrc("mixhouse", "Clip");
+    }
+    const QString dir = sampleSaveFolder();
+    const muse::io::path_t chosen = interactive()->selectSavingFileSync(muse::trc("mixhouse", "Export audio"),
+                                                                        muse::io::path_t(dir + QStringLiteral("/") + name + QStringLiteral(".wav")),
+                                                                        { muse::trc("mixhouse", "WAV audio") + " (*.wav)" });
+    if (chosen.empty()) {
+        return;
+    }
+    QString path = chosen.toQString();
+    if (!path.endsWith(QStringLiteral(".wav"), Qt::CaseInsensitive)) {
+        path += QStringLiteral(".wav");
+    }
+    double seconds = 0.0;
+    if (!writeClipRangeWav(globalContext(), key, clip.startTime, clip.endTime, path, seconds)) {
+        interactive()->error(muse::trc("mixhouse", "Export audio"), muse::qtrc("mixhouse", "Could not write %1.").arg(path).toStdString());
+        return;
+    }
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "Exported: %1").arg(QFileInfo(path).fileName()));
+    }
+#ifndef Q_OS_WIN
+    QProcess::startDetached(QStringLiteral("/usr/bin/open"), { QStringLiteral("-R"), path });
+#else
+    QProcess::startDetached(QStringLiteral("explorer.exe"), { QStringLiteral("/select,"), QDir::toNativeSeparators(path) });
+#endif
+}
+
+// ---- Vibseek's clip menu (ideas from its right-click, our own code) ----
+
+const MixHouseSample* MixHouseActionsController::sampleForClip(const trackedit::ClipKey& key) const
+{
+    const QString path = clipSourcePath(key);
+    if (path.isEmpty() || !samples()) {
+        return nullptr;
+    }
+    const QString real = QFileInfo(path).canonicalFilePath();
+    for (const MixHouseSample& s : samples()->samples()) {
+        if (s.path == path || s.path == real) {
+            return &s;
+        }
+    }
+    return nullptr;
+}
+
+void MixHouseActionsController::openSamplesTab(const QString& path, bool similar)
+{
+    if (samples()) {
+        samples()->showInSamplesTab(path, similar);
+    }
+    dispatcher()->dispatch("dock-set-open", muse::actions::ActionData::make_arg2<QString, bool>(
+                               QStringLiteral("mixHouseSamplesPanel"), true));
+}
+
+void MixHouseActionsController::clipShowInSamplesTab(const trackedit::ClipKey& key, bool similar)
+{
+    const QString path = clipSourcePath(key);
+    if (path.isEmpty()) {
+        if (activity()) {
+            activity()->post(muse::qtrc("mixhouse", "This sound isn't in the Samples tab (it may have been recorded or edited)"));
+        }
+        return;
+    }
+    if (!sampleForClip(key)) {
+        // A file of its own (a beat, a saved sample) the tab doesn't scan yet.
+        addToSamplesTab(QFileInfo(path).absolutePath());
+    }
+    openSamplesTab(path, similar);
+}
+
+QString MixHouseActionsController::renderClipToFolder(const trackedit::ClipKey& key, const QString& dir, const QString& suffix)
+{
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project) {
+        return {};
+    }
+    const trackedit::Clip clip = project->clip(key);
+    QString name = clip.title.toQString().trimmed();
+    static const QRegularExpression kBad(QStringLiteral("[\\\\/:*?\"<>|]"));
+    name.replace(kBad, QStringLiteral(" "));
+    if (name.isEmpty()) {
+        name = muse::qtrc("mixhouse", "Clip");
+    }
+    QDir().mkpath(dir);
+    QString path = dir + QStringLiteral("/") + name + suffix + QStringLiteral(".wav");
+    for (int n = 2; QFileInfo::exists(path); ++n) {
+        path = dir + QStringLiteral("/") + name + suffix + QStringLiteral(" %1.wav").arg(n);
+    }
+    double seconds = 0.0;
+    if (!writeClipRangeWav(globalContext(), key, clip.startTime, clip.endTime, path, seconds)) {
+        if (activity()) {
+            activity()->post(muse::qtrc("mixhouse", "Could not write %1.").arg(path));
+        }
+        return {};
+    }
+    return path;
+}
+
+void MixHouseActionsController::clipResample(const trackedit::ClipKey& key)
+{
+    // The clip as trimmed on the timeline becomes a new sample of its own
+    // (Samples > Resampled), ready in the Samples tab.
+    const QString path = renderClipToFolder(key, samplesRoot() + QStringLiteral("/Resampled"), QString());
+    if (path.isEmpty()) {
+        return;
+    }
+    addToSamplesTab(samplesRoot());
+    openSamplesTab(path, false);
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "Resampled: %1").arg(QFileInfo(path).completeBaseName()));
+    }
+}
+
+void MixHouseActionsController::clipVariations(const trackedit::ClipKey& key)
+{
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!project) {
+        return;
+    }
+    const trackedit::Clip clip = project->clip(key);
+    const QString base = QFileInfo(renderClipToFolder(key, QDir::tempPath() + QStringLiteral("/GlideMixVariations"), QString())).filePath();
+    if (base.isEmpty() || !QFileInfo(base).isFile()) {
+        return;
+    }
+    // A loop keeps its length (its tempo still fits); a one-shot may change length.
+    const MixHouseSample* known = sampleForClip(key);
+    const SampleNameInfo parsed = parseSampleName(clip.title.toQString());
+    const bool loop = known ? known->loop
+                      : (parsed.type == SampleNameInfo::Type::Loop || parsed.bpm > 0.0 || clip.endTime - clip.startTime > 2.0);
+    const QString name = QFileInfo(base).completeBaseName();
+    const QString folder = samplesRoot() + QStringLiteral("/Variations/") + name;
+    const QStringList made = makeSoundVariations(base, folder, name, loop);
+    QFile::remove(base);
+    if (made.isEmpty()) {
+        if (activity()) {
+            activity()->post(muse::qtrc("mixhouse", "Could not make variations of this sound"));
+        }
+        return;
+    }
+    addToSamplesTab(samplesRoot());
+    openSamplesTab(made.front(), false);
+    if (activity()) {
+        activity()->post(muse::qtrc("mixhouse", "%n variation(s) in Samples > Variations", nullptr, int(made.size())));
+    }
+}
+
+void MixHouseActionsController::clipSendToBeat(const trackedit::ClipKey& key)
+{
+    // Vibseek's "Send to Sampler": the sound becomes a row of the Beat window.
+    QString path = clipSourcePath(key);
+    if (path.isEmpty()) {
+        path = renderClipToFolder(key, samplesRoot() + QStringLiteral("/Resampled"), QString());
+    }
+    if (path.isEmpty()) {
+        return;
+    }
+    queueBeatSample(path);
+    muse::UriQuery beat("audacity://mixhouse/beat");
+    beat.addParam("sampleLine", muse::Val(static_cast<int>(sampleLineFor(key))));
+    interactive()->open(beat);
+}
+
+au::trackedit::TrackId MixHouseActionsController::sampleLineFor(const trackedit::ClipKey& key)
+{
+    // A sample's own line; for a song, the line right under it (made when missing,
+    // like the SAMPLES button does).
+    const auto prj = globalContext() ? globalContext()->currentProject() : nullptr;
+    const auto editPrj = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!prj || !editPrj || !prj->viewState()) {
+        return -1;
+    }
+    const auto vs = prj->viewState();
+    if (vs->isSampleLine(key.trackId)) {
+        return key.trackId;
+    }
+    const std::vector<trackedit::TrackId> ids = editPrj->trackIdList();
+    const auto at = std::find(ids.begin(), ids.end(), key.trackId);
+    if (at == ids.end()) {
+        return -1;
+    }
+    if (at + 1 != ids.end() && vs->isSampleLine(*(at + 1))) {
+        return *(at + 1);
+    }
+    if (!trackeditInteraction() || !trackeditInteraction()->newStereoTrack()) {
+        return -1;
+    }
+    trackedit::TrackId added = -1;
+    for (const auto id : editPrj->trackIdList()) {
+        if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
+            added = id;
+        }
+    }
+    if (added == -1) {
+        return -1;
+    }
+    vs->setSampleLine(added, true);
+    trackeditInteraction()->changeTrackTitle(added, muse::String(trackedit::SAMPLE_LINE_TITLE));
+    trackeditInteraction()->moveTracksTo({ added }, static_cast<int>(std::distance(ids.begin(), at)) + 1);
+    vs->setTrackHeight(added, 110);
+    return added;
+}
+
+void MixHouseActionsController::clipAddCompatible(const trackedit::ClipKey& key)
+{
+    const auto prj = globalContext() ? globalContext()->currentProject() : nullptr;
+    const auto editPrj = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    if (!prj || !editPrj || !samples() || !prj->viewState()) {
+        return;
+    }
+    const auto post = [&](const QString& text) {
+        if (activity()) {
+            activity()->post(text);
+        }
+    };
+    const trackedit::Clip clip = editPrj->clip(key);
+    const bool onSampleLine = prj->viewState()->isSampleLine(key.trackId);
+    const MixHouseSample* ref = onSampleLine ? sampleForClip(key) : nullptr;
+
+    // The song: this clip, or the lane right above the sample line.
+    trackedit::TrackId song = key.trackId;
+    if (onSampleLine) {
+        const std::vector<trackedit::TrackId> ids = editPrj->trackIdList();
+        const auto at = std::find(ids.begin(), ids.end(), key.trackId);
+        song = at != ids.end() && at != ids.begin() ? *(at - 1) : trackedit::TrackId(-1);
+    }
+    const trackedit::TimeSignature ts = editPrj->timeSignature();
+    const double tempo = ts.tempo > 0.0 ? ts.tempo : 120.0;
+    const double bar = 60.0 / tempo * (4.0 / std::max(1, ts.lower)) * std::max(1, ts.upper);
+    const auto state = globalContext()->playbackState();
+    const double playhead = state ? state->playbackPosition().to_double() : 0.0;
+    // Where it goes: after a sample; on a song, the bar under the playhead
+    // when it is inside the song, else the song's first bar.
+    double start = onSampleLine ? std::ceil(clip.endTime / bar - 1e-3) * bar
+                   : (playhead >= clip.startTime && playhead < clip.endTime ? std::floor(playhead / bar + 1e-6) * bar
+                      : std::ceil(clip.startTime / bar - 1e-3) * bar);
+    int songKey = 0;
+    for (const trackedit::Clip& c : editPrj->clipList(song)) {
+        if (c.startTime <= start + 1e-3 && start < c.endTime) {
+            const int id = beatGrids() ? beatGrids()->clipLibraryTrackId(c.key) : -1;
+            if (id >= 0 && library()) {
+                IMixHouseLibrary::TrackQuery query;
+                query.trackIds = { id };
+                const MixHouseTrackList found = library()->tracks(query);
+                if (!found.empty()) {
+                    songKey = found.front().keyId;
+                }
+            }
+        }
+    }
+    // The pool: loops for a song (or the same kind as the sample, of its
+    // category), in a key that mixes with the song; keyless ones (drums)
+    // when nothing keyed fits.
+    std::vector<const MixHouseSample*> keyed, keyless;
+    for (const MixHouseSample& s : samples()->samples()) {
+        if (s.missing || (ref && s.path == ref->path)) {
+            continue;
+        }
+        if (ref ? (s.loop != ref->loop || s.category != ref->category) : !s.loop) {
+            continue;
+        }
+        if (s.keyId > 0) {
+            if (songKey > 0 && IMixHouseKeyMatch::shortestStepsToCompatibleKey(s.keyId, songKey) == 0) {
+                keyed.push_back(&s);
+            }
+        } else {
+            keyless.push_back(&s);
+        }
+    }
+    const std::vector<const MixHouseSample*>& pool = !keyed.empty() ? keyed : keyless;
+    if (pool.empty()) {
+        post(muse::qtrc("mixhouse", "No sound in the Samples tab fits here (add sample folders, or analyse the song's key)"));
+        return;
+    }
+    const MixHouseSample* pick = pool[size_t(QRandomGenerator::global()->bounded(int(pool.size())))];
+
+    const trackedit::TrackId line = sampleLineFor(key);
+    if (line < 0) {
+        return;
+    }
+    const double length = pick->loop && pick->bpm > 0.0 && pick->bars > 0 ? pick->bars * bar : pick->durationSec;
+    for (bool moved = true; moved;) {
+        moved = false;
+        for (const trackedit::Clip& c : editPrj->clipList(line)) {
+            if (c.startTime < start + length - 1e-3 && c.endTime > start + 1e-3) {
+                start = std::ceil(c.endTime / bar - 1e-3) * bar;
+                moved = true;
+            }
+        }
+    }
+    std::vector<trackedit::ClipKey> before;
+    for (const trackedit::Clip& c : editPrj->clipList(line)) {
+        before.push_back(c.key);
+    }
+    prj->importIntoTracks({ muse::io::path_t(pick->path) }, { line }, start, { false });
+    trackedit::ClipKeyList created;
+    for (const trackedit::Clip& c : editPrj->clipList(line)) {
+        if (std::none_of(before.begin(), before.end(), [&](const trackedit::ClipKey& k) { return k.itemId == c.key.itemId; })) {
+            created.push_back(c.key);
+        }
+    }
+    if (created.empty()) {
+        return;
+    }
+    prepareSampleClips(globalContext(), created, pick->loop ? pick->bpm : 0.0);
+    if (projectHistory()) {
+        projectHistory()->modifyState();
+    }
+    post(muse::qtrc("mixhouse", "Added: %1").arg(pick->name));
+}
+

@@ -13,6 +13,8 @@
 #include "mixhouse/imixhousebeatgrids.h"
 #include "mixhouse/imixhouselibraryconfiguration.h"
 #include "types/projectscenetypes.h"
+#include "interactive/iinteractive.h"
+#include "project/iprojectconfiguration.h"
 
 namespace au::projectscene {
 class ClipContextMenuModel : public muse::uicomponents::AbstractMenuModel
@@ -26,6 +28,8 @@ class ClipContextMenuModel : public muse::uicomponents::AbstractMenuModel
     muse::ContextInject<mixhouse::IMixHouseLibrary> library{ this };   // GlideMix: Show in Library
     muse::ContextInject<mixhouse::IMixHouseBeatGrids> beatGrids{ this };   // GlideMix: IN / OUT anchors
     muse::GlobalInject<mixhouse::IMixHouseLibraryConfiguration> mixhouseConfiguration;   // GlideMix: phrase ribbon
+    muse::ContextInject<muse::IInteractive> interactive{ this };   // GlideMix: Edit beat
+    muse::GlobalInject<project::IProjectConfiguration> projectConfiguration;   // GlideMix: where beats live
 
     Q_PROPERTY(ClipKey clipKey READ clipKey WRITE setClipKey NOTIFY clipKeyChanged FINAL)
     Q_PROPERTY(QVariantList colorPalette READ colorPalette CONSTANT FINAL)
@@ -65,6 +69,8 @@ signals:
     void clipColorChanged();
 
 private:
+    bool clipIsDisabled() const;
+    QString beatPatternPath() const;   ///< a Beat-window beat's pattern file, empty when the clip is not one
     void onActionsStateChanges(const muse::actions::ActionCodeList& codes) override;
     void updateStretchEnabledState(muse::uicomponents::MenuItem& item);
     void updatePitchSpeedModifiedEnabledState(muse::uicomponents::MenuItem& item);

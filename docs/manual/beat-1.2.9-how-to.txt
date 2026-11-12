@@ -1,0 +1,166 @@
+GLIDEMIX 1.2.9 - BEAT, SAMPLE RIGHT-CLICK, LIBRARY COLUMNS: HOW TO
+==================================================================
+
+New in 1.2.9: Beat, a step sequencer for your own one-shots that puts a
+drum loop on a song's sample line; a sample line you can hide completely;
+a right-click menu full of sample tools on every song and sample; and every
+Lexicon column in the Music library.
+
+
+1. OPEN THE BEAT WINDOW
+-----------------------
+
+  - Press SAMPLES on a song to open its sample line (see the 1.2.8 how-to).
+  - Press BEAT on the sample line (under FX / M / S). The Beat window opens.
+  - The beat you are working on stays while GlideMix runs: close the window
+    and open it again, the rows and steps are still there.
+
+
+2. BUILD A BEAT BY HAND
+-----------------------
+
+Rows
+  - Drag a one-shot (a kick, a clap, a hat...) from the Samples tab onto
+    "Drag a kick, a clap, a hat..." - it becomes the first row. Drag another
+    one onto "Drag another one-shot here for a new row". Up to 8 rows.
+  - Drag a new sound onto a row to swap its sound.
+  - Click a row's name to hear its sound (and show its graph below).
+  - The light on the left mutes the row; right-click it to solo.
+  - The two small knobs are the row's volume and pan.
+
+Steps
+  - Click a step to set it, right-click to clear it. Drag across the steps
+    to set or clear many at once.
+  - Shift-click a step: accent (louder), soft, back to normal.
+  - Bars: 1, 2, 4, 8 or 16. Longer beats scroll sideways (2 bars at a time),
+    the scroll bar sits under the rows and follows playback.
+  - Grid: 1/16 (16 steps a bar), x2 (32 steps, 1/32) or 3 (triplets, 24).
+  - Swing: drag the swing slider (50 % straight, 54-58 % loose, 66 % triplet
+    feel, 75 % the most).
+
+Play
+  - The play button loops the beat at the tempo of the mix. The light runs
+    over the steps.
+  - Tempo: "Mix" follows the mix under the playhead. Click it to give the
+    beat its own BPM, then use - / + or type a number.
+
+
+3. THE ROW TOOLS (right-click a row's name)
+-------------------------------------------
+
+  - Fill every step / 2 / 4 / 8 steps, Even out 3 / 5 / 7 hits a bar.
+  - Fill in: hits at 1/1 .. 1/32, or on the offbeat between them.
+  - Advanced fill: a number of hits over a number of steps, as evenly as they
+    go (Euclidean: 3 in 8 is the tresillo) or every N steps; Rotate turns it.
+    Fewer steps than the pattern and the row repeats on its own cycle
+    (3 steps against 16 rolls over the bar).
+  - Rotate left / right, Reverse, Invert, Randomize, Clear.
+  - Copy steps / Paste steps (also into another beat), Clone row, Remove row.
+  - Cut itself: a new hit stops the one still ringing (on by default).
+  - Choke group: a hit stops the other rows of its group (a closed hat
+    stops the open hat - put both in Group 1).
+  - Swing mix 100 / 50 / 0 %: how much of the swing this row takes.
+  - Attack, Release, Key shift: soften the start or the end of every hit,
+    or tune the whole row in semitones.
+
+
+4. THE GRAPH UNDER THE ROWS
+---------------------------
+
+  - Click a row's name, then pick what to draw: Velocity, Pitch, Pan, Shift
+    (a hit a little late), Repeat (2-4 hits inside a step: rolls), Length,
+    Reverse, FX: Distortion, FX: Filter, FX: Reverb.
+  - Draw the values with the mouse. Right-drag draws a straight ramp,
+    Alt-click resets a step.
+  - The quick buttons 1/4, 1/8, 1/16, offbeat, clear and RND fill the row's
+    steps.
+
+
+5. BEAT STARTER
+---------------
+
+  - "Choose a genre": House, Deep house, Tech house, Techno, Afro house,
+    Amapiano, Disco, UK garage, Breaks, Drum & bass, Dubstep, Hip-hop, Boom
+    bap, Lo-fi, Trap, Drill, Reggaeton, Dembow. The rack fills itself with
+    kick, clap or snare, hats, open hat and percussion from YOUR samples,
+    with the genre's groove, swing and tempo.
+  - Random: any genre's kit and tempo, with a groove of its own.
+  - The dice on a row: another sample of the same kind. New sounds: new
+    samples on every row that isn't locked. The lock keeps a row's sound.
+  - New groove (row menu): new steps in the genre's style.
+  - Tune to the song's key (row menu): tunes a pitched sound to the key of
+    the song above the sample line (the sample's key comes from its name).
+  - Save pattern keeps the beat in the genre menu under "Your patterns".
+    They live in Projects/Samples/Beats/Patterns.
+
+
+6. PUT THE BEAT ON THE SONG
+---------------------------
+
+  - Press "Put on sample line". The beat becomes ONE seamless loop on the
+    bar under the playhead (after anything already there) and follows the
+    song tempo like any loop.
+  - The file is saved in Projects/Samples/Beats, named with its bars and
+    BPM, and shows up in the Samples tab to use under other songs.
+  - Right-click the beat on the sample line > "Edit beat..." opens it again.
+    The button then says "Update beat" and replaces the loop in place.
+
+
+7. HIDE THE SAMPLE LINE
+-----------------------
+
+  - The eye now sits inside the song's SAMPLES button. Click it to hide the
+    sample line completely - nothing is left on screen - and again to bring
+    it back. The samples keep playing while it is hidden.
+  - Handy on small screens and with the FX sidebar open.
+
+
+8. RIGHT-CLICK A SAMPLE ON THE TIMELINE
+---------------------------------------
+
+  - Show similar sounds: the Samples tab opens with the sounds most like
+    this one first (same kind, key, tempo and length). Click "Similar to ...
+    x" to see all samples again.
+  - Add compatible sound: puts another sound of the same kind, in a key
+    that fits the song, right after this one.
+  - View pack: the Samples tab opens on this sample's pack.
+  - Resample: saves the sample as you hear it trimmed into
+    Samples > Resampled.
+  - Send to Beat: adds the sound as a new row of the Beat window.
+  - Create variations: four new sounds in Samples > Variations. A loop keeps
+    its length (Reversed, Chopped, Stutter, Dark); a one-shot gets Reversed,
+    Up 5, Down 7 and Dark.
+  - Split into stems: the sample onto drum, bass, vocal and other lanes.
+  - Show in Finder (Explorer on Windows) and Export audio... (a WAV).
+  - Consolidate: joins the selected clips into one.
+  - Disable: the clip stays where it is, faded, but plays and exports
+    silent. Enable switches it back. With more clips selected, all of them
+    switch together.
+
+
+9. RIGHT-CLICK A SONG ON THE TIMELINE
+-------------------------------------
+
+  - Show in Finder, Export audio..., Split into stems (the whole song).
+  - Add compatible sound: a loop in a key that mixes with the song goes on
+    its sample line (the line is made if it isn't there yet), on the bar
+    under the playhead.
+  - Resample: the song as trimmed on the timeline becomes a sample.
+  - Consolidate and Disable, as above.
+
+
+10. NEW COLUMNS IN THE MUSIC LIBRARY
+-----------------------------------
+
+  - Right-click any column header. The less used columns are in three
+    submenus so the list fits the screen:
+      Credits and extras: Album Artist, Composer, Grouping, Remixer, Mix,
+        Label, Producer, Lyricist, Extra 1, Extra 2.
+      Danceability, popularity, happiness (Lexicon).
+      File and dates on the drive: Bitrate, ReplayGain, Type, Location,
+        Samplerate, Channels, Date Modified, File Modified (drive),
+        File Created (drive), Size.
+  - Remixer to Happiness and Date Modified come from Lexicon; songs from
+    elsewhere leave them empty (Date Modified then shows the file's date).
+  - File Modified, File Created and Size are read from the file on your
+    drive. Every column sorts with a click on its header.

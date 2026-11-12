@@ -81,4 +81,14 @@ int keyIdForCamelot(const QString& text);
 /// libraries without SQL). `playlistOrder` keeps the given order for the
 /// Position sort.
 void sortAndLimitTracks(MixHouseTrackList& tracks, const IMixHouseLibrary::TrackQuery& query, bool playlistOrder);
+
+/// The song's file on the drive: modified and created ("yyyy-MM-dd HH:mm:ss",
+/// "" when the file is missing) and size in bytes. Asked once per file while
+/// GlideMix runs (a list of 40k songs doesn't stat the drive on every repaint).
+struct MixHouseFileInfo {
+    QString modified;
+    QString created;
+    qint64 size = 0;
+};
+MixHouseFileInfo mixhouseFileInfo(const QString& path);
 }

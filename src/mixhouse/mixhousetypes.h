@@ -46,6 +46,21 @@ struct MixHouseTrack {
     QString lastPlayedAt;   // library.last_played_at, NULL until first played
     bool bpmLocked = false; // library.bpm_lock -- WTrackMenu's "Lock BPM"
 
+    // GlideMix: the rest of Lexicon's columns (its Track table). Empty / 0
+    // for libraries that don't have them.
+    QString remixer;
+    QString mix;
+    QString label;
+    QString producer;
+    QString lyricist;
+    QString extra1;
+    QString extra2;
+    QString dateModified;   ///< the library's own "modified" date (Lexicon), "" = none
+    qint64 sizeBytes = 0;   ///< 0 = not known (the file on the drive is asked)
+    int danceability = 0;   ///< Lexicon 1-10, 0 = none
+    int popularity = 0;
+    int happiness = 0;
+
     // Cover art (Phase 8) -- CoverInfoRelative, mirrored from library.coverart_*.
     // type: CoverInfoRelative::Type -- 0=NONE, 1=METADATA (embedded in the audio
     // file's own tags), 2=FILE (a standalone sidecar image next to the track).

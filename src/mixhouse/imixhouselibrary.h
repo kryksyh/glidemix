@@ -96,7 +96,12 @@ public:
         /// GlideMix: how alike a song sounds to the one under the playhead.
         /// Not in the database: SQL returns date-added order and the song
         /// list sorts in memory (MixHouseTrackListModel).
-        SoundsLike
+        SoundsLike,
+        /// GlideMix: Lexicon's extra columns and the file on the drive. Not in
+        /// GlideMix's own database: SQL returns date-added order and the list
+        /// sorts in memory (sortAndLimitTracks).
+        Remixer, Mix, Label, Producer, Lyricist, Size, DateModified, FileModified, FileCreated,
+        Extra1, Extra2, Danceability, Popularity, Happiness
     };
 
     struct TrackQuery {

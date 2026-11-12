@@ -21,6 +21,9 @@ Item {
 
     property NavigationSection navigationSection: null
 
+    //! A clip's right-click (View pack, Show similar sounds) wants this tab in front.
+    signal raiseRequested()
+
     // The master play button (Chris): while on, every sample selected (Up /
     // Down or a click) plays at once, also after a short one-shot ended.
     property bool autoPreview: false
@@ -37,6 +40,7 @@ Item {
 
     MixHouseSamplesModel {
         id: samplesModel
+        onRaiseRequested: root.raiseRequested()
     }
 
     FilePickerModel {
@@ -216,6 +220,7 @@ Item {
             TextInputField {
                 Layout.preferredWidth: 280
                 hint: qsTrc("mixhouse", "Search samples")
+                currentText: samplesModel.search
                 onTextChanged: function(newTextValue) { samplesModel.search = newTextValue }
             }
 
@@ -229,6 +234,15 @@ Item {
             StyledTextLabel {
                 text: qsTrc("mixhouse", "%1 samples").arg(sampleList.count)
                 opacity: 0.7
+            }
+
+            // "Show similar sounds" from a clip's right-click: what the list is ranked by.
+            FlatButton {
+                visible: samplesModel.similarName !== ""
+                text: qsTrc("mixhouse", "Similar to %1  ✕").arg(samplesModel.similarName)
+                accentButton: true
+                toolTipTitle: qsTrc("mixhouse", "Show all samples again")
+                onClicked: samplesModel.clearSimilar()
             }
 
             // The library's preview level (one setting for songs and samples).

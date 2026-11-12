@@ -155,7 +155,8 @@ TrackSnapshot SnapshotTrack(const WaveTrack& track)
         signature = (signature ^ value) * 1099511628211ull;
     };
     for (const auto& clip : track.Intervals()) {
-        if (clip->GetPlayEndTime() > clip->GetPlayStartTime()) {
+        // GlideMix: a disabled clip is not played (nor exported, which renders through here).
+        if (clip->GetPlayEndTime() > clip->GetPlayStartTime() && !clip->GetParameterAutomation().IsClipDisabled()) {
             snap.clips.push_back(SnapshotClip(*clip));
         }
         mix(static_cast<uint64_t>(clip->GetId()));

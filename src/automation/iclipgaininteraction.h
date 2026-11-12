@@ -36,6 +36,10 @@ public:
     virtual bool endClipGainPointDrag(const trackedit::ClipKey& clip, bool commit) = 0;
     virtual muse::async::Channel<trackedit::ClipKey, bool> clipGainChanged() const = 0;
 
+    /// GlideMix: the clip's Disable switch (silent, kept on the timeline). Pushes no history.
+    virtual bool clipDisabled(const trackedit::ClipKey& key) const = 0;
+    virtual bool setClipDisabled(const trackedit::ClipKey& key, bool disabled) = 0;
+
     /// The clip's bass line: the Mixtape engine's built-in low-band control (0..1, 1 leaves the bass
     /// alone, 0 removes it), used by transitions for the bass swap. Points are project seconds, like
     /// clipGainPoints. Empty means the clip has no bass line.

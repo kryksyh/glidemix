@@ -27,6 +27,7 @@ void TrackClipItem::setClip(const trackedit::Clip& clip)
     m_groupId = clip.groupId;
     m_pitch = clip.pitch;
     m_speed = clip.speed;
+    m_disabled = clip.disabled;
 
     if (keyMoved) {
         emit keyChanged();

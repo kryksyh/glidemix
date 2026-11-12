@@ -3,6 +3,8 @@
 */
 #include "clipcontextmenumodel.h"
 
+#include <QFileInfo>
+
 #include "gridmenuitems.h"
 
 #include "spectrogram/spectrogramtypes.h"
@@ -35,6 +37,12 @@ constexpr const char* RESET_COLORS_ITEM = "mixtape-clip-reset-colors";
 constexpr const char* ANCHOR_ITEM_PREFIX = "mixtape-anchor:";
 constexpr const char* PHRASE_RIBBON_ITEM = "mixtape-toggle-phrase-ribbon";
 constexpr const char* SHOW_IN_LIBRARY_ITEM = "mixtape-show-in-library";
+#ifdef Q_OS_WIN
+const muse::TranslatableString kShowInFileBrowserTitle("clip", "Show in Explorer");
+#else
+const muse::TranslatableString kShowInFileBrowserTitle("clip", "Show in Finder");
+#endif
+constexpr const char* EDIT_BEAT_ITEM = "glidemix-edit-beat";
 // GlideMix: the track menu's Track visualization, here too (Chris, 2026-10-27).
 constexpr const char* TRACK_VIEW_WAVEFORM_ACTION = "action://trackedit/track-view-waveform";
 constexpr const char* TRACK_VIEW_SPECTROGRAM_ACTION = "action://trackedit/track-view-spectrogram";
@@ -150,6 +158,14 @@ void ClipContextMenuModel::load()
         makeMenu(muse::TranslatableString("clip", "More cut and delete"), moreItems, "menu-more-edit"),
         makeSeparator(),
         makeSimpleItem(SHOW_IN_LIBRARY_ITEM, muse::TranslatableString("clip", "Show in Library")),
+        makeItemWithArg("mixhouse-clip-show-in-finder", kShowInFileBrowserTitle),
+        makeItemWithArg("mixhouse-clip-export"),
+        makeItemWithArg("mixhouse-clip-stems"),
+        makeItemWithArg("mixhouse-clip-add-compatible"),
+        makeItemWithArg("mixhouse-clip-resample"),
+        makeMenuItem("join", muse::TranslatableString("clip", "Consolidate")),
+        makeItemWithArg("mixhouse-clip-disable", clipIsDisabled() ? muse::TranslatableString("clip", "Enable")
+                        : muse::TranslatableString("clip", "Disable")),
         makeItemWithArg("clip-properties"),
         makeMenu(muse::TranslatableString("clip", "Color"), {
             makeColorByKeyItem(),
@@ -211,11 +227,33 @@ void ClipContextMenuModel::load()
                 resetPitchSpeedItem,
                 renderPitchSpeedItem,
                 makeSeparator(),
+                makeItemWithArg("mixhouse-clip-similar"),
+                makeItemWithArg("mixhouse-clip-add-compatible"),
+                makeItemWithArg("mixhouse-clip-view-pack"),
+                makeSeparator(),
+                makeItemWithArg("mixhouse-clip-resample"),
+                makeItemWithArg("mixhouse-clip-send-to-beat"),
+                makeItemWithArg("mixhouse-clip-variations"),
+                makeItemWithArg("mixhouse-clip-stems"),
+                makeSeparator(),
+                makeItemWithArg("mixhouse-clip-show-in-finder", kShowInFileBrowserTitle),
+                makeItemWithArg("mixhouse-clip-export"),
+                makeSeparator(),
+                makeMenuItem("join", muse::TranslatableString("clip", "Consolidate")),
+                makeItemWithArg("mixhouse-clip-disable", clipIsDisabled() ? muse::TranslatableString("clip", "Enable")
+                                : muse::TranslatableString("clip", "Disable")),
+                makeSeparator(),
                 makeMenu(muse::TranslatableString("clip", "Color"), {
                     makeClipColorPickerItem(this),
                     makeColorIntensityItem(),
                 }, "menu-clip-color"),
             };
+            // A beat made in the Beat window (its pattern sits next to its WAV).
+            if (!beatPatternPath().isEmpty()) {
+                sampleItems.insert(sampleItems.begin(), makeSeparator());
+                sampleItems.insert(sampleItems.begin(),
+                                   makeSimpleItem(EDIT_BEAT_ITEM, muse::TranslatableString("clip", "Edit beat…")));
+            }
             setItems(sampleItems);
             return;
         }
@@ -397,8 +435,33 @@ MenuItemList ClipContextMenuModel::makeKeyItems()
     return result;
 }
 
+bool ClipContextMenuModel::clipIsDisabled() const
+{
+    const auto project = globalContext() ? globalContext()->currentTrackeditProject() : nullptr;
+    return project && project->clip(m_clipKey.key).disabled;
+}
+
+QString ClipContextMenuModel::beatPatternPath() const
+{
+    const auto project = globalContext()->currentProject();
+    if (!project || !projectConfiguration()) {
+        return {};
+    }
+    const trackedit::Clip clip = project->trackeditProject()->clip(m_clipKey.key);
+    const QString path = projectConfiguration()->userProjectsPath().toQString() + QStringLiteral("/Samples/Beats/")
+                         + clip.title.toQString() + QStringLiteral(".glidebeat");
+    return QFileInfo::exists(path) ? path : QString();
+}
+
 void ClipContextMenuModel::handleMenuItem(const QString& itemId)
 {
+    if (itemId == QString::fromUtf8(EDIT_BEAT_ITEM)) {
+        muse::UriQuery beat("audacity://mixhouse/beat");
+        beat.addParam("sampleLine", muse::Val(static_cast<int>(m_clipKey.trackId())));
+        beat.addParam("clipId", muse::Val(static_cast<int>(m_clipKey.key.itemId)));
+        interactive()->open(beat);
+        return;
+    }
     if (itemId == QString::fromUtf8(SHOW_IN_LIBRARY_ITEM)) {
         mixhouse::IMixHouseBeatGrids::ClipFile file;
         if (!beatGrids() || !library() || !library()->isAvailable() || !beatGrids()->clipFile(m_clipKey.key, file)) {

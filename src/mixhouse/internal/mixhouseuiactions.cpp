@@ -205,6 +205,86 @@ const UiActionList MixHouseUiActions::m_actions = {
              //: Action description: shown as a tooltip; can be a full sentence
              TranslatableString("action_description", "Move the selected part of the song onto four stem lanes under it")
              ),
+    UiAction("mixhouse-clip-show-in-finder",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Show in Finder"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Shows the file this clip came from")
+             ),
+    UiAction("mixhouse-clip-export",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Export audio…"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Saves the clip as a WAV file, as trimmed on the timeline")
+             ),
+    UiAction("mixhouse-clip-stems",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Split into stems"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Moves the clip onto four stem lanes (drums, bass, vocals, other) under its lane")
+             ),
+    UiAction("mixhouse-clip-similar",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Show similar sounds"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Shows the sounds in the Samples tab most like this one (kind, key, tempo, length)")
+             ),
+    UiAction("mixhouse-clip-view-pack",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "View pack"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Shows this sound's pack in the Samples tab")
+             ),
+    UiAction("mixhouse-clip-add-compatible",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Add compatible sound"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Puts a sound from the Samples tab in a key that fits the song on the sample line")
+             ),
+    UiAction("mixhouse-clip-resample",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Resample"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Saves the clip as a new sample (Samples > Resampled)")
+             ),
+    UiAction("mixhouse-clip-variations",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Create variations"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Makes four new sounds from this one (Samples > Variations)")
+             ),
+    UiAction("mixhouse-clip-send-to-beat",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Send to Beat"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "Adds this sound as a row of the Beat window")
+             ),
+    UiAction("mixhouse-clip-disable",
+             au::context::UiCtxProjectOpened,
+             au::context::CTX_PROJECT_FOCUSED,
+             //: Action title: in a clip's right-click menu; keep it short
+             TranslatableString("action", "Disable"),
+             //: Action description: shown as a tooltip; can be a full sentence
+             TranslatableString("action_description", "The clip stays on the timeline but plays and exports silent (again to enable it)")
+             ),
     UiAction("mixhouse-split-grid-jumps",
              au::context::UiCtxProjectOpened,
              au::context::CTX_PROJECT_FOCUSED,

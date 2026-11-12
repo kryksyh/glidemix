@@ -275,7 +275,11 @@ void MixHouseSamplesModel::componentComplete()
         updatePacks();
         rebuild();
         emit samplesChanged();
+        if (!m_showPending.isEmpty()) {
+            applyShow();   // the file a clip asked for may be scanned now
+        }
     });
+    samples()->showRequested().onNotify(this, [this]() { takeShowRequest(); });
     samples()->scanProgress().onReceive(this, [this](int done, int found) {
         m_scanText = muse::qtrc("mixhouse", "Scanning… %1 of %2 files").arg(done).arg(found);
         emit scanChanged();
@@ -284,6 +288,105 @@ void MixHouseSamplesModel::componentComplete()
     updatePacks();
     rebuild();
     emit samplesChanged();
+    takeShowRequest();
+}
+
+void MixHouseSamplesModel::takeShowRequest()
+{
+    QString path;
+    bool similar = false;
+    if (!samples() || !samples()->takeShowRequest(path, similar)) {
+        return;
+    }
+    m_showPending = path;
+    m_showPendingSimilar = similar;
+    applyShow();
+    emit raiseRequested();
+}
+
+bool MixHouseSamplesModel::applyShow()
+{
+    const QString wanted = QFileInfo(m_showPending).canonicalFilePath().isEmpty()
+                           ? m_showPending : QFileInfo(m_showPending).canonicalFilePath();
+    const MixHouseSample* found = nullptr;
+    for (const MixHouseSample& s : samples()->samples()) {
+        if (s.path == m_showPending || s.path == wanted) {
+            found = &s;
+            break;
+        }
+    }
+    if (!found) {
+        return false;   // a new file: shown once the scan has it
+    }
+    m_search.clear();
+    if (m_showPendingSimilar) {
+        m_similarTo = found->path;
+        m_category.clear();
+        m_pack.clear();
+    } else {
+        // The pack (Vibseek's View pack): its category and pack, else its own folder by name.
+        m_similarTo.clear();
+        m_category = found->category;
+        m_pack = found->pack;
+        if (m_pack.isEmpty()) {
+            m_search = found->name;
+        }
+    }
+    m_showPending.clear();
+    updatePacks();
+    rebuild();
+    emit filterChanged();
+    return true;
+}
+
+QString MixHouseSamplesModel::similarName() const
+{
+    return m_similarTo.isEmpty() ? QString() : QFileInfo(m_similarTo).completeBaseName();
+}
+
+void MixHouseSamplesModel::clearSimilar()
+{
+    if (m_similarTo.isEmpty()) {
+        return;
+    }
+    m_similarTo.clear();
+    rebuild();
+    emit filterChanged();
+}
+
+namespace {
+//! What a sound is, from the words in its name and folders (our own list).
+QString soundRole(const MixHouseSample& s)
+{
+    static const std::vector<std::pair<QString, QStringList> > roles = {
+        { "openhat", { "open hat", "openhat", "open_hat", "ohat", "oh_" } },
+        { "hat", { "hat", "hh", "hihat", "hi-hat" } },
+        { "kick", { "kick", "bd", "bassdrum" } },
+        { "snare", { "snare", "snr" } },
+        { "clap", { "clap" } },
+        { "cymbal", { "crash", "ride", "cymbal" } },
+        { "tom", { "tom" } },
+        { "perc", { "perc", "shaker", "conga", "bongo", "rim", "tamb" } },
+        { "808", { "808", "sub" } },
+        { "bass", { "bass" } },
+        { "vocal", { "vocal", "vox", "voice", "acapella", "chant" } },
+        { "fx", { "fx", "riser", "uplifter", "downlifter", "sweep", "impact", "noise", "transition" } },
+        { "keys", { "piano", "keys", "rhodes", "organ" } },
+        { "pad", { "pad", "atmo", "ambient", "texture" } },
+        { "lead", { "lead", "synth", "pluck", "arp", "stab", "chord" } },
+        { "guitar", { "guitar" } },
+        { "drums", { "drum", "top", "groove", "full" } },
+    };
+    const QString text = (s.location + QLatin1Char(' ') + s.name).toLower();
+    for (const auto& [role, words] : roles) {
+        for (const QString& w : words) {
+            if (text.contains(w)) {
+                return role;
+            }
+        }
+    }
+    return s.category.toLower();
+}
 }
 
 int MixHouseSamplesModel::rowCount(const QModelIndex& parent) const
@@ -341,9 +444,10 @@ QVariant MixHouseSamplesModel::data(const QModelIndex& index, int role) const
 
 void MixHouseSamplesModel::setCategory(const QString& category)
 {
-    if (m_category == category) {
+    if (m_category == category && m_similarTo.isEmpty()) {
         return;
     }
+    m_similarTo.clear();   // a category tile leaves "similar sounds"
     m_category = category;
     m_pack.clear();   // a pack belongs to its category
     updatePacks();
@@ -353,9 +457,10 @@ void MixHouseSamplesModel::setCategory(const QString& category)
 
 void MixHouseSamplesModel::setPack(const QString& pack)
 {
-    if (m_pack == pack) {
+    if (m_pack == pack && m_similarTo.isEmpty()) {
         return;
     }
+    m_similarTo.clear();
     m_pack = pack;
     rebuild();
     emit filterChanged();
@@ -431,6 +536,75 @@ void MixHouseSamplesModel::rebuild()
 {
     beginResetModel();
     m_rows.clear();
+    // "Show similar sounds": the same kind of sound, ranked by role, key,
+    // tempo and length (from the names and the scan; our own rules).
+    if (samples() && !m_similarTo.isEmpty()) {
+        const auto& all = samples()->samples();
+        const MixHouseSample* ref = nullptr;
+        for (const MixHouseSample& s : all) {
+            if (s.path == m_similarTo) {
+                ref = &s;
+            }
+        }
+        if (ref) {
+            const QString refRole = soundRole(*ref);
+            std::vector<std::pair<double, int> > scored;
+            for (size_t i = 0; i < all.size(); ++i) {
+                const MixHouseSample& s = all[i];
+                if (&s == ref || s.loop != ref->loop || s.missing) {
+                    continue;
+                }
+                double score = 0.0;
+                const QString role = soundRole(s);
+                if (role == refRole) {
+                    score += 40.0;
+                } else if (s.category == ref->category) {
+                    score += 12.0;
+                } else {
+                    continue;
+                }
+                if (ref->keyId > 0 && s.keyId > 0) {
+                    if (s.keyId == ref->keyId) {
+                        score += 15.0;
+                    } else if (IMixHouseKeyMatch::shortestStepsToCompatibleKey(s.keyId, ref->keyId) == 0) {
+                        score += 10.0;
+                    }
+                }
+                if (ref->loop && ref->bpm > 0.0 && s.bpm > 0.0) {
+                    const double r = s.bpm / ref->bpm;
+                    if (std::abs(r - 1.0) < 0.03) {
+                        score += 15.0;
+                    } else if (std::abs(r - 2.0) < 0.06 || std::abs(r - 0.5) < 0.02) {
+                        score += 7.0;
+                    }
+                }
+                if (ref->durationSec > 0.0 && s.durationSec > 0.0) {
+                    score += 15.0 * std::max(0.0, 1.0 - std::abs(std::log(s.durationSec / ref->durationSec)));
+                }
+                if (!ref->pack.isEmpty() && s.pack == ref->pack) {
+                    score += 5.0;
+                }
+                const QStringList words = m_search.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+                bool match = true;
+                for (const QString& w : words) {
+                    match = match && (s.name.contains(w, Qt::CaseInsensitive) || s.location.contains(w, Qt::CaseInsensitive));
+                }
+                if (match) {
+                    scored.push_back({ score, static_cast<int>(i) });
+                }
+            }
+            std::stable_sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+            if (scored.size() > 300) {
+                scored.resize(300);
+            }
+            m_rows.push_back(static_cast<int>(ref - all.data()));   // the sound itself first
+            for (const auto& [score, i] : scored) {
+                m_rows.push_back(i);
+            }
+            endResetModel();
+            return;
+        }
+    }
     if (samples()) {
         const auto& all = samples()->samples();
         const QStringList words = m_search.split(QLatin1Char(' '), Qt::SkipEmptyParts);

@@ -237,10 +237,10 @@ bool TrackViewStateModel::hasSampleLine() const
 
 namespace {
 // GlideMix Samples: a sample line shows at its own height (not the song's,
-// which new lanes copy since 1.2.7) and folds to the collapsed strip, where
-// its samples still show as blocks and keep playing.
+// which new lanes copy since 1.2.7). Hidden it takes no room at all (1 px,
+// Chris: "really hidden, not shrunk") -- its samples keep playing.
 constexpr int kSampleLineHeight = 110;
-constexpr int kSampleLineFolded = 44;
+constexpr int kSampleLineHidden = 1;
 }
 
 bool TrackViewStateModel::sampleLineShown() const
@@ -250,10 +250,10 @@ bool TrackViewStateModel::sampleLineShown() const
         return false;
     }
     if (isSampleLine()) {
-        return !vs->isTrackCollapsed(m_trackId).val;
+        return vs->trackHeight(m_trackId).val > kSampleLineHidden;
     }
     const auto below = trackBelow(globalContext()->currentTrackeditProject(), m_trackId);
-    return below != -1 && vs->isSampleLine(below) && !vs->isTrackCollapsed(below).val;
+    return below != -1 && vs->isSampleLine(below) && vs->trackHeight(below).val > kSampleLineHidden;
 }
 
 void TrackViewStateModel::toggleSampleLine()
@@ -265,7 +265,7 @@ void TrackViewStateModel::toggleSampleLine()
     }
     // On the sample line itself: its hide button folds and unfolds it.
     if (isSampleLine()) {
-        vs->setTrackHeight(m_trackId, vs->isTrackCollapsed(m_trackId).val ? kSampleLineHeight : kSampleLineFolded);
+        vs->setTrackHeight(m_trackId, vs->trackHeight(m_trackId).val > kSampleLineHidden ? kSampleLineHidden : kSampleLineHeight);
         emit sampleLineChanged();
         return;
     }
@@ -273,7 +273,7 @@ void TrackViewStateModel::toggleSampleLine()
     if (below != -1 && vs->isSampleLine(below)) {
         // The song's SAMPLES button: shows or hides (folds) its line. Never
         // deletes it -- the line's own menu does that, like any lane.
-        vs->setTrackHeight(below, vs->isTrackCollapsed(below).val ? kSampleLineHeight : kSampleLineFolded);
+        vs->setTrackHeight(below, vs->trackHeight(below).val > kSampleLineHidden ? kSampleLineHidden : kSampleLineHeight);
         emit sampleLineChanged();
         return;
     }

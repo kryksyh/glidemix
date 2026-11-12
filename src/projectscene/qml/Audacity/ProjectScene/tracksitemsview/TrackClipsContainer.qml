@@ -450,6 +450,7 @@ TrackItemsContainer {
                                 clipTime: itemData.time
                                 pitch: itemData.pitch
                                 isPitchModified: itemData.isPitchModified
+                                clipDisabled: itemData.clipDisabled
 
                                 currentClipStyle: clipsModel.clipStyle
                                 headerHeight: root.headerHeight

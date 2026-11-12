@@ -35,12 +35,11 @@ StyledDialogView {
                 horizontalAlignment: Text.AlignLeft
                 wrapMode: Text.WordWrap
                 textFormat: Text.MarkdownText
-                text: "**GlideMix v1.2.8**\n\n"
-                      + "- Samples tab: add your sample folders, find samples by category, pack, BPM and key, and preview loops at the tempo of your mix.\n"
-                      + "- SAMPLES button on every song: opens a sample line right under it. Drag samples onto it: loops land on the bar and follow the song tempo, one-shots land where you drop them.\n"
-                      + "- Select part of a song and right-click: Save as sample, Stems as samples (drums, bass, vocals, other or all four).\n"
-                      + "- Right-click a selection > Stems: Remove drums, bass, vocals or other from just that part, or Split it into stem lanes.\n"
-                      + "- Stem lanes are part of their song: the SONG counter no longer counts them.\n"
+                text: "**GlideMix v1.2.9**\n\n"
+                      + "- Beat: press BEAT on a sample line and build a drum loop from your own one-shots - 16 steps a bar, up to 16 bars, swing, a graph for velocity, pitch, pan and more. Beat starter fills it in 18 genres. Put on sample line renders it as one loop that follows the mix tempo; Edit beat opens it again.\n"
+                      + "- The SAMPLES button holds the eye: hide a sample line completely, nothing left on screen.\n"
+                      + "- Right-click a sample or song: Show similar sounds, Add compatible sound, View pack, Resample, Send to Beat, Create variations, Split into stems, Show in Finder, Export audio, Consolidate, Disable.\n"
+                      + "- Library: every Lexicon column (remixer, label, danceability, popularity, happiness...) and the file's own dates and size on the drive.\n"
             }
         }
 

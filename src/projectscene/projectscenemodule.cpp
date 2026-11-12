@@ -119,6 +119,8 @@ void ProjectSceneModule::resolveImports()
     if (ir) {
         ir->registerQmlUri(muse::Uri("audacity://projectscene/editpitchandspeed"),
                            "Audacity/ProjectScene/tracksitemsview/pitchandspeed/PitchAndSpeedChangeDialog.qml");
+        // GlideMix Samples B8: the Beat window (step sequencer) of a sample line.
+        ir->registerQmlUri(muse::Uri("audacity://mixhouse/beat"), "Audacity.MixHouse", "MixHouseBeatWindow");
         ir->registerQmlUri(muse::Uri("audacity://broadcast/hud"),
                            "Audacity/ProjectScene/broadcast/BroadcastHud.qml");
         ir->registerQmlUri(muse::Uri("audacity://projectscene/insertsilence"),
