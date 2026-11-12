@@ -1,0 +1,8 @@
+{
+  "repository": "cristitm76/glidemix-releases",
+  "tag": "v1.2.9",
+  "release_url": "https://github.com/cristitm76/glidemix-releases/releases/tag/v1.2.9",
+  "source_url": "https://github.com/cristitm76/glidemix-releases/releases/download/v1.2.9/GlideMix-1.2.9-source.tar.xz",
+  "sha256": "47b0c8ddd06d8f632f481fb7e2d11e50bba46804d33cf98c2e1bfc40ea74d51f",
+  "muse_deps_commit": "06d49c62dd6d4522e04fa05de3919311b4976806"
+}

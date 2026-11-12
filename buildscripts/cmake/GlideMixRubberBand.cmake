@@ -42,7 +42,9 @@ if (WIN32)
         # Third-party code: no warnings of ours; /O2 in Release comes from CMake.
         target_compile_options(glidemix_rubberband PRIVATE /w)
     endif()
-elseif (NOT APPLE)
+elseif (APPLE)
+    target_link_libraries(glidemix_rubberband PUBLIC "-framework Accelerate")
+else()
     target_compile_definitions(glidemix_rubberband PRIVATE HAVE_POSIX_MEMALIGN)
     target_compile_options(glidemix_rubberband PRIVATE -w)
     # std::atomic::is_lock_free (R3 engine) needs libatomic with clang on some

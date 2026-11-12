@@ -1,5 +1,5 @@
 # Normalize line endings of all files that Git considers to be text
-* text eol=lf
+* text=auto eol=lf
 #except images and sounds
 *.png -text
 *.gif -text

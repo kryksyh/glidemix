@@ -1,0 +1,142 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'upstream-release.json']
+  pull_request:
+    paths-ignore: ['**/*.md', 'upstream-release.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-24.04
+            qt-host: linux
+            qt-arch: linux_gcc_64
+            artifact: linux-x86_64
+          - name: macOS arm64
+            os: macos-15
+            qt-host: mac
+            qt-arch: clang_64
+            artifact: macos-arm64
+          - name: macOS Intel
+            os: macos-15-intel
+            qt-host: mac
+            qt-arch: clang_64
+            artifact: macos-x86_64
+          - name: Windows x86_64
+            os: windows-2022
+            qt-host: windows
+            qt-arch: win64_msvc2022_64
+            artifact: windows-x86_64
+    defaults:
+      run:
+        shell: bash
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 3
+      EXTDEPS_CACHE: ${{ github.workspace }}/.cache/extdeps
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The dependency recipes still require CMake 3 compatibility.
+      - name: Install build tools
+        run: python -m pip install cmake==3.31.6 ninja==1.11.1.3
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config gettext libasound2-dev libpulse-dev \
+            libjack-jackd2-dev libudev-dev libgtk2.0-dev libgl1-mesa-dev \
+            libfontconfig1-dev libfreetype6-dev libssl-dev libnss3-dev \
+            libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xkb-dev libxcomposite-dev libxcursor-dev libxi-dev \
+            libxrandr-dev libxtst-dev libdrm-dev libvulkan-dev uuid-dev \
+            autoconf automake libtool m4 nasm yasm
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.2'
+          host: ${{ matrix.qt-host }}
+          target: desktop
+          arch: ${{ matrix.qt-arch }}
+          modules: 'qt5compat qtshadertools'
+          cache: true
+
+      - name: Cache dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: .cache/extdeps
+          key: deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('upstream-release.json', 'buildscripts/deps/**', 'buildscripts/cmake/DependencyManifest.cmake') }}-v1
+
+      - name: Configure
+        run: |
+          cmake -S . -B build/ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/build.install" \
+            -DAU4_BUILD_MODE=release \
+            -DCMAKE_BUILD_NUMBER="$GITHUB_RUN_NUMBER" \
+            -DMUSE_ENABLE_UNIT_TESTS=OFF \
+            -DMUSE_COMPILE_USE_CCACHE=OFF \
+            -DMUSE_MODULE_DIAGNOSTICS_CRASHPAD_CLIENT=OFF \
+            -DAU4_MAC_SIGN_IDENTITY=-
+
+      - name: Build
+        run: cmake --build build/ci
+
+      - name: Install
+        run: cmake --install build/ci
+
+      - name: Package
+        env:
+          ARTIFACT_PLATFORM: ${{ matrix.artifact }}
+        run: python buildscripts/ci/package.py
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: glidemix-${{ matrix.artifact }}
+          path: build.artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload configure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.artifact }}
+          path: |
+            build/ci/CMakeCache.txt
+            build/ci/CMakeFiles/CMakeConfigureLog.yaml
+          retention-days: 7

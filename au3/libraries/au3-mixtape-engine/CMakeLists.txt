@@ -47,9 +47,7 @@ audacity_library( ${TARGET} "${SOURCES}" "${LIBRARIES}"
    "" ""
 )
 
-# Rubber Band 4, vendored with the DJ Effects for macOS arm64; Windows and Linux
-# build it from source (buildscripts/cmake/GlideMixRubberBand.cmake). Intel Mac
-# builds the engine without time stretching.
+# Rubber Band 4 is vendored for macOS arm64 and built from source elsewhere.
 if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
    set(MIXTAPE_ENGINE_RUBBERBAND_ROOT
       "${CMAKE_CURRENT_LIST_DIR}/../../../src/effects/builtin_collection/mixxx/thirdparty/rubberband-macos-arm64")
@@ -64,13 +62,11 @@ if(MIXTAPE_ENGINE_RUBBERBAND_ROOT AND EXISTS "${MIXTAPE_ENGINE_RUBBERBAND_ROOT}/
    if(APPLE)
       target_link_libraries(${TARGET} PUBLIC "-framework Accelerate")
    endif()
-elseif(NOT APPLE)
-   # Windows / Linux: Rubber Band built from source (built-in FFT and resampler).
+else()
+   # Use the built-in FFT and resampler on platforms without vendored libraries.
    include("${CMAKE_CURRENT_LIST_DIR}/../../../buildscripts/cmake/GlideMixRubberBand.cmake")
    target_compile_definitions(${TARGET} PRIVATE MIXTAPE_ENGINE_HAS_RUBBERBAND)
    target_link_libraries(${TARGET} PUBLIC glidemix_rubberband)
-else()
-   message(WARNING "Mixtape engine: no Rubber Band for this platform -- clips play unstretched")
 endif()
 
 option(MIXTAPE_BUILD_ENGINE_TESTS "Build the Mixtape playback engine tests" ON)

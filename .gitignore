@@ -278,3 +278,6 @@ CMakeUserPresets.json
 _deps/
 /dist/
 /thirdparty-mac/
+
+# CI workflow filenames are not build output.
+!/.github/workflows/*.yml
